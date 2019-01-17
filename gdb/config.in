@@ -824,3 +824,5 @@
 #undef vfork
 
 #undef	VE_CUSTOMIZATION
+
+#undef LIBTHREAD_DB_SEARCH_PATH

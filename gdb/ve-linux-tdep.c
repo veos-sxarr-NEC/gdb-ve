@@ -296,6 +296,10 @@ ve_linux_init_abi (struct gdbarch_info info,
   set_solib_svr4_fetch_link_map_offsets (gdbarch,
 					svr4_lp64_fetch_link_map_offsets);
 
+  /* Enable TLS supports. */
+  set_gdbarch_fetch_tls_load_module_address (gdbarch,
+					svr4_fetch_objfile_link_map);
+
   tramp_frame_prepend_unwinder (gdbarch,
 				&ve_linux_sigreturn_tramp_frame);
   /* Core file support.  */

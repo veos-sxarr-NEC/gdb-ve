@@ -545,7 +545,7 @@ inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
 				    (PTRACE_TYPE_ARG3)(uintptr_t)
 				    rounded_offset, 0);
 	        if (inf_ptrace_debug)
-		  printf_unfiltered(_("ptrace(PT_READ_I) for write addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+		  printf_unfiltered(_("ptrace(PT_READ_I) for write addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 	      }
 #else
 	      /* Need part of initial word -- fetch it.  */
@@ -578,11 +578,11 @@ inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
 		  {
 		    if (inf_ptrace_debug)
 		      {
-			printf_unfiltered(_("ptrace:PT_WRITE_I for write addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+			printf_unfiltered(_("ptrace:PT_WRITE_I for write addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 			buffer.word = ptrace_func (PT_READ_I, pid,
 				(PTRACE_TYPE_ARG3)(uintptr_t)
 				rounded_offset, 0);
-			printf_unfiltered(_("ptrace:PT_READ_I for write addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+			printf_unfiltered(_("ptrace:PT_READ_I for write addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 		      }
 		  }
 	      }
@@ -590,11 +590,11 @@ inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
 	      {
 		if (inf_ptrace_debug)
 		  {
-		    printf_unfiltered(_("ptrace:PT_WRITE_D for write addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+		    printf_unfiltered(_("ptrace:PT_WRITE_D for write addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 		    buffer.word = ptrace_func (PT_READ_I, pid,
 				(PTRACE_TYPE_ARG3)(uintptr_t)
 				rounded_offset, 0);
-		    printf_unfiltered(_("ptrace:PT_READ_I for write addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+		    printf_unfiltered(_("ptrace:PT_READ_I for write addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 		  }
 #endif
 	      }
@@ -612,7 +612,7 @@ inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
 	    else
 	      {
 		if (inf_ptrace_debug)
-		  printf_unfiltered(_("ptrace:PT_READ_I for read addr=0x%016lx data=0x%016lx\n"), (uintptr_t)rounded_offset, buffer.word);
+		  printf_unfiltered(_("ptrace:PT_READ_I for read addr=0x%016lx data=0x%016lx pid=%d\n"), (uintptr_t)rounded_offset, buffer.word, pid);
 	      }
 #endif
 	    /* Copy appropriate bytes out of the buffer.  */
