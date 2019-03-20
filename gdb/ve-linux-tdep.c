@@ -59,19 +59,23 @@
 #include <signal.h>
 #include "solib-svr4.h"
 
-/* Offset from top to 'SR' ,which are scolar registers, at 
+/* Offset from top to 'SR' ,which are scalar registers, at 
  * core_user_reg_t
  */
-#define	SIGFRAME_OFFSET		(sizeof(uint64_t)*5 + sizeof(siginfo_t))
-#define VE_UCONTEXT_OFFSET	(sizeof(unsigned long) + sizeof(void *) + sizeof(stack_t))
-#define	CORE_USER_REG_OFFSET	0x1400
-#define	SR_OFFSET		(SIGFRAME_OFFSET + VE_UCONTEXT_OFFSET + CORE_USER_REG_OFFSET)
-
-/* return opcode from signal handler
- * 00 00 00 00	b.l     0x0(,%s10)
- * 8a 00 0f 19
- */
-#define	VE_LINUX_SIGRETURN_INSTR	0x000000008a000f19
+#define	VE_SIGFRAME_OFFSET	 		512
+#define	VE_SIGFRAME_UCONTEXT_OFFSET		(sizeof(uint64_t)*5 \
+						 + sizeof(char)*256 \
+						 + sizeof(siginfo_t))
+#define	VE_UCONTEXT_CORE_USER_REG_OFFSET	(sizeof(unsigned long) \
+						 + sizeof(void *) \
+						 + sizeof(stack_t))
+#define	VE_CORE_USER_REG_IC_OFFSET		0x1010
+#define	VE_CORE_USER_REG_S0_OFFSET		0x1400
+#define	VE_REG_OFFSET	(VE_SIGFRAME_OFFSET \
+			 + VE_SIGFRAME_UCONTEXT_OFFSET \
+			 + VE_UCONTEXT_CORE_USER_REG_OFFSET)
+#define	VE_IC_OFFSET	(VE_REG_OFFSET + VE_CORE_USER_REG_IC_OFFSET)
+#define	VE_SR_OFFSET	(VE_REG_OFFSET + VE_CORE_USER_REG_S0_OFFSET)
 
 /* See following;
  * setup_ve_frame() in veos/psm/task_signal.c
@@ -86,11 +90,14 @@ ve_linux_sigreturn_init (const struct tramp_frame *self,
 {
   int i;
   CORE_ADDR sp = get_frame_register_unsigned (this_frame, VE_SP_REGNUM);
-  CORE_ADDR base = sp + SR_OFFSET;
+  CORE_ADDR base = sp + VE_SR_OFFSET;
 
   /* set scalar registers including LR, SP and FP. */
-  for (i = 0; i < VE_NUM_REGS; i++)
-    trad_frame_set_reg_addr (this_cache, i, base + i * INT_REGISTER_SIZE);
+  for (i = 0; i < 64; i++)
+    trad_frame_set_reg_addr (this_cache, VE_S0_REGNUM + i,
+			     base + i * INT_REGISTER_SIZE);
+
+  trad_frame_set_reg_addr (this_cache, VE_IC_REGNUM, sp + VE_IC_OFFSET);
 
   /* Save a frame ID.  */
   trad_frame_set_id (this_cache, frame_id_build (sp, func));
@@ -100,7 +107,11 @@ static struct tramp_frame ve_linux_sigreturn_tramp_frame = {
   SIGTRAMP_FRAME,
   INT_REGISTER_SIZE,
   {
-    { VE_LINUX_SIGRETURN_INSTR, -1 },
+    { 0x462eaeae00000000, -1 },
+    { 0x012e008e00000018, -1 },
+    { 0x45000f0000000000, -1 },
+    { 0x310003ae00000000, -1 },
+    { 0x3f00000000000000, -1 },
     { TRAMP_SENTINEL_INSN }
   },
   ve_linux_sigreturn_init
