@@ -8584,14 +8584,12 @@ catch_load_command_1 (char *arg, int from_tty,
   catch_load_or_unload (arg, from_tty, 1, command);
 }
 
-#ifndef VE_CUSTOMIZATION
 static void
 catch_unload_command_1 (char *arg, int from_tty,
 			struct cmd_list_element *command)
 {
   catch_load_or_unload (arg, from_tty, 0, command);
 }
-#endif
 
 /* Initialize a new breakpoint of the bp_catchpoint kind.  If TEMPFLAG
    is non-zero, then make the breakpoint temporary.  If COND_STRING is
@@ -16475,7 +16473,6 @@ If REGEX is given, only stop for libraries matching the regular expression."),
 		     NULL,
 		     CATCH_PERMANENT,
 		     CATCH_TEMPORARY);
-#ifndef VE_CUSTOMIZATION
   add_catch_command ("unload", _("Catch unloads of shared libraries.\n\
 Usage: catch unload [REGEX]\n\
 If REGEX is given, only stop for libraries matching the regular expression."),
@@ -16484,6 +16481,7 @@ If REGEX is given, only stop for libraries matching the regular expression."),
 		     CATCH_PERMANENT,
 		     CATCH_TEMPORARY);
 
+#ifndef VE_CUSTOMIZATION
   c = add_com ("watch", class_breakpoint, watch_command, _("\
 Set a watchpoint for an expression.\n\
 Usage: watch [-l|-location] EXPRESSION\n\
