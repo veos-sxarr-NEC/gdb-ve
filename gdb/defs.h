@@ -17,6 +17,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #ifndef DEFS_H
 #define DEFS_H
@@ -591,8 +592,10 @@ extern double atof (const char *);	/* X3.159-1989  4.10.1.1 */
 
 /* * Maximum size of a register.  Something small, but large enough for
    all known ISAs.  If it turns out to be too small, make it bigger.  */
+/* Maximum size is changed to 2048 from 64 for the vector register of
+   VE architecture. */
 
-enum { MAX_REGISTER_SIZE = 64 };
+enum { MAX_REGISTER_SIZE = 2048 };
 
 /* In findvar.c.  */
 

@@ -18,6 +18,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #include "defs.h"
 #include "target.h"
@@ -86,7 +87,9 @@ static int return_zero (struct target_ops *);
 
 static int return_zero_has_execution (struct target_ops *, ptid_t);
 
+#ifndef VE_CUSTOMIZATION
 static void target_command (char *, int);
+#endif
 
 static struct target_ops *find_default_run_target (char *);
 
@@ -181,6 +184,7 @@ show_targetdebug (struct ui_file *file, int from_tty,
 
 static void setup_target_debug (void);
 
+#ifndef VE_CUSTOMIZATION
 /* The user just typed 'target' without the name of a target.  */
 
 static void
@@ -189,6 +193,7 @@ target_command (char *arg, int from_tty)
   fputs_filtered ("Argument required (target name).  Try `help target'\n",
 		  gdb_stdout);
 }
+#endif
 
 /* Default target_has_* methods for process_stratum targets.  */
 
@@ -374,6 +379,7 @@ add_target_with_completer (struct target_ops *t,
 
   VEC_safe_push (target_ops_p, target_structs, t);
 
+#ifndef VE_CUSTOMIZATION
   if (targetlist == NULL)
     add_prefix_cmd ("target", class_run, target_command, _("\
 Connect to a target machine or process.\n\
@@ -382,6 +388,19 @@ Remaining arguments are interpreted by the target protocol.  For more\n\
 information on the arguments for a particular protocol, type\n\
 `help target ' followed by the protocol name."),
 		    &targetlist, "target ", 0, &cmdlist);
+#else
+  if ((strcmp (t->to_shortname, "core") == 0)
+      || (strcmp (t->to_shortname, "exec") == 0)
+      || (strcmp (t->to_shortname, "extended-remote") == 0)
+      || (strcmp (t->to_shortname, "native") == 0)
+      || (strcmp (t->to_shortname, "record-btrace") == 0)
+      || (strcmp (t->to_shortname, "record-core") == 0)
+      || (strcmp (t->to_shortname, "record-full") == 0)
+      || (strcmp (t->to_shortname, "remote") == 0)
+      || (strcmp (t->to_shortname, "tfile") == 0))
+    return;
+
+#endif
   c = add_cmd (t->to_shortname, no_class, NULL, t->to_doc, &targetlist);
   set_cmd_sfunc (c, open_target);
   set_cmd_context (c, t);
@@ -3829,12 +3848,14 @@ default_rcmd (struct target_ops *self, const char *command,
   error (_("\"monitor\" command not supported by this target."));
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 do_monitor_command (char *cmd,
 		 int from_tty)
 {
   target_rcmd (cmd, gdb_stdtarg);
 }
+#endif
 
 /* Print the name of each layers of our target stack.  */
 
@@ -3886,6 +3907,9 @@ maint_set_target_async_command (char *args, int from_tty,
       error (_("Cannot change this setting while the inferior is running."));
     }
 
+#ifdef VE_CUSTOMIZATION
+  target_async_permitted_1 = target_async_permitted;
+#endif
   target_async_permitted = target_async_permitted_1;
 }
 
@@ -3939,6 +3963,9 @@ maint_set_target_non_stop_command (char *args, int from_tty,
       error (_("Cannot change this setting while the inferior is running."));
     }
 
+#ifdef VE_CUSTOMIZATION
+  target_non_stop_enabled_1 = target_non_stop_enabled;
+#endif
   target_non_stop_enabled = target_non_stop_enabled_1;
 }
 
@@ -4016,6 +4043,34 @@ set_write_memory_permission (char *args, int from_tty,
 }
 
 
+#ifdef VE_CUSTOMIZATION
+#include "cli/cli-decode.h"
+static void
+set_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  trust_readonly = 0;
+}
+
+static void
+target_permissions_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  if (!strcmp (c->name, "may-insert-fast-tracepoints"))
+    may_insert_fast_tracepoints_1 = 1;
+  if (!strcmp (c->name, "may-insert-tracepoints"))
+    may_insert_tracepoints_1 = 1;
+  if (!strcmp (c->name, "may-interrupt"))
+    may_stop_1 = 1;
+}
+
+#define VE_SET_FUNC set_dummy_func
+#define VE_TARGET_PREMISSION_FUNC target_permissions_func
+#else
+#define VE_SET_FUNC NULL
+#define VE_TARGET_PREMISSION_FUNC set_target_permissions
+#endif
+
 void
 initialize_targets (void)
 {
@@ -4041,12 +4096,14 @@ Show mode for reading from readonly sections."), _("\
 When this mode is on, memory reads from readonly sections (such as .text)\n\
 will be read from the object file instead of from the target.  This will\n\
 result in significant performance improvement for remote targets."),
-			   NULL,
+			   VE_SET_FUNC,
 			   show_trust_readonly,
 			   &setlist, &showlist);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("monitor", class_obscure, do_monitor_command,
 	   _("Send a command to the remote monitor (remote targets only)."));
+#endif
 
   add_cmd ("target-stack", class_maintenance, maintenance_print_target_stack,
            _("Print the name of each layer of the internal target stack."),
@@ -4105,7 +4162,7 @@ Set permission to insert tracepoints in the target."), _("\
 Show permission to insert tracepoints in the target."), _("\
 When this permission is on, GDB may insert tracepoints in the program.\n\
 Otherwise, any sort of insertion attempt will result in an error."),
-			   set_target_permissions, NULL,
+			   VE_TARGET_PREMISSION_FUNC, NULL,
 			   &setlist, &showlist);
 
   add_setshow_boolean_cmd ("may-insert-fast-tracepoints", class_support,
@@ -4114,7 +4171,7 @@ Set permission to insert fast tracepoints in the target."), _("\
 Show permission to insert fast tracepoints in the target."), _("\
 When this permission is on, GDB may insert fast tracepoints.\n\
 Otherwise, any sort of insertion attempt will result in an error."),
-			   set_target_permissions, NULL,
+			   VE_TARGET_PREMISSION_FUNC, NULL,
 			   &setlist, &showlist);
 
   add_setshow_boolean_cmd ("may-interrupt", class_support,
@@ -4123,7 +4180,7 @@ Set permission to interrupt or signal the target."), _("\
 Show permission to interrupt or signal the target."), _("\
 When this permission is on, GDB may interrupt/stop the target's execution.\n\
 Otherwise, any attempt to interrupt or stop will be ignored."),
-			   set_target_permissions, NULL,
+			   VE_TARGET_PREMISSION_FUNC, NULL,
 			   &setlist, &showlist);
 
   add_setshow_boolean_cmd ("auto-connect-native-target", class_support,

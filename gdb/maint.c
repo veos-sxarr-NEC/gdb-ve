@@ -18,6 +18,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 
 #include "defs.h"
@@ -73,12 +74,14 @@ static void maintenance_do_deprecate (char *, int);
    and one with slow communications.  */
 
 int watchdog = 0;
+#ifndef VE_CUSTOMIZATION
 static void
 show_watchdog (struct ui_file *file, int from_tty,
 	       struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file, _("Watchdog timer is %s.\n"), value);
 }
+#endif
 
 /* Access the maintenance subcommands.  */
 
@@ -1154,6 +1157,7 @@ testsuite can check the command deprecator. You probably shouldn't use this,\n\
 If you decide you want to use it: maintenance undeprecate 'commandname'"),
 	   &maintenancelist);
 
+#ifndef VE_CUSTOMIZATION
   add_setshow_zinteger_cmd ("watchdog", class_maintenance, &watchdog, _("\
 Set watchdog timer."), _("\
 Show watchdog timer."), _("\
@@ -1163,6 +1167,7 @@ of time passes without a response from the target, an error occurs."),
 			    NULL,
 			    show_watchdog,
 			    &setlist, &showlist);
+#endif
 
   add_setshow_boolean_cmd ("profile", class_maintenance,
 			   &maintenance_profile_p, _("\

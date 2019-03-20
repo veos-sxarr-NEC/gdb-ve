@@ -16,6 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #include "defs.h"
 #include "frame.h"
@@ -50,7 +51,9 @@ void (*deprecated_file_changed_hook) (char *);
 
 static void file_command (char *, int);
 
+#ifndef VE_CUSTOMIZATION
 static void set_section_command (char *, int);
+#endif
 
 static void exec_files_info (struct target_ops *);
 
@@ -930,6 +933,7 @@ exec_files_info (struct target_ops *t)
     puts_filtered (_("\t<no file loaded>\n"));
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 set_section_command (char *args, int from_tty)
 {
@@ -972,6 +976,7 @@ set_section_command (char *args, int from_tty)
   secprint[seclen] = '\0';
   error (_("Section %s not found"), secprint);
 }
+#endif
 
 /* If we can find a section in FILENAME with BFD index INDEX, adjust
    it to ADDRESS.  */
@@ -1044,6 +1049,19 @@ Specify the filename of the executable file.";
   exec_ops.to_magic = OPS_MAGIC;
 }
 
+#ifdef VE_CUSTOMIZATION
+static void
+set_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  write_files = 0;
+}
+
+#define VE_SET_FUNC set_dummy_func
+#else
+#define VE_SET_FUNC NULL
+#endif
+
 void
 _initialize_exec (void)
 {
@@ -1070,17 +1088,19 @@ is searched for a command of that name.\n\
 No arg means have no executable file."), &cmdlist);
   set_cmd_completer (c, filename_completer);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("section", class_files, set_section_command, _("\
 Change the base address of section SECTION of the exec file to ADDR.\n\
 This can be used if the exec file does not contain section addresses,\n\
 (such as in the a.out format), or when the addresses specified in the\n\
 file itself are wrong.  Each section must be changed separately.  The\n\
 ``info files'' command lists all the sections and their addresses."));
+#endif
 
   add_setshow_boolean_cmd ("write", class_support, &write_files, _("\
 Set writing into executable and core files."), _("\
 Show writing into executable and core files."), NULL,
-			   NULL,
+			   VE_SET_FUNC,
 			   show_write_files,
 			   &setlist, &showlist);
 

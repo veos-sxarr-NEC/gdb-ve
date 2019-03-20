@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #include "defs.h"
 #include "symtab.h"
@@ -484,6 +485,7 @@ end_msglist (struct parser_state *ps)
   return val;
 }
 
+#ifndef VE_CUSTOMIZATION
 /*
  * Function: specialcmp (const char *a, const char *b)
  *
@@ -801,6 +803,7 @@ classes_info (char *regexp, int from_tty)
   else
     printf_filtered (_("No classes matching \"%s\"\n"), regexp ? regexp : "*");
 }
+#endif
 
 static char * 
 parse_selector (char *method, char **selector)
@@ -1164,6 +1167,7 @@ find_imps (const char *method, VEC (const_char_ptr) **symbol_names)
   return method + (tmp - buf);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void 
 print_object_command (char *args, int from_tty)
 {
@@ -1213,6 +1217,7 @@ print_object_command (char *args, int from_tty)
     printf_filtered(_("<object returns empty description>"));
   printf_filtered ("\n");
 }
+#endif
 
 /* The data structure 'methcalls' is used to detect method calls (thru
  * ObjC runtime lib functions objc_msgSend, objc_msgSendSuper, etc.),
@@ -1363,6 +1368,7 @@ extern initialize_file_ftype _initialize_objc_language;
 void
 _initialize_objc_language (void)
 {
+#ifndef VE_CUSTOMIZATION
   add_language (&objc_language_defn);
   add_info ("selectors", selectors_info,    /* INFO SELECTORS command.  */
 	    _("All Objective-C selectors, or those matching REGEXP."));
@@ -1371,6 +1377,7 @@ _initialize_objc_language (void)
   add_com ("print-object", class_vars, print_object_command, 
 	   _("Ask an Objective-C object to print itself."));
   add_com_alias ("po", "print-object", class_vars, 1);
+#endif
 }
 
 static void 

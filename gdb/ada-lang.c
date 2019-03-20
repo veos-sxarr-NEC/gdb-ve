@@ -16,6 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 
 #include "defs.h"
@@ -350,6 +351,7 @@ static struct obstack symbol_list_obstack;
 static struct cmd_list_element *maint_set_ada_cmdlist;
 static struct cmd_list_element *maint_show_ada_cmdlist;
 
+#ifndef VE_CUSTOMIZATION
 /* Implement the "maintenance set ada" (prefix) command.  */
 
 static void
@@ -366,6 +368,7 @@ maint_show_ada_cmd (char *args, int from_tty)
 {
   cmd_show_list (maint_show_ada_cmdlist, from_tty, "");
 }
+#endif
 
 /* The "maintenance ada set/show ignore-descriptive-type" value.  */
 
@@ -12801,6 +12804,7 @@ print_recreate_catch_assert (struct breakpoint *b, struct ui_file *fp)
 
 static struct breakpoint_ops catch_assert_breakpoint_ops;
 
+#ifndef VE_CUSTOMIZATION
 /* Return a newly allocated copy of the first space-separated token
    in ARGSP, and then adjust ARGSP to point immediately after that
    token.
@@ -12910,6 +12914,7 @@ catch_ada_exception_command_split (char *args,
     }
   *cond_string = cond;
 }
+#endif
 
 /* Return the name of the symbol on which we should break in order to
    implement a catchpoint of the EX kind.  */
@@ -13091,6 +13096,7 @@ create_ada_exception_catchpoint (struct gdbarch *gdbarch,
   install_breakpoint (0, &c->base, 1);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Implement the "catch exception" command.  */
 
 static void
@@ -13165,6 +13171,7 @@ catch_assert_command (char *arg, int from_tty,
 				   tempflag, 1 /* enabled */,
 				   from_tty);
 }
+#endif
 
 /* Return non-zero if the symbol SYM is an Ada exception object.  */
 
@@ -13487,6 +13494,7 @@ ada_exceptions_list (const char *regexp)
   return result;
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Implement the "info exceptions" command.  */
 
 static void
@@ -13512,6 +13520,7 @@ info_exceptions_command (char *regexp, int from_tty)
 
   do_cleanups (cleanup);
 }
+#endif
 
                                 /* Operators */
 /* Information about operators given special treatment in functions
@@ -14083,6 +14092,7 @@ extern initialize_file_ftype _initialize_ada_language;
 static struct cmd_list_element *set_ada_list;
 static struct cmd_list_element *show_ada_list;
 
+#ifndef VE_CUSTOMIZATION
 /* Implement the "set ada" prefix command.  */
 
 static void
@@ -14100,6 +14110,7 @@ show_ada_command (char *args, int from_tty)
 {
   cmd_show_list (show_ada_list, from_tty, "");
 }
+#endif
 
 static void
 initialize_ada_catchpoint_ops (void)
@@ -14165,6 +14176,7 @@ _initialize_ada_language (void)
 
   initialize_ada_catchpoint_ops ();
 
+#ifndef VE_CUSTOMIZATION
   add_prefix_cmd ("ada", no_class, set_ada_command,
                   _("Prefix command for changing Ada-specfic settings"),
                   &set_ada_list, "set ada ", 0, &setlist);
@@ -14209,9 +14221,11 @@ With an argument, catch only exceptions with the given name."),
                      NULL,
 		     CATCH_PERMANENT,
 		     CATCH_TEMPORARY);
+#endif
 
   varsize_limit = 65536;
 
+#ifndef VE_CUSTOMIZATION
   add_info ("exceptions", info_exceptions_command,
 	    _("\
 List all Ada exception names.\n\
@@ -14237,6 +14251,7 @@ the regular expression are listed."));
 When enabled, the debugger will stop using the DW_AT_GNAT_descriptive_type\n\
 DWARF attribute."),
      NULL, NULL, &maint_set_ada_cmdlist, &maint_show_ada_cmdlist);
+#endif
 
   obstack_init (&symbol_list_obstack);
 

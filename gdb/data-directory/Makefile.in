@@ -15,6 +15,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Changes by NEC Corporation for the VE port, 2017-2018
+#
 
 srcdir = @srcdir@
 SYSCALLS_SRCDIR = $(srcdir)/../syscalls
@@ -51,7 +54,7 @@ SYSCALLS_FILES = \
 	i386-linux.xml amd64-linux.xml \
 	sparc-linux.xml sparc64-linux.xml \
 	mips-o32-linux.xml mips-n32-linux.xml mips-n64-linux.xml \
-	s390-linux.xml s390x-linux.xml
+	s390-linux.xml s390x-linux.xml ve-linux.xml
 
 PYTHON_DIR = python
 PYTHON_INSTALL_DIR = $(DESTDIR)$(GDB_DATADIR)/$(PYTHON_DIR)

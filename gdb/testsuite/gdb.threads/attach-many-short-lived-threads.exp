@@ -23,6 +23,7 @@
 
 # Disabled in gdb 7.11.1 because the fix for PR gdb/19828 exposes
 # latent inefficiencies that make this test often time out.
+unsupported "unsupport test"
 return
 
 if {![can_spawn_for_attach]} {

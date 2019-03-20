@@ -16,6 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #include "defs.h"
 #include "arch-utils.h"
@@ -56,6 +57,9 @@
 #include "cli/cli-utils.h"
 #include "infcall.h"
 #include "thread-fsm.h"
+#ifdef VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* Local functions: */
 
@@ -71,9 +75,11 @@ static void path_command (char *, int);
 
 static void unset_command (char *, int);
 
+#ifndef VE_CUSTOMIZATION
 static void float_info (char *, int);
 
 static void disconnect_command (char *, int);
+#endif
 
 static void unset_environment_command (char *, int);
 
@@ -137,7 +143,15 @@ int stopped_by_random_signal;
 
 /* See inferior.h.  */
 
+#ifdef VE_CUSTOMIZATION
+/* On VE, ve_exec doesn't send SIGTRAP twice.
+ * "ve_exec" is executed directly, not through "exec".
+ * default value 1 => 0
+ */
+int startup_with_shell = 0;
+#else
 int startup_with_shell = 1;
+#endif
 
 
 /* Accessor routines.  */
@@ -240,6 +254,35 @@ show_args_command (struct ui_file *file, int from_tty,
      directly.  */
   deprecated_show_value_hack (file, from_tty, c, get_inferior_args ());
 }
+
+#ifdef VE_CUSTOMIZATION
+static char *
+get_inferior_ve_args (void)
+{
+  if (current_inferior ()->ve_args == NULL)
+    current_inferior ()->ve_args = xstrdup ("");
+
+  return current_inferior ()->ve_args;
+}
+
+static void
+set_ve_args_command (char *args, int from_tty, struct cmd_list_element *c)
+{
+  char *newargs = inferior_args_scratch;
+
+  xfree (current_inferior()->ve_args);
+  current_inferior()->ve_args = newargs ? xstrdup(newargs) : NULL;
+}
+
+static void
+show_ve_args_command (struct ui_file *file, int from_tty,
+		   struct cmd_list_element *c, const char *value)
+{
+  /* Note that we ignore the passed-in value in favor of computing it
+     directly.  */
+  deprecated_show_value_hack (file, from_tty, c, get_inferior_ve_args());
+}
+#endif
 
 
 /* Compute command-line string given argument vector.  This does the
@@ -513,6 +556,47 @@ prepare_execution_command (struct target_ops *target, int background)
     }
 }
 
+#ifdef VE_CUSTOMIZATION
+static char *
+build_allargs(void)
+{
+  char *args, *ve_args,*allargs;
+  size_t args_len, ve_args_len, allargs_len;
+  char *exec_file;
+
+  args = get_inferior_args();
+  ve_args = get_inferior_ve_args();
+  exec_file = (char *) get_exec_file (0);
+
+  if (exec_file == NULL)
+    {
+      allargs = xstrdup("");
+      return allargs;
+    }
+
+  if (args == NULL || args[0] == '\0')
+    args_len = 0;
+  else
+    args_len = strlen(args);
+
+  if (ve_args == NULL || ve_args[0] == '\0') 
+    ve_args_len = 0;
+  else 
+    ve_args_len = strlen(ve_args);
+  /* 1:space or '\0' 2:"--" */
+  allargs_len = sizeof(VE_OPT_TRACEME) + 1 + ve_args_len + 1 + 2 + 1 +
+	strlen(exec_file) + 1 + args_len + 1;
+  allargs = xmalloc(allargs_len); 
+  snprintf(allargs, allargs_len, "%s %s -- %s %s",
+	VE_OPT_TRACEME, 
+	(ve_args == NULL) ? "" : ve_args,
+	 exec_file,
+	(args == NULL) ? "" : args);
+
+  return allargs;
+}
+#endif
+
 /* Implement the "run" command.  If TBREAK_AT_MAIN is set, then insert
    a temporary breakpoint at the begining of the main program before
    running the program.  */
@@ -527,6 +611,9 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
   struct target_ops *run_target;
   int async_exec;
   struct cleanup *args_chain;
+#ifdef VE_CUSTOMIZATION
+  char *allargs;
+#endif
 
   dont_repeat ();
 
@@ -582,16 +669,30 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
   if (args != NULL)
     set_inferior_args (args);
 
+#ifdef VE_CUSTOMIZATION
+  allargs = build_allargs();
+#endif
   if (from_tty)
     {
       ui_out_field_string (uiout, NULL, "Starting program");
       ui_out_text (uiout, ": ");
+#ifdef VE_CUSTOMIZATION
+      if (exec_file == NULL)
+	ve_exec_file = NULL;
+      if (ve_exec_file)
+	ui_out_field_string (uiout, "execfile", ve_exec_file);
+#else
       if (exec_file)
 	ui_out_field_string (uiout, "execfile", exec_file);
+#endif
       ui_out_spaces (uiout, 1);
       /* We call get_inferior_args() because we might need to compute
 	 the value now.  */
+#ifdef VE_CUSTOMIZATION
+      ui_out_field_string (uiout, "infargs", allargs);
+#else
       ui_out_field_string (uiout, "infargs", get_inferior_args ());
+#endif
       ui_out_text (uiout, "\n");
       ui_out_flush (uiout);
     }
@@ -601,9 +702,16 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
 
   /* We call get_inferior_args() because we might need to compute
      the value now.  */
+#ifdef VE_CUSTOMIZATION
+  run_target->to_create_inferior (run_target, exec_file, allargs,
+				  environ_vector (current_inferior ()->environment),
+				  from_tty);
+  xfree (allargs);
+#else
   run_target->to_create_inferior (run_target, exec_file, get_inferior_args (),
 				  environ_vector (current_inferior ()->environment),
 				  from_tty);
+#endif
   /* to_create_inferior should push the target, so after this point we
      shouldn't refer to run_target again.  */
   run_target = NULL;
@@ -2988,6 +3096,7 @@ detach_command (char *args, int from_tty)
     deprecated_detach_hook ();
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Disconnect from the current target without resuming it (leaving it
    waiting for a debugger).
 
@@ -3008,6 +3117,7 @@ disconnect_command (char *args, int from_tty)
   if (deprecated_detach_hook)
     deprecated_detach_hook ();
 }
+#endif
 
 void 
 interrupt_target_1 (int all_threads)
@@ -3030,6 +3140,7 @@ interrupt_target_1 (int all_threads)
     set_stop_requested (ptid, 1);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* interrupt [-a]
    Stop the execution of the target while running in async mode, in
    the backgound.  In all-stop, stop the whole process.  In non-stop
@@ -3055,6 +3166,7 @@ interrupt_command (char *args, int from_tty)
       interrupt_target_1 (all_threads);
     }
 }
+#endif
 
 /* See inferior.h.  */
 
@@ -3081,6 +3193,7 @@ default_print_float_info (struct gdbarch *gdbarch, struct ui_file *file,
 		      "available for this processor.\n");
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 float_info (char *args, int from_tty)
 {
@@ -3092,6 +3205,7 @@ float_info (char *args, int from_tty)
   frame = get_selected_frame (NULL);
   gdbarch_print_float_info (get_frame_arch (frame), gdb_stdout, frame, args);
 }
+#endif
 
 static void
 unset_command (char *args, int from_tty)
@@ -3212,6 +3326,21 @@ Follow this command with any number of args, to be passed to the program."),
   gdb_assert (c != NULL);
   set_cmd_completer (c, filename_completer);
 
+#ifdef VE_CUSTOMIZATION
+  cmd_name = "ve_args";
+  add_setshow_string_noescape_cmd (cmd_name, class_run,
+				   &inferior_args_scratch, _("\
+Set argument list to ve_exec being debugged when it is started."), _("\
+Show argument list to ve_exec being debugged when it is started."), _("\
+Follow this command with any number of args, to be passed to the program."),
+				   set_ve_args_command,
+				   show_ve_args_command,
+				   &setlist, &showlist);
+  c = lookup_cmd (&cmd_name, setlist, "", -1, 1);
+  gdb_assert (c != NULL);
+  set_cmd_completer (c, filename_completer);
+#endif
+
   c = add_cmd ("environment", no_class, environment_info, _("\
 The environment to give the program, or one variable's value.\n\
 With an argument VAR, prints the value of environment variable VAR to\n\
@@ -3279,10 +3408,12 @@ If a process, it is no longer traced, and it continues its execution.  If\n\
 you were debugging a file, the file is closed and gdb no longer accesses it."),
 		  &detachlist, "detach ", 0, &cmdlist);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("disconnect", class_run, disconnect_command, _("\
 Disconnect from a target.\n\
 The target will wait for another debugger to connect.  Not available for\n\
 all targets."));
+#endif
 
   c = add_com ("signal", class_run, signal_command, _("\
 Continue program with the specified signal.\n\
@@ -3399,11 +3530,13 @@ You may specify arguments to give to your program, just as with the\n\
 \"run\" command."));
   set_cmd_completer (c, filename_completer);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("interrupt", class_run, interrupt_command,
 	   _("Interrupt the execution of the debugged program.\n\
 If non-stop mode is enabled, interrupt only the current thread,\n\
 otherwise all the threads in the program are stopped.  To \n\
 interrupt all running threads in non-stop mode, use the -a option."));
+#endif
 
   c = add_info ("registers", nofp_registers_info, _("\
 List of integer registers and their contents, for selected stack frame.\n\
@@ -3419,8 +3552,10 @@ Register name as argument means describe only that register."));
   add_info ("program", program_info,
 	    _("Execution status of the program."));
 
+#ifndef VE_CUSTOMIZATION
   add_info ("float", float_info,
 	    _("Print the status of the floating point unit\n"));
+#endif
 
   add_info ("vector", vector_info,
 	    _("Print the status of the vector unit\n"));

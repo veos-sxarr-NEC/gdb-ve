@@ -16,6 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 /* See the GDB User Guide for details of the GDB remote protocol.  */
 
@@ -1335,6 +1336,7 @@ remote_fileio_to_host_stat (struct fio_stat *fst, struct stat *st)
 }
 
 
+#ifndef VE_CUSTOMIZATION
 static void
 set_system_call_allowed (char *args, int from_tty)
 {
@@ -1361,6 +1363,7 @@ show_system_call_allowed (char *args, int from_tty)
   printf_unfiltered ("Calling host system(3) call from target is %sallowed\n",
 		     remote_fio_system_call_allowed ? "" : "not ");
 }
+#endif
 
 void
 initialize_remote_fileio (struct cmd_list_element *remote_set_cmdlist,
@@ -1369,6 +1372,7 @@ initialize_remote_fileio (struct cmd_list_element *remote_set_cmdlist,
   sigint_fileio_token =
     create_async_signal_handler (async_remote_fileio_interrupt, NULL);
 
+#ifndef VE_CUSTOMIZATION
   add_cmd ("system-call-allowed", no_class,
 	   set_system_call_allowed,
 	   _("Set if the host system(3) call is allowed for the target."),
@@ -1377,4 +1381,5 @@ initialize_remote_fileio (struct cmd_list_element *remote_set_cmdlist,
 	   show_system_call_allowed,
 	   _("Show if the host system(3) call is allowed for the target."),
 	   &remote_show_cmdlist);
+#endif
 }

@@ -16,6 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2018 */
 
 #include "defs.h"
 #include "arch-utils.h"
@@ -181,7 +182,9 @@ static int breakpoint_location_address_range_overlap (struct bp_location *,
 
 static void breakpoints_info (char *, int);
 
+#ifndef VE_CUSTOMIZATION
 static void watchpoints_info (char *, int);
+#endif
 
 static int breakpoint_1 (char *, int, 
 			 int (*) (const struct breakpoint *));
@@ -218,9 +221,11 @@ static int hw_watchpoint_used_count_others (struct breakpoint *except,
 					    enum bptype type,
 					    int *other_type_used);
 
+#ifndef VE_CUSTOMIZATION
 static void hbreak_command (char *, int);
 
 static void thbreak_command (char *, int);
+#endif
 
 static void enable_breakpoint_disp (struct breakpoint *, enum bpdisp,
 				    int count);
@@ -282,6 +287,7 @@ static int is_hardware_watchpoint (const struct breakpoint *bpt);
 
 static void insert_breakpoint_locations (void);
 
+#ifndef VE_CUSTOMIZATION
 static void tracepoints_info (char *, int);
 
 static void delete_trace_command (char *, int);
@@ -289,6 +295,7 @@ static void delete_trace_command (char *, int);
 static void enable_trace_command (char *, int);
 
 static void disable_trace_command (char *, int);
+#endif
 
 static void trace_pass_command (char *, int);
 
@@ -6977,6 +6984,7 @@ breakpoints_info (char *args, int from_tty)
   default_collect_info ();
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 watchpoints_info (char *args, int from_tty)
 {
@@ -6991,6 +6999,7 @@ watchpoints_info (char *args, int from_tty)
 	ui_out_message (uiout, 0, "No watchpoint matching '%s'.\n", args);
     }
 }
+#endif
 
 static void
 maintenance_info_breakpoints (char *args, int from_tty)
@@ -8575,12 +8584,14 @@ catch_load_command_1 (char *arg, int from_tty,
   catch_load_or_unload (arg, from_tty, 1, command);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 catch_unload_command_1 (char *arg, int from_tty,
 			struct cmd_list_element *command)
 {
   catch_load_or_unload (arg, from_tty, 0, command);
 }
+#endif
 
 /* Initialize a new breakpoint of the bp_catchpoint kind.  If TEMPFLAG
    is non-zero, then make the breakpoint temporary.  If COND_STRING is
@@ -9219,6 +9230,36 @@ update_dprintf_commands (char *args, int from_tty,
 	update_dprintf_command_list (b);
     }
 }
+
+#ifdef VE_CUSTOMIZATION
+#include "cli/cli-decode.h"
+static void
+set_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  if (!strcmp (c->name, "auto-hw"))
+    automatic_hardware_breakpoints = 1;
+  if (!strcmp (c->name, "can-use-hw-watchpoints"))
+    can_use_hw_watchpoints = 1;
+  if (!strcmp (c->name, "disconnected-dprintf"))
+    disconnected_dprintf = 1;
+}
+
+static void
+dprintf_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  if (dprintf_function)
+    xfree (dprintf_function);
+  dprintf_function = xstrdup ("printf");
+}
+
+#define VE_SET_FUNC set_dummy_func
+#define VE_DPRINT_FUNC dprintf_dummy_func
+#else
+#define VE_SET_FUNC NULL
+#define VE_DPRINT_FUNC update_dprintf_commands
+#endif
 
 /* Create a breakpoint with SAL as location.  Use LOCATION
    as a description of the location, and COND_STRING
@@ -10070,6 +10111,7 @@ tbreak_command (char *arg, int from_tty)
   break_command_1 (arg, BP_TEMPFLAG, from_tty);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 hbreak_command (char *arg, int from_tty)
 {
@@ -10081,6 +10123,7 @@ thbreak_command (char *arg, int from_tty)
 {
   break_command_1 (arg, (BP_TEMPFLAG | BP_HARDWAREFLAG), from_tty);
 }
+#endif
 
 static void
 stop_command (char *arg, int from_tty)
@@ -10155,6 +10198,7 @@ stopat_command (char *arg, int from_tty)
     break_command_1 (arg, 0, from_tty);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* The dynamic printf command is mostly like a regular breakpoint, but
    with a prewired command list consisting of a single output command,
    built from extra arguments supplied on the dprintf command
@@ -10201,6 +10245,7 @@ agent_printf_command (char *arg, int from_tty)
 {
   error (_("May only run agent-printf on the target"));
 }
+#endif
 
 /* Implement the "breakpoint_hit" breakpoint_ops method for
    ranged breakpoints.  */
@@ -10381,6 +10426,7 @@ find_breakpoint_range_end (struct symtab_and_line sal)
   return end;
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Implement the "break-range" CLI command.  */
 
 static void
@@ -10500,6 +10546,7 @@ break_range_command (char *arg, int from_tty)
   observer_notify_breakpoint_created (b);
   update_global_location_list (UGLL_MAY_INSERT);
 }
+#endif
 
 /*  Return non-zero if EXP is verified as constant.  Returned zero
     means EXP is variable.  Also the constant detection may fail for
@@ -11533,6 +11580,7 @@ watch_command_wrapper (char *arg, int from_tty, int internal)
   watch_command_1 (arg, hw_write, from_tty, 0, internal);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* A helper function that looks for the "-location" argument and then
    calls watch_command_1.  */
 
@@ -11557,6 +11605,7 @@ watch_command (char *arg, int from_tty)
 {
   watch_maybe_just_location (arg, hw_write, from_tty);
 }
+#endif
 
 void
 rwatch_command_wrapper (char *arg, int from_tty, int internal)
@@ -11564,11 +11613,13 @@ rwatch_command_wrapper (char *arg, int from_tty, int internal)
   watch_command_1 (arg, hw_read, from_tty, 0, internal);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 rwatch_command (char *arg, int from_tty)
 {
   watch_maybe_just_location (arg, hw_read, from_tty);
 }
+#endif
 
 void
 awatch_command_wrapper (char *arg, int from_tty, int internal)
@@ -11576,11 +11627,13 @@ awatch_command_wrapper (char *arg, int from_tty, int internal)
   watch_command_1 (arg, hw_access, from_tty, 0, internal);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 awatch_command (char *arg, int from_tty)
 {
   watch_maybe_just_location (arg, hw_access, from_tty);
 }
+#endif
 
 
 /* Data for the FSM that manages the until(location)/advance commands
@@ -11882,6 +11935,7 @@ catch_fork_command_1 (char *arg, int from_tty,
     }
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 catch_exec_command_1 (char *arg, int from_tty, 
 		      struct cmd_list_element *command)
@@ -11914,6 +11968,7 @@ catch_exec_command_1 (char *arg, int from_tty,
 
   install_breakpoint (0, &c->base, 1);
 }
+#endif
 
 void
 init_ada_exception_breakpoint (struct breakpoint *b,
@@ -15220,6 +15275,7 @@ set_tracepoint_count (int num)
   set_internalvar_integer (lookup_internalvar ("tpnum"), num);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 trace_command (char *arg, int from_tty)
 {
@@ -15307,6 +15363,7 @@ strace_command (char *arg, int from_tty)
 		     0 /* internal */, 0);
   do_cleanups (back_to);
 }
+#endif
 
 /* Set up a fake reader function that gets command lines from a linked
    list that was acquired during tracepoint uploading.  */
@@ -15423,6 +15480,7 @@ create_tracepoint_from_upload (struct uploaded_tp *utp)
   return tp;
 }
   
+#ifndef VE_CUSTOMIZATION
 /* Print information on tracepoint number TPNUM_EXP, or all if
    omitted.  */
 
@@ -15496,6 +15554,7 @@ delete_trace_command (char *arg, int from_tty)
   else
     map_breakpoint_numbers (arg, do_map_delete_breakpoint, NULL);
 }
+#endif
 
 /* Helper function for trace_pass_command.  */
 
@@ -15783,6 +15842,7 @@ save_breakpoints_command (char *args, int from_tty)
   save_breakpoints (args, from_tty, NULL);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* The `save tracepoints' command.  */
 
 static void
@@ -15790,6 +15850,7 @@ save_tracepoints_command (char *args, int from_tty)
 {
   save_breakpoints (args, from_tty, is_tracepoint);
 }
+#endif
 
 /* Create a vector of all tracepoints.  */
 
@@ -16193,6 +16254,7 @@ by using \"enable delete\" on the breakpoint number.\n\
 BREAK_ARGS_HELP ("tbreak")));
   set_cmd_completer (c, location_completer);
 
+#ifndef VE_CUSTOMIZATION
   c = add_com ("hbreak", class_breakpoint, hbreak_command, _("\
 Set a hardware assisted breakpoint.\n\
 Like \"break\" except the breakpoint requires hardware support,\n\
@@ -16208,6 +16270,7 @@ so it will be deleted when hit.\n\
 \n"
 BREAK_ARGS_HELP ("thbreak")));
   set_cmd_completer (c, location_completer);
+#endif
 
   add_prefix_cmd ("enable", class_breakpoint, enable_command, _("\
 Enable some breakpoints.\n\
@@ -16393,6 +16456,7 @@ Set temporary catchpoints to catch events."),
                      NULL,
 		     (void *) (uintptr_t) catch_fork_permanent,
 		     (void *) (uintptr_t) catch_fork_temporary);
+#ifndef VE_CUSTOMIZATION
   add_catch_command ("vfork", _("Catch calls to vfork."),
 		     catch_fork_command_1,
                      NULL,
@@ -16403,6 +16467,7 @@ Set temporary catchpoints to catch events."),
                      NULL,
 		     CATCH_PERMANENT,
 		     CATCH_TEMPORARY);
+#endif
   add_catch_command ("load", _("Catch loads of shared libraries.\n\
 Usage: catch load [REGEX]\n\
 If REGEX is given, only stop for libraries matching the regular expression."),
@@ -16410,6 +16475,7 @@ If REGEX is given, only stop for libraries matching the regular expression."),
 		     NULL,
 		     CATCH_PERMANENT,
 		     CATCH_TEMPORARY);
+#ifndef VE_CUSTOMIZATION
   add_catch_command ("unload", _("Catch unloads of shared libraries.\n\
 Usage: catch unload [REGEX]\n\
 If REGEX is given, only stop for libraries matching the regular expression."),
@@ -16447,6 +16513,7 @@ the memory to which it refers."));
 
   add_info ("watchpoints", watchpoints_info, _("\
 Status of specified watchpoints (all watchpoints if no argument)."));
+#endif
 
   /* XXX: cagney/2005-02-23: This should be a boolean, and should
      respond to changes - contrary to the description.  */
@@ -16458,12 +16525,13 @@ If zero, gdb will not use hardware for new watchpoints, even if\n\
 such is available.  (However, any hardware watchpoints that were\n\
 created before setting this to nonzero, will continue to use watchpoint\n\
 hardware.)"),
-			    NULL,
+			    VE_SET_FUNC,
 			    show_can_use_hw_watchpoints,
 			    &setlist, &showlist);
 
   can_use_hw_watchpoints = 1;
 
+#ifndef VE_CUSTOMIZATION
   /* Tracepoint manipulation commands.  */
 
   c = add_com ("trace", class_breakpoint, trace_command, _("\
@@ -16540,6 +16608,7 @@ Set the passcount for a tracepoint.\n\
 The trace will end when the tracepoint has been passed 'count' times.\n\
 Usage: passcount COUNT TPNUM, where TPNUM may also be \"all\";\n\
 if TPNUM is omitted, passcount refers to the last tracepoint defined."));
+#endif
 
   add_prefix_cmd ("save", class_breakpoint, save_command,
 		  _("Save breakpoint definitions as a script."),
@@ -16554,6 +16623,7 @@ session to restore them."),
 	       &save_cmdlist);
   set_cmd_completer (c, filename_completer);
 
+#ifndef VE_CUSTOMIZATION
   c = add_cmd ("tracepoints", class_trace, save_tracepoints_command, _("\
 Save current tracepoint definitions as a script.\n\
 Use the 'source' command in another debug session to restore them."),
@@ -16562,6 +16632,7 @@ Use the 'source' command in another debug session to restore them."),
 
   c = add_com_alias ("save-tracepoints", "save tracepoints", class_trace, 0);
   deprecate_cmd (c, "save tracepoints");
+#endif
 
   add_prefix_cmd ("breakpoint", class_maintenance, set_breakpoint_cmd, _("\
 Breakpoint specific settings\n\
@@ -16598,7 +16669,7 @@ Show automatic usage of hardware breakpoints."), _("\
 If set, the debugger will automatically use hardware breakpoints for\n\
 breakpoints set with \"break\" but falling in read-only memory.  If not set,\n\
 a warning will be emitted for such breakpoints."),
-			   NULL,
+			   VE_SET_FUNC,
 			   show_automatic_hardware_breakpoints,
 			   &breakpoint_set_cmdlist,
 			   &breakpoint_show_cmdlist);
@@ -16634,6 +16705,7 @@ be set to \"gdb\""),
 			   &breakpoint_set_cmdlist,
 			   &breakpoint_show_cmdlist);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("break-range", class_breakpoint, break_range_command, _("\
 Set a breakpoint for an address range.\n\
 break-range START-LOCATION, END-LOCATION\n\
@@ -16656,6 +16728,7 @@ dprintf location,format string,arg1,arg2,...\n\
 location may be a linespec, explicit, or address location.\n"
 "\n" LOCATION_HELP_STRING));
   set_cmd_completer (c, location_completer);
+#endif
 
   add_setshow_enum_cmd ("dprintf-style", class_support,
 			dprintf_style_enums, &dprintf_style, _("\
@@ -16675,7 +16748,7 @@ output stream by setting dprintf-function and dprintf-channel."),
 			  &dprintf_function, _("\
 Set the function to use for dynamic printf"), _("\
 Show the function to use for dynamic printf"), NULL,
-			  update_dprintf_commands, NULL,
+			  VE_DPRINT_FUNC, NULL,
 			  &setlist, &showlist);
 
   dprintf_channel = xstrdup ("");
@@ -16692,13 +16765,15 @@ Set whether dprintf continues after GDB disconnects."), _("\
 Show whether dprintf continues after GDB disconnects."), _("\
 Use this to let dprintf commands continue to hit and produce output\n\
 even if GDB disconnects or detaches from the target."),
-			   NULL,
+			   VE_SET_FUNC,
 			   NULL,
 			   &setlist, &showlist);
 
+#ifndef VE_CUSTOMIZATION
   add_com ("agent-printf", class_vars, agent_printf_command, _("\
 agent-printf \"printf format string\", arg1, arg2, arg3, ..., argn\n\
 (target agent only) This is useful for formatted output in user-defined commands."));
+#endif
 
   automatic_hardware_breakpoints = 1;
 
