@@ -1,6 +1,6 @@
 /* Cache and manage the values of registers for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -890,6 +890,17 @@ regcache_cooked_write_unsigned (struct regcache *regcache, int regnum,
   regcache_cooked_write (regcache, regnum, buf);
 }
 
+/* See regcache.h.  */
+
+void
+regcache_raw_set_cached_value (struct regcache *regcache, int regnum,
+			       const gdb_byte *buf)
+{
+  memcpy (register_buffer (regcache, regnum), buf,
+	  regcache->descr->sizeof_register[regnum]);
+  regcache->register_status[regnum] = REG_VALID;
+}
+
 void
 regcache_raw_write (struct regcache *regcache, int regnum,
 		    const gdb_byte *buf)
@@ -917,9 +928,7 @@ regcache_raw_write (struct regcache *regcache, int regnum,
   inferior_ptid = regcache->ptid;
 
   target_prepare_to_store (regcache);
-  memcpy (register_buffer (regcache, regnum), buf,
-	  regcache->descr->sizeof_register[regnum]);
-  regcache->register_status[regnum] = REG_VALID;
+  regcache_raw_set_cached_value (regcache, regnum, buf);
 
   /* Register a cleanup function for invalidating the register after it is
      written, in case of a failure.  */

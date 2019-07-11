@@ -1,4 +1,4 @@
-# Copyright 2010-2016 Free Software Foundation, Inc.
+# Copyright 2010-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -78,7 +78,7 @@ proc build_executable_from_fission_assembler { testname executable sources optio
 	return -1
     }
 
-    set result [gdb_compile $object_file $executable executable {nodebug}]
+    set result [gdb_compile $object_file $executable executable $options]
     if { "$result" != "" } {
 	return -1
     }

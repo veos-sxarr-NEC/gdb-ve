@@ -1,6 +1,6 @@
 /* Common definitions.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -49,6 +49,9 @@
 #include <stdint.h>
 
 #include <string.h>
+#ifdef HAVE_STRINGS_H
+#include <strings.h>	/* for strcasecmp and strncasecmp */
+#endif
 #include <errno.h>
 #include <alloca.h>
 

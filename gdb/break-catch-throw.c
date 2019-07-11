@@ -1,6 +1,6 @@
 /* Everything about catch/throw catchpoints, for GDB.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -107,7 +107,6 @@ fetch_probe_arguments (struct value **arg0, struct value **arg1)
   struct frame_info *frame = get_selected_frame (_("No frame selected"));
   CORE_ADDR pc = get_frame_pc (frame);
   struct bound_probe pc_probe;
-  const struct sym_probe_fns *pc_probe_fns;
   unsigned n_args;
 
   pc_probe = find_probe_by_pc (pc);

@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2016 Free Software Foundation, Inc.
+# Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -123,6 +123,13 @@ proc test_value_numeric_ops {} {
   gdb_test "python print ('result = ' + str(a+5))" " = 0x7( <.*>)?" "add pointer value with python integer"
   gdb_test "python print ('result = ' + str(b-2))" " = 0x3( <.*>)?" "subtract python integer from pointer value"
   gdb_test "python print ('result = ' + str(b-a))" " = 3" "subtract two pointer values"
+
+  gdb_test "python print ('result = ' + 'result'\[gdb.Value(0)\])" \
+    "result = r" "use value as string index"
+  gdb_test "python print ('result = ' + str((1,2,3)\[gdb.Value(0)\]))" \
+    "result = 1" "use value as tuple index"
+  gdb_test "python print ('result = ' + str(\[1,2,3\]\[gdb.Value(0)\]))" \
+    "result = 1" "use value as array index"
 
   # Test some invalid operations.
 

@@ -1,6 +1,6 @@
 /* Language independent support for printing types for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -406,7 +406,7 @@ whatis_exp (char *exp, int show)
   struct type *real_type = NULL;
   struct type *type;
   int full = 0;
-  int top = -1;
+  LONGEST top = -1;
   int using_enc = 0;
   struct value_print_options opts;
   struct type_print_options flags = default_ptype_flags;

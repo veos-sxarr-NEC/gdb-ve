@@ -1,6 +1,6 @@
 /* Common target dependent code for GNU/Linux on ARM systems.
 
-   Copyright (C) 1999-2016 Free Software Foundation, Inc.
+   Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,6 +19,9 @@
 
 #ifndef ARM_LINUX_H
 #define ARM_LINUX_H
+
+/* The index to access CSPR in user_regs defined in GLIBC.  */
+#define ARM_CPSR_GREGNUM 16
 
 /* There are a couple of different possible stack layouts that
    we need to support.
@@ -71,4 +74,8 @@ arm_linux_sigreturn_next_pc_offset (unsigned long sp,
 				    unsigned long svc_number,
 				    int is_sigreturn);
 
+struct arm_get_next_pcs;
+
+CORE_ADDR arm_linux_get_next_pcs_fixup (struct arm_get_next_pcs *self,
+					CORE_ADDR pc);
 #endif /* ARM_LINUX_H */

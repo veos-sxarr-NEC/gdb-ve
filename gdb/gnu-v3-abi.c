@@ -1,7 +1,7 @@
 /* Abstraction of GNU v3 abi.
    Contributed by Jim Blandy <jimb@redhat.com>
 
-   Copyright (C) 2001-2016 Free Software Foundation, Inc.
+   Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -286,7 +286,7 @@ gnuv3_get_vtable (struct gdbarch *gdbarch,
 
 static struct type *
 gnuv3_rtti_type (struct value *value,
-                 int *full_p, int *top_p, int *using_enc_p)
+                 int *full_p, LONGEST *top_p, int *using_enc_p)
 {
   struct gdbarch *gdbarch;
   struct type *values_type = check_typedef (value_type (value));
@@ -443,7 +443,7 @@ gnuv3_virtual_fn_field (struct value **value_p,
 
 static int
 gnuv3_baseclass_offset (struct type *type, int index,
-			const bfd_byte *valaddr, int embedded_offset,
+			const bfd_byte *valaddr, LONGEST embedded_offset,
 			CORE_ADDR address, const struct value *val)
 {
   struct gdbarch *gdbarch;

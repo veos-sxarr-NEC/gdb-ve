@@ -1,6 +1,6 @@
 /* Multi-process/thread control for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
 
@@ -166,7 +166,7 @@ thread_cancel_execution_command (struct thread_info *thr)
 {
   if (thr->thread_fsm != NULL)
     {
-      thread_fsm_clean_up (thr->thread_fsm);
+      thread_fsm_clean_up (thr->thread_fsm, thr);
       thread_fsm_delete (thr->thread_fsm);
       thr->thread_fsm = NULL;
     }
@@ -1201,7 +1201,6 @@ print_thread_info_1 (struct ui_out *uiout, char *requested_threads,
   ptid_t current_ptid;
   struct cleanup *old_chain;
   const char *extra_info, *name, *target_id;
-  int current_thread = -1;
   struct inferior *inf;
   int default_inf_num = current_inferior ()->num;
 
@@ -1260,9 +1259,6 @@ print_thread_info_1 (struct ui_out *uiout, char *requested_threads,
     {
       struct cleanup *chain2;
       int core;
-
-      if (ptid_equal (tp->ptid, current_ptid))
-	current_thread = tp->global_num;
 
       if (!should_print_thread (requested_threads, default_inf_num,
 				global_ids, pid, tp))
@@ -1729,7 +1725,7 @@ tp_array_compar (const void *ap_voidp, const void *bp_voidp)
 
   if (a->inf->num != b->inf->num)
     {
-      return ((a->inf->num > b->inf->num) - (a->inf->num < b->inf->num)
+      return (((a->inf->num > b->inf->num) - (a->inf->num < b->inf->num))
 	      * (tp_array_compar_ascending ? +1 : -1));
     }
 
@@ -1927,7 +1923,7 @@ thread_apply_command (char *tidlist, int from_tty)
 void
 thread_command (char *tidstr, int from_tty)
 {
-  if (!tidstr)
+  if (tidstr == NULL)
     {
       if (ptid_equal (inferior_ptid, null_ptid))
 	error (_("No thread selected"));
@@ -1947,10 +1943,31 @@ thread_command (char *tidstr, int from_tty)
 	}
       else
 	error (_("No stack."));
-      return;
     }
+  else
+    {
+      ptid_t previous_ptid = inferior_ptid;
+      enum gdb_rc result;
 
-  gdb_thread_select (current_uiout, tidstr, NULL);
+      result = gdb_thread_select (current_uiout, tidstr, NULL);
+
+      /* If thread switch did not succeed don't notify or print.  */
+      if (result == GDB_RC_FAIL)
+	return;
+
+      /* Print if the thread has not changed, otherwise an event will be sent.  */
+      if (ptid_equal (inferior_ptid, previous_ptid))
+	{
+	  print_selected_thread_frame (current_uiout,
+				       USER_SELECTED_THREAD
+				       | USER_SELECTED_FRAME);
+	}
+      else
+	{
+	  observer_notify_user_selected_context_changed (USER_SELECTED_THREAD
+							 | USER_SELECTED_FRAME);
+	}
+    }
 }
 
 /* Implementation of `thread name'.  */
@@ -2062,32 +2079,53 @@ do_captured_thread_select (struct ui_out *uiout, void *tidstr_v)
 
   annotate_thread_changed ();
 
-  if (ui_out_is_mi_like_p (uiout))
-    ui_out_field_int (uiout, "new-thread-id", inferior_thread ()->global_num);
-  else
-    {
-      ui_out_text (uiout, "[Switching to thread ");
-      ui_out_field_string (uiout, "new-thread-id", print_thread_id (tp));
-      ui_out_text (uiout, " (");
-      ui_out_text (uiout, target_pid_to_str (inferior_ptid));
-      ui_out_text (uiout, ")]");
-    }
-
-  /* Note that we can't reach this with an exited thread, due to the
-     thread_alive check above.  */
-  if (tp->state == THREAD_RUNNING)
-    ui_out_text (uiout, "(running)\n");
-  else
-    {
-      ui_out_text (uiout, "\n");
-      print_stack_frame (get_selected_frame (NULL), 1, SRC_AND_LOC, 1);
-    }
-
   /* Since the current thread may have changed, see if there is any
      exited thread we can now delete.  */
   prune_threads ();
 
   return GDB_RC_OK;
+}
+
+/* Print thread and frame switch command response.  */
+
+void
+print_selected_thread_frame (struct ui_out *uiout,
+			     user_selected_what selection)
+{
+  struct thread_info *tp = inferior_thread ();
+  struct inferior *inf = current_inferior ();
+
+  if (selection & USER_SELECTED_THREAD)
+    {
+      if (ui_out_is_mi_like_p (uiout))
+	{
+	  ui_out_field_int (uiout, "new-thread-id",
+			    inferior_thread ()->global_num);
+	}
+      else
+	{
+	  ui_out_text (uiout, "[Switching to thread ");
+	  ui_out_field_string (uiout, "new-thread-id", print_thread_id (tp));
+	  ui_out_text (uiout, " (");
+	  ui_out_text (uiout, target_pid_to_str (inferior_ptid));
+	  ui_out_text (uiout, ")]");
+	}
+    }
+
+  if (tp->state == THREAD_RUNNING)
+    {
+      if (selection & USER_SELECTED_THREAD)
+	ui_out_text (uiout, "(running)\n");
+    }
+  else if (selection & USER_SELECTED_FRAME)
+    {
+      if (selection & USER_SELECTED_THREAD)
+	ui_out_text (uiout, "\n");
+
+      if (has_stack_frames ())
+	print_stack_frame_to_uiout (uiout, get_selected_frame (NULL),
+				    1, SRC_AND_LOC, 1);
+    }
 }
 
 enum gdb_rc

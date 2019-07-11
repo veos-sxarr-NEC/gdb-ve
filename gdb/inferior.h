@@ -1,7 +1,7 @@
 /* Variables that describe the inferior process running under GDB:
    Where it is, why it stopped, and how to step it.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -522,5 +522,8 @@ extern void prune_inferiors (void);
 extern int number_of_inferiors (void);
 
 extern struct inferior *add_inferior_with_spaces (void);
+
+/* Print the current selected inferior.  */
+extern void print_selected_inferior (struct ui_out *uiout);
 
 #endif /* !defined (INFERIOR_H) */

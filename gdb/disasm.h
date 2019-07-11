@@ -1,5 +1,5 @@
 /* Disassemble support for GDB.
-   Copyright (C) 2002-2016 Free Software Foundation, Inc.
+   Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -82,5 +82,11 @@ extern int gdb_insn_length (struct gdbarch *gdbarch, CORE_ADDR memaddr);
 extern int gdb_buffered_insn_length (struct gdbarch *gdbarch,
 				     const gdb_byte *insn, int max_len,
 				     CORE_ADDR memaddr);
+
+/* Print the instruction at address VMA.   Returns the length of the
+   instruction in bytes.  */
+
+extern int disasm_print_insn (struct gdbarch *gdbarch, bfd_vma vma,
+			      struct disassemble_info *info);
 
 #endif

@@ -1,4 +1,4 @@
-# Copyright 1988-2016 Free Software Foundation, Inc.
+# Copyright 1988-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -294,6 +294,47 @@ gdb_test "whatis v_struct2" \
     "type = struct \{\.\.\.\}" \
     "whatis unnamed structure"
 
+gdb_test "whatis &v_struct1" \
+    "type = struct t_struct \\*"
+
+gdb_test "whatis &v_struct2" \
+    "type = struct {\\.\\.\\.} \\*"
+
+gdb_test "whatis v_struct_ptr1" \
+    "type = struct t_struct \\*"
+
+gdb_test "whatis v_struct_ptr2" \
+    "type = struct {\\.\\.\\.} \\*"
+
+gdb_test "whatis &v_struct_ptr1" \
+    "type = struct t_struct \\*\\*"
+
+gdb_test "whatis &v_struct_ptr2" \
+    "type = struct {\\.\\.\\.} \\*\\*"
+
+gdb_test "whatis v_struct1.v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_struct2.v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_struct_ptr1->v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_struct_ptr2->v_char_member" \
+    "type = char"
+
+gdb_test "whatis &(v_struct1.v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_struct2.v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_struct_ptr1->v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_struct_ptr2->v_char_member)" \
+    "type = char \\*"
 
 # test whatis command with union types
 gdb_test "whatis v_union" \
@@ -307,6 +348,48 @@ gdb_test "whatis union t_union" \
 gdb_test "whatis v_union2" \
     "type = union \{\.\.\.\}" \
     "whatis unnamed union"
+
+gdb_test "whatis &v_union" \
+    "type = union t_union \\*"
+
+gdb_test "whatis &v_union2" \
+    "type = union {\\.\\.\\.} \\*"
+
+gdb_test "whatis v_union_ptr" \
+    "type = union t_union \\*"
+
+gdb_test "whatis v_union_ptr2" \
+    "type = union {\\.\\.\\.} \\*"
+
+gdb_test "whatis &v_union_ptr" \
+    "type = union t_union \\*\\*"
+
+gdb_test "whatis &v_union_ptr2" \
+    "type = union {\\.\\.\\.} \\*\\*"
+
+gdb_test "whatis v_union.v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_union2.v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_union_ptr->v_char_member" \
+    "type = char"
+
+gdb_test "whatis v_union_ptr2->v_char_member" \
+    "type = char"
+
+gdb_test "whatis &(v_union.v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_union2.v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_union_ptr->v_char_member)" \
+    "type = char \\*"
+
+gdb_test "whatis &(v_union_ptr2->v_char_member)" \
+    "type = char \\*"
 
 
 # Using stabs we will mark these functions as prototyped.  This

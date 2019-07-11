@@ -1,5 +1,5 @@
 /* Handling of inferior events for the event loop for GDB, the GNU debugger.
-   Copyright (C) 1999-2016 Free Software Foundation, Inc.
+   Copyright (C) 1999-2017 Free Software Foundation, Inc.
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
    This file is part of GDB.
@@ -61,7 +61,7 @@ inferior_event_handler (enum inferior_event_type event_type,
 
       /* When running a command list (from a user command, say), these
 	 are only run when the command list is all done.  */
-      if (interpreter_async)
+      if (current_ui->async)
 	{
 	  check_frame_language_change ();
 

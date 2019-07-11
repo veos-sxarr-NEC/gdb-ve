@@ -1,6 +1,6 @@
 /* Python frame filters
 
-   Copyright (C) 2013-2016 Free Software Foundation, Inc.
+   Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -211,13 +211,12 @@ py_print_type (struct ui_out *out, struct value *val)
 
   TRY
     {
-      struct type *type;
       struct ui_file *stb;
       struct cleanup *cleanup;
 
       stb = mem_fileopen ();
       cleanup = make_cleanup_ui_file_delete (stb);
-      type = check_typedef (value_type (val));
+      check_typedef (value_type (val));
       type_print (value_type (val), "", stb, -1);
       ui_out_field_stream (out, "type", stb);
       do_cleanups (cleanup);
@@ -249,11 +248,6 @@ py_print_value (struct ui_out *out, struct value *val,
 		const struct language_defn *language)
 {
   int should_print = 0;
-  int local_indent = (4 * indent);
-
-  /* Never set an indent level for common_val_print if MI.  */
-  if (ui_out_is_mi_like_p (out))
-    local_indent = 0;
 
   /* MI does not print certain values, differentiated by type,
      depending on what ARGS_TYPE indicates.  Test type against option.
@@ -1122,7 +1116,13 @@ py_print_frame (PyObject *filter, int flags,
 
 	  if (paddr != Py_None)
 	    {
-	      address = PyLong_AsLong (paddr);
+	      if (get_addr_from_python (paddr, &address) < 0)
+		{
+		  Py_DECREF (paddr);
+		  do_cleanups (cleanup_stack);
+		  return EXT_LANG_BT_ERROR;
+		}
+
 	      has_addr = 1;
 	    }
 	  Py_DECREF (paddr);
@@ -1219,10 +1219,10 @@ py_print_frame (PyObject *filter, int flags,
 	    }
 	  else if (PyLong_Check (py_func))
 	    {
-	      CORE_ADDR addr = PyLong_AsUnsignedLongLong (py_func);
+	      CORE_ADDR addr;
 	      struct bound_minimal_symbol msymbol;
 
-	      if (PyErr_Occurred ())
+	      if (get_addr_from_python (py_func, &addr) < 0)
 		{
 		  do_cleanups (cleanup_stack);
 		  return EXT_LANG_BT_ERROR;
@@ -1346,6 +1346,12 @@ py_print_frame (PyObject *filter, int flags,
 	  if (py_line != Py_None)
 	    {
 	      line = PyLong_AsLong (py_line);
+	      if (PyErr_Occurred ())
+		{
+		  do_cleanups (cleanup_stack);
+		  return EXT_LANG_BT_ERROR;
+		}
+
 	      TRY
 		{
 		  ui_out_text (out, ":");

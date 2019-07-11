@@ -1,6 +1,6 @@
 /* Everything about signal catchpoints, for GDB.
 
-   Copyright (C) 2011-2016 Free Software Foundation, Inc.
+   Copyright (C) 2011-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -137,7 +137,8 @@ signal_catchpoint_insert_location (struct bp_location *bl)
    catchpoints.  */
 
 static int
-signal_catchpoint_remove_location (struct bp_location *bl)
+signal_catchpoint_remove_location (struct bp_location *bl,
+				   enum remove_bp_reason reason)
 {
   struct signal_catchpoint *c = (struct signal_catchpoint *) bl->owner;
   int i;

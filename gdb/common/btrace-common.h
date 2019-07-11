@@ -1,6 +1,6 @@
 /* Branch trace support for GDB, the GNU debugger.
 
-   Copyright (C) 2013-2016 Free Software Foundation, Inc.
+   Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>.
 
@@ -213,6 +213,9 @@ enum btrace_error
 
 /* Return a string representation of FORMAT.  */
 extern const char *btrace_format_string (enum btrace_format format);
+
+/* Return an abbreviation string representation of FORMAT.  */
+extern const char *btrace_format_short_string (enum btrace_format format);
 
 /* Initialize DATA.  */
 extern void btrace_data_init (struct btrace_data *data);

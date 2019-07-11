@@ -1,6 +1,6 @@
 /* Cache and manage frames for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2016 Free Software Foundation, Inc.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -437,6 +437,19 @@ skip_artificial_frames (struct frame_info *frame)
 	 || get_frame_type (frame) == TAILCALL_FRAME)
     {
       frame = get_prev_frame_always (frame);
+      if (frame == NULL)
+	break;
+    }
+
+  return frame;
+}
+
+struct frame_info *
+skip_unwritable_frames (struct frame_info *frame)
+{
+  while (gdbarch_code_of_frame_writable (get_frame_arch (frame), frame) == 0)
+    {
+      frame = get_prev_frame (frame);
       if (frame == NULL)
 	break;
     }

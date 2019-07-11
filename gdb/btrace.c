@@ -1,6 +1,6 @@
 /* Branch trace support for GDB, the GNU debugger.
 
-   Copyright (C) 2013-2016 Free Software Foundation, Inc.
+   Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>
 
@@ -728,10 +728,10 @@ pt_reclassify_insn (enum pt_insn_class iclass)
 
 /* Return the btrace instruction flags for INSN.  */
 
-static enum btrace_insn_flag
+static btrace_insn_flags
 pt_btrace_insn_flags (const struct pt_insn *insn)
 {
-  enum btrace_insn_flag flags = 0;
+  btrace_insn_flags flags = 0;
 
   if (insn->speculative)
     flags |= BTRACE_INSN_FLAG_SPECULATIVE;
