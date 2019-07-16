@@ -1,5 +1,8 @@
 /* Print and select stack frames for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -93,7 +96,7 @@ static void print_frame_local_vars (struct frame_info *, int,
 
 static void print_frame (struct frame_info *frame, int print_level,
 			 enum print_what print_what,  int print_args,
-			 struct symtab_and_line sal);
+			 struct symtab_and_line sal, int print_id);
 
 static void set_last_displayed_sal (int valid,
 				    struct program_space *pspace,
@@ -125,6 +128,11 @@ static int
 frame_show_address (struct frame_info *frame,
 		    struct symtab_and_line sal)
 {
+  if (backtrace_addresses == AUTO_BOOLEAN_TRUE)
+      return 1;
+  else if (backtrace_addresses == AUTO_BOOLEAN_FALSE)
+      return 0;
+
   /* If there is a line number, but no PC, then there is no location
      information associated with this sal.  The only way that should
      happen is for the call sites of inlined functions (SAL comes from
@@ -171,15 +179,20 @@ print_stack_frame (struct frame_info *frame, int print_level,
 		   enum print_what print_what,
 		   int set_current_sal)
 {
+  volatile struct gdb_exception e;
+  int print_id = 0;
 
   /* For mi, alway print location and address.  */
   if (ui_out_is_mi_like_p (current_uiout))
+    {
     print_what = LOC_AND_ADDRESS;
+      print_id = (mi_print_frame_id ? 1 : 0);
+    }
 
   TRY
     {
       print_frame_info (frame, print_level, print_what, 1 /* print_args */,
-			set_current_sal);
+			set_current_sal, print_id);
       if (set_current_sal)
 	set_current_sal_from_frame (frame);
     }
@@ -436,10 +449,11 @@ read_frame_arg (struct symbol *sym, struct frame_info *frame,
 
 		      /* If the reference addresses match but dereferenced
 			 content does not match print them.  */
-		      if (val != val_deref
-			  && value_contents_eq (val_deref, 0,
+		      if (value_optimized_out (entryval_deref)
+			  || ((val != val_deref
+			       && value_contents_eq (val_deref, 0,
 						entryval_deref, 0,
-						TYPE_LENGTH (type_deref)))
+						     TYPE_LENGTH (type_deref)))))
 			val_equal = 1;
 		    }
 		  CATCH (except, RETURN_MASK_ERROR)
@@ -563,6 +577,8 @@ print_frame_args (struct symbol *func, struct frame_info *frame,
   struct ui_file *stb;
   /* True if we should print arguments, false otherwise.  */
   int print_args = strcmp (print_frame_arguments, "none");
+  int summary = !strcmp (print_frame_arguments, "scalars");
+  struct type *type;
 
   stb = mem_fileopen ();
   old_chain = make_cleanup_ui_file_delete (stb);
@@ -689,31 +705,51 @@ print_frame_args (struct symbol *func, struct frame_info *frame,
 	    ui_out_text (uiout, ", ");
 	  ui_out_wrap_hint (uiout, "    ");
 
-	  if (!print_args)
+	  {
+	    volatile struct gdb_exception except;
+	    TRY
 	    {
-	      memset (&arg, 0, sizeof (arg));
-	      arg.sym = sym;
-	      arg.entry_kind = print_entry_values_no;
-	      memset (&entryarg, 0, sizeof (entryarg));
-	      entryarg.sym = sym;
-	      entryarg.entry_kind = print_entry_values_no;
-	    }
-	  else
-	    read_frame_arg (sym, frame, &arg, &entryarg);
-
-	  if (arg.entry_kind != print_entry_values_only)
-	    print_frame_arg (&arg);
-
-	  if (entryarg.entry_kind != print_entry_values_no)
-	    {
-	      if (arg.entry_kind != print_entry_values_only)
+	      type = SYMBOL_TYPE (sym);
+	      if (!print_args
+		  || (summary && (TYPE_CODE (type) == TYPE_CODE_ARRAY
+				  || (TYPE_CODE (type) == TYPE_CODE_PTR
+				      && ((language_mode == language_mode_auto
+					    && SYMBOL_LANGUAGE (sym) == language_fortran) ||
+					  (language_mode != language_mode_auto
+					    && current_language->la_language == language_fortran))))))
 		{
-		  ui_out_text (uiout, ", ");
-		  ui_out_wrap_hint (uiout, "    ");
+		  memset (&arg, 0, sizeof (arg));
+		  arg.sym = sym;
+		  arg.entry_kind = print_entry_values_no;
+		  memset (&entryarg, 0, sizeof (entryarg));
+		  entryarg.sym = sym;
+		  entryarg.entry_kind = print_entry_values_no;
 		}
+	      else
+		read_frame_arg (sym, frame, &arg, &entryarg);
 
-	      print_frame_arg (&entryarg);
+	      if (arg.entry_kind != print_entry_values_only)
+		print_frame_arg (&arg);
+
+	      if (entryarg.entry_kind != print_entry_values_no)
+		{
+		  if (arg.entry_kind != print_entry_values_only)
+		    {
+		      ui_out_text (uiout, ", ");
+		      ui_out_wrap_hint (uiout, "    ");
+		    }
+
+		  print_frame_arg (&entryarg);
+		}
 	    }
+	    CATCH (ex, RETURN_MASK_ERROR)
+	    {
+	      fprintf_filtered(stream, "<error reading variable %s (%s)>",
+			       SYMBOL_PRINT_NAME (sym),
+			       ex.message);
+	    }
+	    END_CATCH
+	  }
 
 	  xfree (arg.error);
 	  xfree (entryarg.error);
@@ -773,7 +809,7 @@ show_disassemble_next_line (struct ui_file *file, int from_tty,
                     value);
 }
 
-/* Use TRY_CATCH to catch the exception from the gdb_disassembly
+/* Use TRY ... CATCH to catch the exception from the gdb_disassembly
    because it will be broken by filter sometime.  */
 
 static void
@@ -810,13 +846,14 @@ do_gdb_disassembly (struct gdbarch *gdbarch,
 void
 print_frame_info (struct frame_info *frame, int print_level,
 		  enum print_what print_what, int print_args,
-		  int set_current_sal)
+		  int set_current_sal, int print_id)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct symtab_and_line sal;
   int source_print;
   int location_print;
   struct ui_out *uiout = current_uiout;
+  struct frame_id id;
 
   if (get_frame_type (frame) == DUMMY_FRAME
       || get_frame_type (frame) == SIGTRAMP_FRAME
@@ -836,6 +873,19 @@ print_frame_info (struct frame_info *frame, int print_level,
           ui_out_field_fmt_int (uiout, 2, ui_left, "level",
 				frame_relative_level (frame));
         }
+
+
+      if (mi_print_frame_id && print_id)
+	{
+	  id = get_frame_id (frame);
+	  if (id.stack_addr)
+	    {
+	      ui_out_field_core_addr (uiout, "id",
+		  gdbarch, id.stack_addr);
+	      ui_out_text (uiout, "\t");
+	    }
+	}
+
       if (ui_out_is_mi_like_p (uiout))
         {
           annotate_frame_address ();
@@ -885,7 +935,7 @@ print_frame_info (struct frame_info *frame, int print_level,
 		    || print_what == SRC_AND_LOC);
 
   if (location_print || !sal.symtab)
-    print_frame (frame, print_level, print_what, print_args, sal);
+    print_frame (frame, print_level, print_what, print_args, sal, print_id);
 
   source_print = (print_what == SRC_LINE || print_what == SRC_AND_LOC);
 
@@ -1165,7 +1215,7 @@ find_frame_funname (struct frame_info *frame, char **funname,
 static void
 print_frame (struct frame_info *frame, int print_level,
 	     enum print_what print_what, int print_args,
-	     struct symtab_and_line sal)
+	     struct symtab_and_line sal, int print_id)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct ui_out *uiout = current_uiout;
@@ -1177,6 +1227,7 @@ print_frame (struct frame_info *frame, int print_level,
   struct symbol *func;
   CORE_ADDR pc = 0;
   int pc_p;
+  struct frame_id id;
 
   pc_p = get_frame_pc_if_available (frame, &pc);
 
@@ -1197,6 +1248,18 @@ print_frame (struct frame_info *frame, int print_level,
       ui_out_field_fmt_int (uiout, 2, ui_left, "level",
 			    frame_relative_level (frame));
     }
+
+  if (mi_print_frame_id && print_id)
+    {
+      id = get_frame_id(frame);
+      if (id.stack_addr)
+	{
+	  ui_out_field_core_addr (uiout, "id",
+	      gdbarch, id.stack_addr);
+	  ui_out_text (uiout, "\t");
+	}
+    }
+
   get_user_print_options (&opts);
   if (opts.addressprint)
     if (!sal.symtab
@@ -1225,6 +1288,13 @@ print_frame (struct frame_info *frame, int print_level,
       int numargs;
       struct cleanup *args_list_chain;
 
+      enum language prevlang = language_unknown;
+      if (funlang != current_language->la_language
+	  && funlang != language_unknown)
+	{
+	  prevlang = set_language (funlang);
+	}
+
       if (gdbarch_frame_num_args_p (gdbarch))
 	{
 	  numargs = gdbarch_frame_num_args (gdbarch, frame);
@@ -1247,6 +1317,9 @@ print_frame (struct frame_info *frame, int print_level,
 	  will have " that will not be properly escaped.  */
       /* Invoke ui_out_tuple_end.  */
       do_cleanups (args_list_chain);
+
+      if (prevlang != language_unknown)
+        set_language(prevlang);
       QUIT;
     }
   ui_out_text (uiout, ")");
@@ -1741,8 +1814,8 @@ frame_info (char *addr_exp, int from_tty)
    frames.  */
 
 static void
-backtrace_command_1 (char *count_exp, int show_locals, int no_filters,
-		     int from_tty)
+backtrace_command_1 (char *count_exp, int show_locals, int no_args,
+		     int no_filters, int from_tty)
 {
   struct frame_info *fi;
   int count;
@@ -1853,7 +1926,7 @@ backtrace_command_1 (char *count_exp, int show_locals, int no_filters,
 	     hand, perhaps the code does or could be fixed to make sure
 	     the frame->prev field gets set to NULL in that case).  */
 
-	  print_frame_info (fi, 1, LOCATION, 1, 0);
+	  print_frame_info (fi, 1, LOCATION, no_args == 0, 0, 0);
 	  if (show_locals)
 	    {
 	      struct frame_id frame_id = get_frame_id (fi);
@@ -1898,6 +1971,7 @@ backtrace_command (char *arg, int from_tty)
   struct cleanup *old_chain = make_cleanup (null_cleanup, NULL);
   int fulltrace_arg = -1, arglen = 0, argc = 0, no_filters  = -1;
   int user_arg = 0;
+  int argIndicatingNoArgs = -1;
 
   if (arg)
     {
@@ -1916,6 +1990,10 @@ backtrace_command (char *arg, int from_tty)
 
 	  if (no_filters < 0 && subset_compare (argv[i], "no-filters"))
 	    no_filters = argc;
+	  else if (fulltrace_arg < 0 && subset_compare (argv[i], "full"))
+	    fulltrace_arg = argc;
+          else if (argIndicatingNoArgs < 0 && subset_compare (argv[i], "noargs"))
+            argIndicatingNoArgs = argc; 
 	  else
 	    {
 	      if (fulltrace_arg < 0 && subset_compare (argv[i], "full"))
@@ -1928,22 +2006,43 @@ backtrace_command (char *arg, int from_tty)
 	    }
 	  argc++;
 	}
-      arglen += user_arg;
-      if (fulltrace_arg >= 0 || no_filters >= 0)
+      arglen += argc;
+      if (fulltrace_arg >= 0 || no_filters >= 0 || argIndicatingNoArgs >= 0)
 	{
 	  if (arglen > 0)
 	    {
+	      char *tmp;
+
 	      arg = (char *) xmalloc (arglen + 1);
 	      make_cleanup (xfree, arg);
 	      arg[0] = 0;
 	      for (i = 0; i < argc; i++)
 		{
-		  if (i != fulltrace_arg && i != no_filters)
+		  if (i != fulltrace_arg
+		      && i != no_filters
+		      && i != argIndicatingNoArgs)
 		    {
 		      strcat (arg, argv[i]);
 		      strcat (arg, " ");
 		    }
 		}
+
+	      /* Remove trailing whitespace.  */
+	      for (tmp = arg; *tmp; ++tmp)
+		;
+
+	      while (tmp > arg && *tmp == '\0')
+		{
+		  --tmp;
+		  if (ISSPACE (*tmp))
+		    *tmp = '\0';
+		}
+
+	      /* Convert empty string to NULL.  */
+	      for (tmp = arg; ISSPACE (*tmp); ++tmp)
+		;
+	      if (*tmp == '\0')
+		arg = NULL;
 	    }
 	  else
 	    arg = NULL;
@@ -1951,10 +2050,13 @@ backtrace_command (char *arg, int from_tty)
     }
 
   backtrace_command_1 (arg, fulltrace_arg >= 0 /* show_locals */,
+		       argIndicatingNoArgs >= 0 /* show_args */,
 		       no_filters >= 0 /* no frame-filters */, from_tty);
 
   do_cleanups (old_chain);
 }
+
+
 
 /* Iterate over the local variables of a block B, calling CB with
    CB_DATA.  */

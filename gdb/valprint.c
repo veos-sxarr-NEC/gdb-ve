@@ -1,5 +1,8 @@
 /* Print values for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -27,6 +30,7 @@
 #include "language.h"
 #include "annotate.h"
 #include "valprint.h"
+#include "c-lang.h" /* #42713: for c_textual_element_type() */
 #include "floatformat.h"
 #include "doublest.h"
 #include "dfp.h"
@@ -105,6 +109,7 @@ static void val_print_type_code_flags (struct type *type,
 void _initialize_valprint (void);
 
 #define PRINT_MAX_DEFAULT 200	/* Start print_max off at this value.  */
+#define PRINT_MAX_DEPTH_DEFAULT 20	/* Start print_max_depth off at this value. */
 
 struct value_print_options user_print_options =
 {
@@ -116,6 +121,7 @@ struct value_print_options user_print_options =
   1,				/* addressprint */
   0,				/* objectprint */
   PRINT_MAX_DEFAULT,		/* print_max */
+  PRINT_MAX_DEFAULT,		/* print_smax */
   10,				/* repeat_count_threshold */
   0,				/* output_format */
   0,				/* format */
@@ -126,7 +132,8 @@ struct value_print_options user_print_options =
   1,				/* pascal_static_field_print */
   0,				/* raw */
   0,				/* summary */
-  1				/* symbol_print */
+  1,				/* symbol_print */
+  PRINT_MAX_DEPTH_DEFAULT	/* max_depth */
 };
 
 /* Initialize *OPTS to be a copy of the user print options.  */
@@ -160,8 +167,16 @@ show_print_max (struct ui_file *file, int from_tty,
 		struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file,
-		    _("Limit on string chars or array "
-		      "elements to print is %s.\n"),
+		    _("Limit on array elements to print is %s.\n"),
+		    value);
+}
+
+static void
+show_print_smax (struct ui_file *file, int from_tty,
+		struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file,
+		    _("Limit on string chars to print is %s.\n"),
 		    value);
 }
 
@@ -295,6 +310,39 @@ val_print_scalar_type_p (struct type *type)
       return 0;
     default:
       return 1;
+    }
+}
+
+/* #42713: A helper function for val_print.  When printing with limited depth
+   we want to print string and scalar arguments, but not aggregate arguments.
+   This function distinguishes between the two. */
+
+int
+scalar_or_string_type (struct type *type)
+{
+  /* resolve real type */
+  struct type * array_target_type = TYPE_TARGET_TYPE (type);
+  type = check_typedef (type);
+  while (TYPE_CODE (type) == TYPE_CODE_REF)
+    {
+      type = TYPE_TARGET_TYPE (type);
+      type = check_typedef (type);
+    }
+
+  switch (TYPE_CODE (type))
+    {
+    case TYPE_CODE_ARRAY:
+      /* see if target type looks like a string, see c_val_print */
+      array_target_type = TYPE_TARGET_TYPE (type);
+      return TYPE_LENGTH (type) > 0
+	  && TYPE_LENGTH (array_target_type) > 0
+	  && c_textual_element_type(array_target_type, 0);
+    case TYPE_CODE_STRING:
+      /* string for sure */
+      return 1;
+    default:
+      /* else, check for scalar */
+      return val_print_scalar_type_p(type);
     }
 }
 
@@ -753,10 +801,8 @@ generic_val_print_bool (struct type *type, const gdb_byte *valaddr,
       val = unpack_long (type, valaddr + embedded_offset * unit_size);
       if (val == 0)
 	fputs_filtered (decorations->false_name, stream);
-      else if (val == 1)
-	fputs_filtered (decorations->true_name, stream);
       else
-	print_longest (stream, 'd', 0, val);
+	fputs_filtered (decorations->true_name, stream);
     }
 }
 
@@ -1074,6 +1120,11 @@ val_print (struct type *type, const gdb_byte *valaddr, LONGEST embedded_offset,
 
   if (!options->raw)
     {
+        if (language->la_language == language_fortran
+            && TYPE_CODE (type) == TYPE_CODE_ARRAY
+            && TYPE_NFIELDS (type) == 2) /* a dynamic array - dont
+                                            know size yet */
+	  TYPE_LENGTH(type) = sizeof(long long);
       ret = apply_ext_lang_val_pretty_printer (type, valaddr, embedded_offset,
 					       address, stream, recurse,
 					       val, options, language);
@@ -1089,6 +1140,15 @@ val_print (struct type *type, const gdb_byte *valaddr, LONGEST embedded_offset,
       return;
     }
 
+  if (!scalar_or_string_type (type) && recurse >= options->max_depth)
+    {
+	  if (language->la_language == language_fortran)
+		fputs_filtered ("(...)", stream);
+	  else
+		fputs_filtered ("{...}", stream);
+      return;
+    }
+
   TRY
     {
       language->la_val_print (type, valaddr, embedded_offset, address,
@@ -1097,7 +1157,8 @@ val_print (struct type *type, const gdb_byte *valaddr, LONGEST embedded_offset,
     }
   CATCH (except, RETURN_MASK_ERROR)
     {
-      fprintf_filtered (stream, _("<error reading variable>"));
+      fprintf_filtered (stream, _("<error reading variable: %s>"),
+			except.message);
     }
   END_CATCH
 }
@@ -1138,6 +1199,18 @@ value_check_printable (struct value *val, struct ui_file *stream,
     {
       fprintf_filtered (stream, _("<internal function %s>"),
 			value_internal_function_name (val));
+      return 0;
+    }
+
+  if (value_not_associated (val))
+    {
+      val_print_not_associated (stream);
+      return 0;
+    }
+
+  if (value_not_allocated (val))
+    {
+      val_print_not_allocated (stream);
       return 0;
     }
 
@@ -1424,6 +1497,7 @@ print_floating (const gdb_byte *valaddr, struct type *type,
 {
   DOUBLEST doub;
   int inv;
+  long long int dooby;
   const struct floatformat *fmt = NULL;
   unsigned len = TYPE_LENGTH (type);
   enum float_kind kind;
@@ -1451,6 +1525,17 @@ print_floating (const gdb_byte *valaddr, struct type *type,
 	  fputs_filtered ("inf", stream);
 	  return;
 	}
+    }
+
+
+  if (floatformat_is_inf (fmt, valaddr, len))
+    {
+      if (floatformat_is_negative (fmt, valaddr))
+	fprintf_filtered (stream, "-");
+      fprintf_filtered (stream, "inf(");
+      print_hex_chars(stream, valaddr, len, gdbarch_byte_order(get_type_arch(type)));
+      fprintf_filtered (stream, ")");
+      return;
     }
 
   /* NOTE: cagney/2002-01-15: The TYPE passed into print_floating()
@@ -1973,7 +2058,7 @@ val_print_array_elements (struct type *type,
 			  unsigned int i)
 {
   unsigned int things_printed = 0;
-  unsigned len;
+  unsigned len, typelen, fully_loaded;
   struct type *elttype, *index_type, *base_index_type;
   unsigned eltlen;
   /* Position of the array element we are examining to see
@@ -1983,10 +2068,14 @@ val_print_array_elements (struct type *type,
   unsigned int reps;
   LONGEST low_bound, high_bound;
   LONGEST low_pos, high_pos;
+  unsigned int print_max;
 
   elttype = TYPE_TARGET_TYPE (type);
   eltlen = type_length_units (check_typedef (elttype));
   index_type = TYPE_INDEX_TYPE (type);
+  /* Check index_type is actually capable of holding an index. */
+  if (TYPE_LENGTH (index_type) < sizeof(int))
+      index_type = builtin_type (get_type_arch (type))->builtin_int;
 
   if (get_array_bounds (type, &low_bound, &high_bound))
     {
@@ -2014,20 +2103,34 @@ val_print_array_elements (struct type *type,
 	 empty arrays.  In that situation, the array length is just zero,
 	 not negative!  */
       if (low_pos > high_pos)
-	len = 0;
+	fully_loaded = typelen = len = 0;
       else
-	len = high_pos - low_pos + 1;
+	{
+	  gdb_assert(eltlen > 0);
+	  typelen = high_pos - low_pos + 1;
+	  fully_loaded = val
+	    ? min (typelen, max ((value_length (val) - embedded_offset) / eltlen, 0))
+	    : typelen;
+
+ 	  len = val
+	    ? min (typelen, max ((value_length (val) - embedded_offset + eltlen - 1) / eltlen, 0))
+	    : typelen;
+	}
     }
   else
     {
       warning (_("unable to get bounds of array, assuming null array"));
       low_bound = 0;
-      len = 0;
+      fully_loaded = typelen = len = 0;
     }
+
+  print_max = options->print_max;
+  if (val && value_repeated (val) && recurse == 0)
+    print_max = INT_MAX;
 
   annotate_array_section_begin (i, elttype);
 
-  for (; i < len && things_printed < options->print_max; i++)
+  for (; i < len && things_printed < print_max; i++)
     {
       if (i != 0)
 	{
@@ -2049,9 +2152,10 @@ val_print_array_elements (struct type *type,
       reps = 1;
       /* Only check for reps if repeat_count_threshold is not set to
 	 UINT_MAX (unlimited).  */
-      if (options->repeat_count_threshold < UINT_MAX)
+      if (options->repeat_count_threshold < UINT_MAX
+	  && len > options->repeat_count_threshold)
 	{
-	  while (rep1 < len
+	  while (rep1 < fully_loaded
 		 && value_contents_eq (val,
 				       embedded_offset + i * eltlen,
 				       val,
@@ -2086,7 +2190,7 @@ val_print_array_elements (struct type *type,
 	}
     }
   annotate_array_section_end ();
-  if (i < len)
+  if (i < typelen)
     {
       fprintf_filtered (stream, "...");
     }
@@ -2658,20 +2762,17 @@ print_converted_chars_to_obstack (struct obstack *obstack,
 
 	case INCOMPLETE:
 	  /* We are outputting an incomplete sequence.  */
+	  /* Output the incomplete sequence string.  */
+	  obstack_grow_wstr (obstack, LCST ("<incomplete sequence "));
+	  print_wchar (gdb_WEOF, elem->buf, elem->buflen, width, byte_order,
+		       obstack, 0, &need_escape);
+	  obstack_grow_wstr (obstack, LCST (">"));
 	  if (last == SINGLE)
 	    {
 	      /* If we were outputting a string of SINGLE characters,
 		 terminate the quote.  */
 	      obstack_grow (obstack, &wide_quote_char, sizeof (gdb_wchar_t));
 	    }
-	  if (last != START)
-	    obstack_grow_wstr (obstack, LCST (", "));
-
-	  /* Output the incomplete sequence string.  */
-	  obstack_grow_wstr (obstack, LCST ("<incomplete sequence "));
-	  print_wchar (gdb_WEOF, elem->buf, elem->buflen, width, byte_order,
-		       obstack, 0, &need_escape);
-	  obstack_grow_wstr (obstack, LCST (">"));
 
 	  /* We do not attempt to outupt anything after this.  */
 	  state = FINISH;
@@ -2717,7 +2818,7 @@ print_converted_chars_to_obstack (struct obstack *obstack,
 /* Print the character string STRING, printing at most LENGTH
    characters.  LENGTH is -1 if the string is nul terminated.  TYPE is
    the type of each character.  OPTIONS holds the printing options;
-   printing stops early if the number hits print_max; repeat counts
+   printing stops early if the number hits print_smax; repeat counts
    are printed as appropriate.  Print ellipses at the end if we had to
    stop before printing LENGTH characters, or if FORCE_ELLIPSES.
    QUOTE_CHAR is the character to print at each end of the string.  If
@@ -2779,7 +2880,7 @@ generic_printstr (struct ui_file *stream, struct type *type,
   /* Convert characters until the string is over or the maximum
      number of printed characters has been reached.  */
   i = 0;
-  while (i < options->print_max)
+  while (i < options->print_smax)
     {
       int r;
 
@@ -2835,7 +2936,7 @@ generic_printstr (struct ui_file *stream, struct type *type,
 /* Print a string from the inferior, starting at ADDR and printing up to LEN
    characters, of WIDTH bytes a piece, to STREAM.  If LEN is -1, printing
    stops at the first null byte, otherwise printing proceeds (including null
-   bytes) until either print_max or LEN characters have been printed,
+   bytes) until either print_smax or LEN characters have been printed,
    whichever is smaller.  ENCODING is the name of the string's
    encoding.  It can be NULL, in which case the target encoding is
    assumed.  */
@@ -2860,13 +2961,13 @@ val_print_string (struct type *elttype, const char *encoding,
   /* First we need to figure out the limit on the number of characters we are
      going to attempt to fetch and print.  This is actually pretty simple.  If
      LEN >= zero, then the limit is the minimum of LEN and print_max.  If
-     LEN is -1, then the limit is print_max.  This is true regardless of
-     whether print_max is zero, UINT_MAX (unlimited), or something in between,
+     LEN is -1, then the limit is print_smax.  This is true regardless of
+     whether print_smax is zero, UINT_MAX (unlimited), or something in between,
      because finding the null byte (or available memory) is what actually
      limits the fetch.  */
 
-  fetchlimit = (len == -1 ? options->print_max : min (len,
-						      options->print_max));
+  fetchlimit = (len == -1 ? options->print_smax : min (len,
+						      options->print_smax));
 
   err = read_string (addr, len, width, fetchlimit, byte_order,
 		     &buffer, &bytes_read);
@@ -2930,6 +3031,13 @@ val_print_string (struct type *elttype, const char *encoding,
   do_cleanups (old_chain);
 
   return (bytes_read / width);
+}
+
+static void
+show_print_max_depth (struct ui_file *file, int from_tty,
+		      struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("Maximum print depth is %s.\n"), value);
 }
 
 
@@ -3122,11 +3230,20 @@ Generic command for setting what things to print in \"raw\" mode."),
 
   add_setshow_uinteger_cmd ("elements", no_class,
 			    &user_print_options.print_max, _("\
-Set limit on string chars or array elements to print."), _("\
-Show limit on string chars or array elements to print."), _("\
+Set limit on array elements to print."), _("\
+Show limit on array elements to print."), _("\
 \"set print elements unlimited\" causes there to be no limit."),
 			    NULL,
 			    show_print_max,
+			    &setprintlist, &showprintlist);
+
+  add_setshow_uinteger_cmd ("characters", no_class,
+			    &user_print_options.print_smax, _("\
+Set limit on string chars to print."), _("\
+Show limit on string chars to print."), _("\
+\"set print characters 0\" causes there to be no limit."),
+			    NULL,
+			    show_print_smax,
 			    &setprintlist, &showprintlist);
 
   add_setshow_boolean_cmd ("null-stop", no_class,
@@ -3224,4 +3341,10 @@ Use 'show input-radix' or 'show output-radix' to independently show each."),
 Set printing of array indexes."), _("\
 Show printing of array indexes"), NULL, NULL, show_print_array_indexes,
                            &setprintlist, &showprintlist);
+  
+  add_setshow_zuinteger_cmd ("max-depth", class_support,
+                            &user_print_options.max_depth, _("\
+Set maximum print depth."), _("\
+Show maximum print depth"), NULL, NULL, show_print_max_depth,
+                            &setprintlist, &showprintlist);
 }

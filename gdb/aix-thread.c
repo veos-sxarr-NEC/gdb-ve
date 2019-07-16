@@ -1,5 +1,8 @@
 /* Low level interface for debugging AIX 4.3+ pthreads.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999-2017 Free Software Foundation, Inc.
    Written by Nick Duffek <nsd@redhat.com>.
 
@@ -651,7 +654,7 @@ gcmp (const void *t1v, const void *t2v)
 }
 
 /* Search through the list of all kernel threads for the thread
-   that has stopped on a SIGTRAP signal, and return its TID.
+   that has stopped, and return its TID.
    Return 0 if none found.  */
 
 static pthdb_tid_t
@@ -667,14 +670,35 @@ get_signaled_thread (void)
           	  sizeof (thrinf), &ktid, 1) != 1)
       break;
 
-    if (thrinf.ti_cursig == SIGTRAP)
+    if (thrinf.ti_flag & TTRCSIG)
       return thrinf.ti_tid;
   }
 
-  /* Didn't find any thread stopped on a SIGTRAP signal.  */
+  /* Didn't find any thread stopped.  */
   return 0;
 }
 
+static int
+get_kernel_thread_info (pthdb_tid_t tid, struct thrdsinfo64 *thrinfp)
+{
+  int result = 0;
+  pthdb_tid_t ktid = 0;
+
+  while (1)
+    {
+      if (getthrds (PIDGET(inferior_ptid), thrinfp,
+                    sizeof (struct thrdsinfo64), &ktid, 1) != 1)
+        break;
+
+      /* Is this the thread we want?  */
+      if (thrinfp->ti_tid == tid)
+        return 1;
+  }
+
+  /* Didn't find the thread.  */
+  return 0;
+}
+ 
 /* Synchronize GDB's thread list with libpthdebug's.
 
    There are some benefits of doing this every time the inferior stops:
@@ -736,6 +760,19 @@ sync_threadlists (void)
 
   qsort (pbuf, pcount, sizeof *pbuf, pcmp);
 
+  infpid = ptid_get_pid (inferior_ptid);
+
+  if (pd_active
+      && pcount >= 1
+      && pbuf[0].pthid == 1
+      && (thread = first_thread_of_process (infpid))
+      && ptid_get_tid (thread->ptid) == 0)
+    {
+      /* Thread 1 is the main thread. Change the main thread's TID to 1 so it
+         is synched too, otherwise it will show up as a duplicate of Thread 1.  */
+      thread_change_ptid (thread->ptid, BUILD_THREAD (pbuf[0].pthid, infpid));
+    }
+
   /* Accumulate an array of GDB threads sorted by pid.  */
 
   gcount = 0;
@@ -746,7 +783,6 @@ sync_threadlists (void)
 
   /* Apply differences between the two arrays to GDB's thread list.  */
 
-  infpid = ptid_get_pid (inferior_ptid);
   for (pi = gi = 0; pi < pcount || gi < gcount;)
     {
       if (pi == pcount)
@@ -776,6 +812,9 @@ sync_threadlists (void)
 
 	  if (cmp_result == 0)
 	    {
+	      if (!gbuf[gi]->priv)
+		gbuf[gi]->priv =
+		  xmalloc (sizeof (struct private_thread_info));
 	      gbuf[gi]->priv->pdtid = pdtid;
 	      gbuf[gi]->priv->tid = tid;
 	      pi++;
@@ -1043,7 +1082,7 @@ aix_thread_wait (struct target_ops *ops,
 
       if (regcache_read_pc (regcache)
 	  - gdbarch_decr_pc_after_break (gdbarch) == pd_brk_addr)
-	return pd_activate (0);
+	return pd_activate (!pd_active);
     }
 
   return pd_update (0);
@@ -1227,6 +1266,7 @@ fetch_regs_kernel_thread (struct regcache *regcache, int regno,
   double fprs[ppc_num_fprs];
   struct ptxsprs sprs64;
   struct ptsprs sprs32;
+  struct thrdsinfo64 thrinf;
   int i;
 
   if (debug_aix_thread)
@@ -1243,13 +1283,42 @@ fetch_regs_kernel_thread (struct regcache *regcache, int regno,
 	{
 	  if (!ptrace64aix (PTT_READ_GPRS, tid, 
 			    (unsigned long) gprs64, 0, NULL))
-	    memset (gprs64, 0, sizeof (gprs64));
+            {
+	      memset (gprs64, 0, sizeof (gprs64));
+
+              /* From AIX documentation:
+                 When a pthread with kernel thread is in kernel mode code it is
+                 impossible to get the full user mode context because the kernel
+                 does not save it off in one place. The getthrds() function can
+                 be used to get part of this information. It always saves the
+                 user mode stack and the application can discover this by
+                 checking thrdsinfo64.ti_scount. If this is non-zero the user
+                 mode stack is available in thrdsinfo64.ti_ustk. From user
+                 mode stack it is possible to determine the iar and the call
+                 back frames but not the other register values. The thrdsinfo64
+                 structure is defined in procinfo.h file.  */
+
+              if (get_kernel_thread_info (tid, &thrinf))
+                {
+                  if (thrinf.ti_scount)
+                    gprs64[1 /* r1 */] = (uint64_t) thrinf.ti_ustk;
+                }
+            }
+
 	  supply_gprs64 (regcache, gprs64);
 	}
       else
 	{
 	  if (!ptrace32 (PTT_READ_GPRS, tid, (uintptr_t) gprs32, 0, NULL))
-	    memset (gprs32, 0, sizeof (gprs32));
+            {
+	      memset (gprs32, 0, sizeof (gprs32));
+
+              if (get_kernel_thread_info (tid, &thrinf))
+                {
+                  if (thrinf.ti_scount)
+                    gprs32[1 /* r1 */] = (uint32_t) (thrinf.ti_ustk & 0xffffffff);
+                }
+            }
 	  for (i = 0; i < ppc_num_gprs; i++)
 	    supply_reg32 (regcache, tdep->ppc_gp0_regnum + i, gprs32[i]);
 	}
@@ -1769,12 +1838,15 @@ aix_thread_extra_thread_info (struct target_ops *self,
 
   if (tid != PTHDB_INVALID_TID)
     /* i18n: Like "thread-identifier %d, [state] running, suspended" */
-    fprintf_unfiltered (buf, _("tid %d"), (int)tid);
+    fprintf_unfiltered (buf, _("tid %d, "), (int)tid);
+
+  /* pthdb_pthread_state and pthdb_pthread_suspendstate both seem to return
+   * nonsense on AIX 5.2. */
 
   status = pthdb_pthread_state (pd_session, pdtid, &state);
   if (status != PTHDB_SUCCESS)
     state = PST_NOTSUP;
-  fprintf_unfiltered (buf, ", %s", state2str (state));
+  fprintf_unfiltered (buf, "%s", state2str (state));
 
   status = pthdb_pthread_suspendstate (pd_session, pdtid, 
 				       &suspendstate);

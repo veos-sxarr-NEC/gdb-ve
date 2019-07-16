@@ -1,5 +1,8 @@
 /* Generate a core file for the inferior process.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -315,7 +318,7 @@ call_target_sbrk (int sbrk_arg)
   target_sbrk_arg = value_from_longest (builtin_type (gdbarch)->builtin_int, 
 					sbrk_arg);
   gdb_assert (target_sbrk_arg);
-  ret = call_function_by_hand (sbrk_fn, 1, &target_sbrk_arg);
+  ret = call_function_by_hand_ex (sbrk_fn, language_c, 1, &target_sbrk_arg);
   if (ret == NULL)
     return (bfd_vma) 0;
 

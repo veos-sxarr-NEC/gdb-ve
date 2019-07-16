@@ -1,3 +1,4 @@
+Note: this software has been modified by Arm.
 2016-08-01  Joel Brobecker  <brobecker@adacore.com>
 
 	* development.sh (development): Set to false.

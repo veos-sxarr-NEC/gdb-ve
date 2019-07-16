@@ -1,5 +1,8 @@
 /* Interface between GDB and target environments, including files and processes
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1990-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.  Written by John Gilmore.
@@ -82,6 +85,7 @@ enum strata
     file_stratum,		/* Executable files, etc */
     process_stratum,		/* Executing processes or core dump files */
     thread_stratum,		/* Executing threads */
+    myo_stratum,		/* Myo shared memory support */
     record_stratum,		/* Support record debugging */
     arch_stratum		/* Architecture overrides */
   };
@@ -222,6 +226,12 @@ enum target_xfer_status
 
   /* The piece of the object requested is unavailable.  */
   TARGET_XFER_UNAVAILABLE = 2,
+
+  /* MIC/MYO:
+     run time checkAddress() returned -1, memory not accessible
+     because it is not owned by the calling process on host side
+     or MIC card side, respectively. */
+  TARGET_XFER_MYO_OWNERSHIP_FAILED = 3,
 
   /* Generic I/O error.  Note that it's important that this is '-1',
      as we still have target_xfer-related code returning hardcoded
@@ -634,6 +644,8 @@ struct target_ops
 
     int (*to_thread_alive) (struct target_ops *, ptid_t ptid)
       TARGET_DEFAULT_RETURN (0);
+    void (*to_thread_switch) (ptid_t ptid)
+      TARGET_DEFAULT_IGNORE ();
     void (*to_update_thread_list) (struct target_ops *)
       TARGET_DEFAULT_IGNORE ();
     char *(*to_pid_to_str) (struct target_ops *, ptid_t)
@@ -1208,6 +1220,10 @@ struct target_ops
        BEGIN (inclusive) to instruction END (inclusive).  */
     void (*to_insn_history_range) (struct target_ops *,
 				   ULONGEST begin, ULONGEST end, int flags)
+      TARGET_DEFAULT_NORETURN (tcomplain ());
+
+    /* Get the last index of the recorded execution trace.  */
+    void (*to_get_call_history_length) (struct target_ops *)
       TARGET_DEFAULT_NORETURN (tcomplain ());
 
     /* Print a function trace of the recorded execution trace.
@@ -2511,6 +2527,9 @@ extern void target_insn_history_from (ULONGEST from, int size, int flags);
 
 /* See to_insn_history_range.  */
 extern void target_insn_history_range (ULONGEST begin, ULONGEST end, int flags);
+
+/* See to_get_call_history_length.  */
+extern void target_get_call_history_length (void);
 
 /* See to_call_history.  */
 extern void target_call_history (int size, int flags);

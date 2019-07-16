@@ -1,4 +1,7 @@
 /* Annotation routines for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -23,6 +26,7 @@ extern void annotate_breakpoint (int);
 extern void annotate_catchpoint (int);
 extern void annotate_watchpoint (int);
 extern void annotate_starting (void);
+extern void annotate_started (void);
 extern void annotate_stopped (void);
 extern void annotate_exited (int);
 extern void annotate_signalled (void);
@@ -74,7 +78,7 @@ extern void annotate_arg_name_end (void);
 extern void annotate_arg_value (struct type *);
 extern void annotate_arg_end (void);
 
-extern void annotate_source (char *, int, int, int,
+extern void annotate_source (const char *, int, int, int,
 			     struct gdbarch *, CORE_ADDR);
 
 extern void annotate_frame_begin (int, struct gdbarch *, CORE_ADDR);

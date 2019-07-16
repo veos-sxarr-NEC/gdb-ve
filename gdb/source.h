@@ -1,4 +1,7 @@
 /* List lines of source files for GDB, the GNU debugger.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -43,6 +46,11 @@ struct symtab;
 extern int find_and_open_source (const char *filename,
 				 const char *dirname,
 				 char **fullname);
+
+/* Controls whether gdb should stat/open source files or avoid touching the
+   file system as much as possible.
+   0 = don't stat/open files 1 = do stat/open files (default) */
+extern int source_open;
 
 /* Open a source file given a symtab S.  Returns a file descriptor or
    negative number for error.  */

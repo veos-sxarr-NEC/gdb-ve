@@ -114,6 +114,8 @@ if ![info exists env(EXEEXT)] {
 }
 
 set octal "\[0-7\]+"
+set address_pattern "$hex\( <\[^>\]+>\)?"
+set symbol "<\[^>\]+>"
 
 set inferior_exited_re "(\\\[Inferior \[0-9\]+ \\(.*\\) exited)"
 
@@ -3554,6 +3556,8 @@ proc gdb_compile {source dest type options} {
 	# changing the entire testsuite in one go.
 	if {[lsearch $options f77] >= 0} {
 	    gdb_compile_test $source $result
+	} elseif {[lsearch $options f90] >= 0} {
+	    gdb_compile_test $source $result
 	} elseif { $result != "" } {
 	    clone_output "gdb compile failed, $result"
 	}
@@ -4331,9 +4335,14 @@ proc gdb_load_shlib { file } {
 # The return value is 0 for success, -1 for failure.
 # Many files in config/*.exp override this procedure.
 #
-proc gdb_load { arg } {
+proc gdb_load { arg {preload ""} } {
     if { $arg != "" } {
-	return [gdb_file_cmd $arg]
+        # Provide an opportunity to set GDB options before a file is loaded.
+        if {$preload ne ""} {
+            send_gdb "${preload}\n"
+        }
+
+        return [gdb_file_cmd $arg]
     }
     return 0
 }
@@ -4614,6 +4623,14 @@ proc gdb_init { test_file_name } {
     # grep.  Clear GREP_OPTIONS to make the behavior predictable,
     # especially having color output turned on can cause tests to fail.
     setenv GREP_OPTIONS ""
+
+    # Some tests start up /bin/sh which checks this variable, if
+    # however, a users standard shell is not /bin/sh, and the command
+    # identified in PROMPT_COMMAND is a function, which, as an
+    # example, is defined in their .bashrc file, then /bin/sh will
+    # give errors/warnings at run time which breaks the tests.  Clear
+    # this variable should be safe for us.
+    setenv PROMPT_COMMAND ""
 
     # Clear $gdbserver_reconnect_p.
     global gdbserver_reconnect_p
@@ -5001,6 +5018,9 @@ gdb_caching_proc gdb_has_argv0 {
 	    -re "Limit on string chars or array elements to print is (\[^\r\n\]+)\\.\r\n$gdb_prompt $" {
 		set old_elements $expect_out(1,string)
 	    }
+	    -re "Limit on array elements to print is (\[^\r\n\]+)\\.\r\n$gdb_prompt $" {
+		set old_elements $expect_out(1,string)
+	    }
 	}
 	set old_repeats "200"
 	set test "show print repeats"
@@ -5383,8 +5403,13 @@ proc clean_restart { args } {
 
     if { [llength $args] >= 1 } {
 	set executable [lindex $args 0]
+	if { [llength $args] > 1 } {
+	    set preload [lindex $args 1]
+	} else {
+	    set preload ""
+	}
 	set binfile [standard_output_file ${executable}]
-	gdb_load ${binfile}
+	return [gdb_load ${binfile} ${preload}]
     }
 }
 

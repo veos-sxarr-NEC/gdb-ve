@@ -1,5 +1,8 @@
 /* Objective-C language support routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
@@ -401,6 +404,7 @@ const struct language_defn objc_language_defn = {
   c_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,

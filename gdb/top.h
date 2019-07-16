@@ -1,5 +1,8 @@
 /* Top level stuff for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -209,7 +212,7 @@ extern void print_gdb_version (struct ui_file *);
 extern void print_gdb_configuration (struct ui_file *);
 
 extern void read_command_file (FILE *);
-extern void init_history (void);
+extern void init_history (int);
 extern void command_loop (void);
 extern int quit_confirm (void);
 extern void quit_force (char *, int);
@@ -277,5 +280,7 @@ extern void do_restore_instream_cleanup (void *stream);
 extern char *handle_line_of_input (struct buffer *cmd_line_buffer,
 				   char *rl, int repeat,
 				   char *annotation_suffix);
+
+extern bool has_gdb_stderr (void);
 
 #endif

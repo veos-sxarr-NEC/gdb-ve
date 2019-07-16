@@ -1,5 +1,8 @@
 /* Select target systems and architectures at runtime for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1990-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.
@@ -943,6 +946,7 @@ target_xfer_status_to_string (enum target_xfer_status status)
     {
       CASE(TARGET_XFER_E_IO);
       CASE(TARGET_XFER_UNAVAILABLE);
+      CASE(TARGET_XFER_MYO_OWNERSHIP_FAILED);
     default:
       return "<unknown>";
     }
@@ -3807,6 +3811,14 @@ void
 target_insn_history_range (ULONGEST begin, ULONGEST end, int flags)
 {
   current_target.to_insn_history_range (&current_target, begin, end, flags);
+}
+
+/* See target.h.  */
+
+void
+target_get_call_history_length (void)
+{
+  current_target.to_get_call_history_length (&current_target);
 }
 
 /* See target.h.  */

@@ -1,4 +1,7 @@
 /* Data structures associated with breakpoints in GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -175,6 +178,14 @@ enum bptype
 
     /* Event for JIT compiled code generation or deletion.  */
     bp_jit_event,
+	 /*************************** Fast track debugging ****************************************************
+    added by kdavis@cray.com*/
+    bp_jump_to_debug,
+
+
+   /***************************** END - Fast track debugging *******************************************/
+
+    
 
     /* Breakpoint is placed at the STT_GNU_IFUNC resolver.  When hit GDB
        inserts new bp_gnu_ifunc_resolver_return at the caller.
@@ -607,7 +618,7 @@ struct breakpoint_ops
   void (*create_breakpoints_sal) (struct gdbarch *,
 				  struct linespec_result *,
 				  char *, char *,
-				  enum bptype, enum bpdisp, int, int,
+				  enum bptype, enum bpdisp, int, int, int,
 				  int, const struct breakpoint_ops *,
 				  int, int, int, unsigned);
 
@@ -760,6 +771,9 @@ struct breakpoint
        or 0 if don't care.  */
     int task;
 
+    /* Inferior number for inferior-specific breakpoint, or 0 if don't care.  */
+    int infnum;
+
     /* Count of the number of times this breakpoint was taken, dumped
        with the info, but not used for anything else.  Useful for
        seeing how many times you hit a break prior to the program
@@ -780,6 +794,26 @@ struct breakpoint
 
     /* Same as py_bp_object, but for Scheme.  */
     struct gdbscm_breakpoint_object *scm_bp_object;
+
+    /* Report breakpoint after this number of threads reach
+       a collective breakpoint */
+    int max_threads_hit;
+
+    /* Number of threads that reached collective breakpoint */
+    int threads_hit;
+
+    /************************************* Fast track debugging ************************************************************************
+	added by kdavis@cray.com*/
+    /* mlink@cray.com:
+
+       The address that will most likely correspond to the fast-track function's first instruction.
+       This is used when we need to jump to the fast-track function that contains a breakpoint.
+    */
+    CORE_ADDR debug_jump_addr;
+    /************************************* Fast track debugging ************************************************************************/
+
+    /* Line number exact or not.  */
+    char exact_line;
   };
 
 /* An instance of this type is used to represent a watchpoint.  It
@@ -1017,6 +1051,12 @@ struct bpstat_what
     int is_longjmp;
   };
 
+/******************************* Fast track debugging *******************************************************************************
+added by kdavis@cray.com */
+int check_for_debug_jump_breakpoint(struct regcache* regcache, bpstat bs);
+/******************************** END - Fast track debugging ***********************************************************************/
+  
+
 /* Tell what to do about this bpstat.  */
 struct bpstat_what bpstat_what (bpstat);
 
@@ -1054,7 +1094,7 @@ extern enum print_stop_action bpstat_print (bpstat, int);
    Return -1 if stopped at a breakpoint that has been deleted since
    we set it.
    Return 1 otherwise.  */
-extern int bpstat_num (bpstat *, int *);
+extern int bpstat_num (bpstat *, int *, char *stop);
 
 /* Perform actions associated with the stopped inferior.  Actually, we
    just use this for breakpoint commands.  Perhaps other actions will
@@ -1317,7 +1357,9 @@ enum breakpoint_create_flags
   {
     /* We're adding a breakpoint to our tables that is already
        inserted in the target.  */
-    CREATE_BREAKPOINT_FLAGS_INSERTED = 1 << 0
+    CREATE_BREAKPOINT_FLAGS_INSERTED = 1 << 0,
+    /* Line number exact breakpoint.  */
+    CREATE_BREAKPOINT_FLAGS_EXACT = 1 << 1,
   };
 
 /* Set a breakpoint.  This function is shared between CLI and MI functions
@@ -1643,5 +1685,11 @@ extern char *ep_parse_optional_if_clause (char **arg);
 /* Print the "Thread ID hit" part of "Thread ID hit Breakpoint N" to
    UIOUT iff debugging multiple threads.  */
 extern void maybe_print_thread_hit_breakpoint (struct ui_out *uiout);
+
+/* Check if collective breakpoint on or off. */
+extern int is_collective_breakpoints (void);
+
+/* Check if collective stepping on or off. */
+extern int is_collective_stepping (void);
 
 #endif /* !defined (BREAKPOINT_H) */

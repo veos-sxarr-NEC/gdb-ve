@@ -1,5 +1,8 @@
 /* DWARF 2 location expression support for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -100,7 +103,8 @@ struct value *dwarf2_evaluate_loc_desc (struct type *type,
 					struct frame_info *frame,
 					const gdb_byte *data,
 					size_t size,
-					struct dwarf2_per_cu_data *per_cu);
+					struct dwarf2_per_cu_data *per_cu,
+					CORE_ADDR push_obj);
 
 /* A chain of addresses that might be needed to resolve a dynamic
    property.  */
@@ -181,6 +185,9 @@ struct dwarf2_locexpr_baton
   /* The compilation unit containing the symbol whose location
      we're computing.  */
   struct dwarf2_per_cu_data *per_cu;
+
+  /* Hack: Work around broken dwarf produced by PGI compiler.  */
+  int producer_is_pgi : 1;
 };
 
 struct dwarf2_loclist_baton
@@ -290,6 +297,7 @@ extern struct call_site_chain *call_site_find_chain (struct gdbarch *gdbarch,
 						     CORE_ADDR caller_pc,
 						     CORE_ADDR callee_pc);
 
+
 /* A helper function to convert a DWARF register to an arch register.
    ARCH is the architecture.
    DWARF_REG is the register.
@@ -306,5 +314,22 @@ extern int dwarf_reg_to_regnum (struct gdbarch *arch, int dwarf_reg);
 
 extern int dwarf_reg_to_regnum_or_error (struct gdbarch *arch,
 					 ULONGEST dwarf_reg);
+
+struct value *dwarf2_evaluate_int (struct type *type, void *locbaton,
+				  struct value *obj, void *frame_info);
+struct value *dwarf2_evaluate_address (struct type *type, void *locbaton,
+				       struct value *obj, void *frame_info);
+
+struct array_location_batons
+{
+    struct dwarf2_loclist_baton *intel_location_baton;
+    struct dwarf2_loclist_baton *allocated_baton;
+    struct dwarf2_loclist_baton *pgi_lbase_baton;
+    struct dwarf2_loclist_baton *pgi_elem_skip_baton;
+
+    struct value *(*evaluate_int) (struct type *, void *, struct value *, void *);
+    struct value *(*evaluate_address) (struct type *, void *, struct value *, void *);
+    struct objfile *objfile;
+};
 
 #endif /* dwarf2loc.h */

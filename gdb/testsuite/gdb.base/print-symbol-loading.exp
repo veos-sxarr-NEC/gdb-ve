@@ -98,6 +98,7 @@ proc test_load_shlib { print_symbol_loading } {
     global binfile
     with_test_prefix "shlib ${print_symbol_loading}" {
 	clean_restart ${binfile}
+	gdb_test_no_output "set use-deprecated-index-sections on"
 	gdb_test_no_output "set auto-solib-add off"
 	if ![runto_main] {
 	    return -1

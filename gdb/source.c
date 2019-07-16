@@ -1,4 +1,7 @@
 /* List lines of source files for GDB, the GNU debugger.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -43,6 +46,9 @@
 #include "ui-out.h"
 #include "readline/readline.h"
 #include "common/enum-flags.h"
+
+#include "psymtab.h"
+#include "block.h"
 
 #define OPEN_MODE (O_RDONLY | O_BINARY)
 #define FDOPEN_MODE FOPEN_RB
@@ -126,6 +132,17 @@ show_filename_display_string (struct ui_file *file, int from_tty,
 {
   fprintf_filtered (file, _("Filenames are displayed as \"%s\".\n"), value);
 }
+
+int source_open = 1;
+static void
+show_source_open (struct ui_file *file, int from_tty,
+                    struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("\
+Source opening is %s.\n"),
+                    value);
+}
+
  
 /* Line number of last line printed.  Default for various commands.
    current_source_line is usually, but not always, the same as this.  */
@@ -1052,6 +1069,9 @@ find_and_open_source (const char *filename,
           *fullname = rewritten_fullname;
         }
 
+      if (!source_open)
+	return -1;
+
       result = gdb_open_cloexec (*fullname, OPEN_MODE, 0);
       if (result >= 0)
 	{
@@ -1116,15 +1136,22 @@ find_and_open_source (const char *filename,
         }
     }
 
-  result = openp (path, OPF_SEARCH_IN_PATH | OPF_RETURN_REALPATH, filename,
-		  OPEN_MODE, fullname);
-  if (result < 0)
+  if (!source_open)
     {
-      /* Didn't work.  Try using just the basename.  */
-      p = lbasename (filename);
-      if (p != filename)
-	result = openp (path, OPF_SEARCH_IN_PATH | OPF_RETURN_REALPATH, p,
-			OPEN_MODE, fullname);
+      result = -1;
+    }
+  else
+    {
+      result = openp (path, OPF_SEARCH_IN_PATH | OPF_RETURN_REALPATH, filename,
+		      OPEN_MODE, fullname);
+      if (result < 0)
+	{
+	  /* Didn't work.  Try using just the basename.  */
+	  p = lbasename (filename);
+	  if (p != filename)
+	    result = openp (path, OPF_SEARCH_IN_PATH | OPF_RETURN_REALPATH, p,
+			    OPEN_MODE, fullname);
+	}
     }
 
   do_cleanups (cleanup);
@@ -1325,15 +1352,23 @@ int
 identify_source_line (struct symtab *s, int line, int mid_statement,
 		      CORE_ADDR pc)
 {
+  int charpos = -1;
+  const char *fullname;
   if (s->line_charpos == 0)
     get_filename_and_charpos (s, (char **) NULL);
-  if (s->fullname == 0)
+  fullname = s->fullname;
+
+  if (fullname == 0)
+    fullname = s->filename;
+
+  if (fullname == 0)
     return 0;
-  if (line > s->nlines)
-    /* Don't index off the end of the line_charpos array.  */
-    return 0;
-  annotate_source (s->fullname, line, s->line_charpos[line - 1],
-		   mid_statement, get_objfile_arch (SYMTAB_OBJFILE (s)), pc);
+
+  if (line > 0 && line <= s->nlines && s->line_charpos != 0)
+    charpos = s->line_charpos[line - 1];
+  annotate_source (fullname, line, charpos,
+		   mid_statement,
+		   get_objfile_arch (SYMTAB_OBJFILE (s)), pc);
 
   current_source_line = line;
   current_source_symtab = s;
@@ -1364,7 +1399,7 @@ print_source_lines_base (struct symtab *s, int line, int stopline,
 
   /* If printing of source lines is disabled, just print file and line
      number.  */
-  if (ui_out_test_flags (uiout, ui_source_list))
+  if (ui_out_test_flags (uiout, ui_source_list) && source_open)
     {
       /* Only prints "No such file or directory" once.  */
       if ((s != last_source_visited) || (!last_source_error))
@@ -1592,6 +1627,9 @@ line_info (char *arg, int from_tty)
 	    }
 	  else
 	    {
+              const struct block *b;
+              const char *name;
+                
 	      printf_filtered ("Line %d of \"%s\"",
 			       sal.line,
 			       symtab_to_filename_for_display (sal.symtab));
@@ -1602,6 +1640,29 @@ line_info (char *arg, int from_tty)
 	      printf_filtered (" and ends at ");
 	      print_address (gdbarch, end_pc, gdb_stdout);
 	      printf_filtered (".\n");
+
+	      /* If this address is a inlined function, print out call site
+	       * information */
+	      b = block_for_pc_sect (sal.pc, sal.section);
+	      while (b != NULL)
+	        {
+	          if (BLOCK_FUNCTION (b) != NULL && block_inlined_p (b))
+                    {
+                      if (SYMBOL_LINE (BLOCK_FUNCTION (b)) != 0)
+                        {
+                          name = symbol_symtab (BLOCK_FUNCTION (b))->fullname;
+                          if (name==0)
+                            name = symbol_symtab (BLOCK_FUNCTION (b))->filename;
+                          printf_filtered ("This is at an inlined function \"%s\" called from line %d of \"%s\".\n",
+                              SYMBOL_PRINT_NAME (BLOCK_FUNCTION (b)),
+                              SYMBOL_LINE (BLOCK_FUNCTION (b)),
+                              name);
+                        }
+                    }
+	          else if (BLOCK_FUNCTION (b) != NULL)
+	            break;
+	          b = BLOCK_SUPERBLOCK (b);
+	        }
 	    }
 
 	  /* x/i should display this line's code.  */
@@ -2027,6 +2088,19 @@ set_substitute_path_command (char *args, int from_tty)
   do_cleanups (cleanup);
 }
 
+static void
+set_source (char *arg, int from_tty)
+{
+  printf_unfiltered (
+     "\"set source\" must be followed by the name of a source subcommand.\n");
+  help_list (setsourcelist, "set source ", all_commands, gdb_stdout);
+}
+
+static void
+show_source (char *args, int from_tty)
+{
+  cmd_show_list (showsourcelist, from_tty, "");
+}
 
 void
 _initialize_source (void)
@@ -2145,4 +2219,19 @@ By default, relative filenames are displayed."),
 			show_filename_display_string,
 			&setlist, &showlist);
 
+  add_prefix_cmd ("source", no_class, set_source,
+                  _("Generic command for setting how sources are handled."),
+                  &setsourcelist, "set source ", 0, &setlist);
+
+  add_prefix_cmd ("source", no_class, show_source,
+                  _("Generic command for showing source settings."),
+                  &showsourcelist, "show source ", 0, &showlist);
+
+  add_setshow_boolean_cmd ("open", class_files,
+                           &source_open, _("\
+Set source opening."), _("\
+Show source opening."), 
+                           NULL, NULL,
+                           show_source_open,
+                           &setsourcelist, &showsourcelist);
 }

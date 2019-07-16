@@ -453,11 +453,11 @@
 /* Define to 1 if your system has struct lwp. */
 #undef HAVE_STRUCT_LWP
 
-/* Define to 1 if `struct ptrace_lwpinfo' is a member of `pl_tdname'. */
-#undef HAVE_STRUCT_PTRACE_LWPINFO_PL_TDNAME
-
 /* Define to 1 if `struct ptrace_lwpinfo' is a member of `pl_syscall_code'. */
 #undef HAVE_STRUCT_PTRACE_LWPINFO_PL_SYSCALL_CODE
+
+/* Define to 1 if `struct ptrace_lwpinfo' is a member of `pl_tdname'. */
+#undef HAVE_STRUCT_PTRACE_LWPINFO_PL_TDNAME
 
 /* Define to 1 if your system has struct reg in <machine/reg.h>. */
 #undef HAVE_STRUCT_REG
@@ -616,6 +616,9 @@
    moved. */
 #undef JIT_READER_DIR_RELOCATABLE
 
+/* Directory of libraries. */
+#undef LIBDIR
+
 /* Define if you want to use new multi-fd /proc interface. */
 #undef NEW_PROC_API
 
@@ -673,6 +676,9 @@
 
 /* Define as the return type of ptrace. */
 #undef PTRACE_TYPE_RET
+
+/* Set python home for gdb */
+#undef PYTHONHOME_PATH
 
 /* Define if the python directory should be relocated when GDB is moved. */
 #undef PYTHON_PATH_RELOCATABLE

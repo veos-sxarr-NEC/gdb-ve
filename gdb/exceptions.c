@@ -1,5 +1,8 @@
 /* Exception (throw catch) mechanism, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -217,8 +220,6 @@ catch_exceptions_with_msg (struct ui_out *func_uiout,
     }
   return val;
 }
-
-/* This function is superseded by catch_exceptions().  */
 
 int
 catch_errors (catch_errors_ftype *func, void *func_args, char *errstring,

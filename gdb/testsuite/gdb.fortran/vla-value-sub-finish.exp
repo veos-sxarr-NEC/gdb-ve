@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+if { [skip_fortran_tests] } { return -1 }
+load_lib "fortran.exp"
+
 standard_testfile "vla-sub.f90"
 
 if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
@@ -20,8 +23,8 @@ if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
     return -1
 }
 
-if ![runto_main] {
-    untested "could not run to main"
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
     return -1
 }
 

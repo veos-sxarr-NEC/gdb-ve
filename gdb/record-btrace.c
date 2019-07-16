@@ -1,5 +1,8 @@
 /* Branch trace support for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>
@@ -1084,10 +1087,14 @@ btrace_call_history (struct ui_out *uiout,
       const struct btrace_function *bfun;
       struct minimal_symbol *msym;
       struct symbol *sym;
+      struct cleanup *chain2 = NULL;
 
       bfun = btrace_call_get (&it);
       sym = bfun->sym;
       msym = bfun->msym;
+
+      if (ui_out_is_mi_like_p (uiout))
+	chain2 = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
 
       /* Print the function index.  */
       ui_out_field_uint (uiout, "index", bfun->number);
@@ -1112,15 +1119,22 @@ btrace_call_history (struct ui_out *uiout,
 	{
 	  int level = bfun->level + btinfo->level, i;
 
+	  if (ui_out_is_mi_like_p (uiout))
+	    {
+	      ui_out_field_int (uiout, "level", level);
+	    }
+	  else
+	    {
 	  for (i = 0; i < level; ++i)
 	    ui_out_text (uiout, "  ");
+	}
 	}
 
       if (sym != NULL)
 	ui_out_field_string (uiout, "function", SYMBOL_PRINT_NAME (sym));
       else if (msym != NULL)
 	ui_out_field_string (uiout, "function", MSYMBOL_PRINT_NAME (msym));
-      else if (!ui_out_is_mi_like_p (uiout))
+      else
 	ui_out_field_string (uiout, "function", "??");
 
       if ((flags & RECORD_PRINT_INSN_RANGE) != 0)
@@ -1134,9 +1148,61 @@ btrace_call_history (struct ui_out *uiout,
 	  ui_out_text (uiout, _("\tat "));
 	  btrace_call_history_src_line (uiout, bfun);
 	}
+      if (ui_out_is_mi_like_p (uiout))
+	do_cleanups (chain2);
 
       ui_out_text (uiout, "\n");
     }
+}
+
+/* The to_get_call_history_length method of target record-btrace.  */
+
+static void
+record_btrace_get_call_history_length (struct target_ops *self)
+{
+  struct btrace_thread_info *btinfo;
+  struct btrace_call_iterator begin,end;
+  struct cleanup *uiout_cleanup;
+  struct cleanup *chain2 = NULL;
+  struct ui_out *uiout;
+  const struct btrace_function *bfun;
+  int found = 0;
+
+  uiout = current_uiout;
+
+  if (ui_out_is_mi_like_p (uiout))
+    {
+      uiout_cleanup = make_cleanup_ui_out_list_begin_end (uiout,
+	"func history length");
+      chain2 = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
+    }
+  else
+    uiout_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout,
+	"func history length");
+
+  btinfo = require_btrace ();
+
+  btrace_call_begin (&begin, btinfo);
+
+  btrace_call_end (&end, btinfo);
+
+  found = btrace_call_prev (&end, 1);
+
+  if (found != 0)
+    {
+      bfun = btrace_call_get (&end);
+
+      ui_out_field_uint (uiout, "end", bfun->number);
+    }
+  else
+    {
+      ui_out_field_uint (uiout, "end", 0);
+    }
+
+  if (ui_out_is_mi_like_p (uiout))
+    do_cleanups (chain2);
+
+  do_cleanups (uiout_cleanup);
 }
 
 /* The to_call_history method of target record-btrace.  */
@@ -1153,8 +1219,13 @@ record_btrace_call_history (struct target_ops *self, int size, int int_flags)
   record_print_flags flags = (enum record_print_flag) int_flags;
 
   uiout = current_uiout;
+
+  if (ui_out_is_mi_like_p (uiout))
+    uiout_cleanup = make_cleanup_ui_out_list_begin_end (uiout,
+						        "func history");
+  else
   uiout_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout,
-						       "insn history");
+						         "func history");
   context = abs (size);
   if (context == 0)
     error (_("Bad record function-call-history-size."));
@@ -1246,8 +1317,12 @@ record_btrace_call_history_range (struct target_ops *self,
   record_print_flags flags = (enum record_print_flag) int_flags;
 
   uiout = current_uiout;
-  uiout_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout,
-						       "func history");
+  if (ui_out_is_mi_like_p (uiout))
+    uiout_cleanup = make_cleanup_ui_out_list_begin_end (uiout,
+						        "func history");
+  else
+    uiout_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout,
+  						         "func history");
   low = from;
   high = to;
 
@@ -2860,6 +2935,7 @@ init_record_btrace_ops (void)
   ops->to_insn_history_from = record_btrace_insn_history_from;
   ops->to_insn_history_range = record_btrace_insn_history_range;
   ops->to_call_history = record_btrace_call_history;
+  ops->to_get_call_history_length = record_btrace_get_call_history_length;
   ops->to_call_history_from = record_btrace_call_history_from;
   ops->to_call_history_range = record_btrace_call_history_range;
   ops->to_record_is_replaying = record_btrace_is_replaying;

@@ -1,0 +1,58 @@
+# local-variables.exp -- test if the debugger can display locals within an
+# Open MP region. OpenMP regions are typically implement using artificial
+# functions which, in conjunction with OpenMP's scoping tags (e.g. lastprivate),
+# can make it a challenge to determine variable visibility.
+
+standard_testfile
+
+if [get_compiler_info] {
+   return -1
+}
+
+if { [prepare_for_testing $testfile.exp $testfile $srcfile {debug additional_flags=-fopenmp} ] } {
+  untested "compilation failed"
+  return -1
+}
+
+if ![runto_main] then {
+  fail "can't run to main"
+  return 0
+}
+
+gdb_breakpoint [gdb_get_line_number "post-barrier-marker"]
+gdb_continue_to_breakpoint "post-barrier-marker"
+
+# First private
+foreach_with_prefix thread {1 2 3 4} {
+  gdb_test "thread ${thread}" "\\\[Switching to thread ${thread}.*"
+  gdb_test "p x" "= [expr ${thread} + 39]" "check first private x"
+}
+
+# Private
+foreach_with_prefix thread {1 2 3 4} {
+  gdb_test "thread ${thread}" "\\\[Switching to thread ${thread}.*"
+  # Seen to fail with GCC 7.1/3 but not with upstream GDB.
+  setup_kfail "ALL/4734" "*-*-*"
+  gdb_test "p tid" "= [expr ${thread} -1]" "check private tid"
+}
+
+# Shared
+foreach_with_prefix thread {1 2 3 4} {
+  gdb_test "thread ${thread}" "\\\[Switching to thread ${thread}.*"
+  gdb_test "p nthreads" "= 4" "check shared nthreads"
+}
+
+gdb_test_no_output "delete 2"
+# Test Open MP regions in a function call (i.e. a deeper stack).
+# Test omp parallel for.
+gdb_breakpoint [gdb_get_line_number "post-collatz"]
+foreach_with_prefix thread {1 2 3 4} {
+  gdb_continue_to_breakpoint "post-collatz"
+  setup_kfail "ALL/4734" "*-*-*"
+  gdb_test "p n" "= 1" "check implicit private n"
+}
+
+# Last private
+gdb_breakpoint [gdb_get_line_number "post-parallel-for"]
+gdb_continue_to_breakpoint "post-parallel-for"
+gdb_test "p l" "= 5" "check last private is the final iteration"

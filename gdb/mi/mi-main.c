@@ -1,5 +1,8 @@
 /* MI Command Set.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
@@ -296,7 +299,7 @@ exec_continue (char **argv, int argc)
 	}
       else
 	{
-	  continue_1 (0);
+	  continue_1 (FOCUS_CURRENT_THREAD);
 	}
     }
   else
@@ -306,7 +309,7 @@ exec_continue (char **argv, int argc)
       if (current_context->all)
 	{
 	  sched_multi = 1;
-	  continue_1 (0);
+	  continue_1 (FOCUS_CURRENT_THREAD);
 	}
       else
 	{
@@ -314,7 +317,7 @@ exec_continue (char **argv, int argc)
 	     either all threads, or one thread, depending on the
 	     'scheduler-locking' variable.  Let's continue to do the
 	     same.  */
-	  continue_1 (1);
+	  continue_1 (FOCUS_CURRENT_INFERIOR);
 	}
       do_cleanups (back_to);
     }
@@ -381,14 +384,14 @@ mi_cmd_exec_interrupt (char *command, char **argv, int argc)
      anything specific.  */
   if (!non_stop)
     {
-      interrupt_target_1 (0);
+      interrupt_target_1 (FOCUS_CURRENT_THREAD);
       return;
     }
 
   if (current_context->all)
     {
       /* This will interrupt all threads in all inferiors.  */
-      interrupt_target_1 (1);
+      interrupt_target_1 (FOCUS_CURRENT_INFERIOR);
     }
   else if (current_context->thread_group != -1)
     {
@@ -401,7 +404,7 @@ mi_cmd_exec_interrupt (char *command, char **argv, int argc)
       /* Interrupt just the current thread -- either explicitly
 	 specified via --thread or whatever was current before
 	 MI command was sent.  */
-      interrupt_target_1 (0);
+      interrupt_target_1 (FOCUS_CURRENT_THREAD);
     }
 }
 
@@ -2311,6 +2314,7 @@ mi_cmd_execute (struct mi_parse *parse)
   if (parse->language != language_unknown)
     {
       make_cleanup_restore_current_language ();
+      language_mode = language_mode_manual;
       set_language (parse->language);
     }
 

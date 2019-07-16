@@ -1,5 +1,8 @@
 /* Remote target communications for serial-line targets in custom GDB protocol
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1988-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -140,7 +143,10 @@ static void remote_thread_events (struct target_ops *ops, int enable);
 
 static void interrupt_query (void);
 
+static void remote_switch_thread (struct ptid ptid);
+
 static void set_general_thread (struct ptid ptid);
+
 static void set_continue_thread (struct ptid ptid);
 
 static void get_offsets (void);
@@ -357,6 +363,12 @@ struct remote_state
 
   /* The status of the stub support for the various vCont actions.  */
   struct vCont_action_support supports_vCont;
+
+  /* True if the stub reports support for non-stop mode.  */
+  int non_stop_aware;
+
+  /* True if the stub reports support for inferior-stop mode.  */
+  int inferior_stop_aware;
 
   /* Nonzero if the user has pressed Ctrl-C, but the target hasn't
      responded to that.  */
@@ -2264,6 +2276,15 @@ remote_thread_name (struct target_ops *ops, struct thread_info *info)
   return NULL;
 }
 
+/* UPC-GUM - Temporary switch thread on the target so memory
+   read goes to the right processor. */
+
+static void
+remote_switch_thread (ptid_t ptid)
+{
+  set_thread (ptid, 1);
+}
+
 /* About these extended threadlist and threadinfo packets.  They are
    variable length packets but, the fields within them are often fixed
    length.  They are redundent enough to send over UDP as is the
@@ -3275,7 +3296,7 @@ remote_update_thread_list (struct target_ops *ops)
 		 executing until proven otherwise with a stop reply.
 		 In all-stop, we can only get here if all threads are
 		 stopped.  */
-	      int executing = target_is_non_stop_p () ? 1 : 0;
+	      int executing = (non_stop && !inferior_stop) ? 1 : 0;
 
 	      remote_notice_new_inferior (item->ptid, executing);
 
@@ -3997,7 +4018,7 @@ process_initial_stop_replies (int from_tty)
   /* For "info program".  */
   thread = inferior_thread ();
   if (thread->state == THREAD_STOPPED)
-    set_last_target_status (inferior_ptid, thread->suspend.waitstatus);
+    set_last_target_status (inferior_ptid, &thread->suspend.waitstatus);
 }
 
 /* Start the remote connection and sync state.  */
@@ -4110,6 +4131,18 @@ remote_start_remote (int from_tty, struct target_ops *target, int extended_p)
 
       if (strcmp (rs->buf, "OK") != 0)
 	error (_("Remote refused setting non-stop mode with: %s"), rs->buf);
+
+      if (inferior_stop)
+        {
+	  if (!rs->inferior_stop_aware)
+	    error (_("Inferior-stop mode requested, but remote does not support inferior-stop"));
+      
+	  putpkt ("QInferiorStop:1");
+	  getpkt (&rs->buf, &rs->buf_size, 0);
+
+	  if (strcmp (rs->buf, "OK") != 0)
+	    error ("Remote refused setting inferior-stop mode with: %s", rs->buf);	  
+	}
 
       /* Find about threads and processes the stub is already
 	 controlling.  We default to adding them in the running state.
@@ -4556,6 +4589,15 @@ remote_packet_size (const struct protocol_feature *feature,
   rs->explicit_packet_size = packet_size;
 }
 
+static void
+remote_inferior_stop_feature (const struct protocol_feature *feature,
+			      enum packet_support support, const char *value)
+{
+  struct remote_state *rs = get_remote_state ();
+
+  rs->inferior_stop_aware = (support == PACKET_ENABLE);
+}
+
 static const struct protocol_feature remote_protocol_features[] = {
   { "PacketSize", PACKET_DISABLE, remote_packet_size, -1 },
   { "qXfer:auxv:read", PACKET_DISABLE, remote_supported_packet,
@@ -4593,6 +4635,7 @@ static const struct protocol_feature remote_protocol_features[] = {
   { "multiprocess", PACKET_DISABLE, remote_supported_packet,
     PACKET_multiprocess_feature },
   { "QNonStop", PACKET_DISABLE, remote_supported_packet, PACKET_QNonStop },
+  { "QInferiorStop", PACKET_DISABLE, remote_inferior_stop_feature, -1 },
   { "qXfer:siginfo:read", PACKET_DISABLE, remote_supported_packet,
     PACKET_qXfer_siginfo_read },
   { "qXfer:siginfo:write", PACKET_DISABLE, remote_supported_packet,
@@ -5021,6 +5064,8 @@ remote_open_1 (const char *name, int from_tty,
   rs->explicit_packet_size = 0;
   rs->noack_mode = 0;
   rs->extended = extended_p;
+  rs->non_stop_aware = 0;
+  rs->inferior_stop_aware = 0;
   rs->waiting_for_stop_reply = 0;
   rs->ctrlc_pending_p = 0;
   rs->got_ctrlc_during_io = 0;
@@ -5328,6 +5373,12 @@ extended_remote_attach (struct target_ops *target, const char *args,
 	inferior_ptid = thread->ptid;
       else
 	inferior_ptid = pid_to_ptid (pid);
+      
+      if (inferior_stop)
+	{
+	  set_executing (inferior_ptid, 1);
+	  set_running (inferior_ptid, 1);
+	}
 
       /* Invalidate our notion of the remote current thread.  */
       record_currthread (rs, minus_one_ptid);
@@ -13128,6 +13179,7 @@ Specify the serial device it is connected to\n\
   remote_ops.to_thread_alive = remote_thread_alive;
   remote_ops.to_thread_name = remote_thread_name;
   remote_ops.to_update_thread_list = remote_update_thread_list;
+  remote_ops.to_thread_switch = remote_switch_thread;
   remote_ops.to_pid_to_str = remote_pid_to_str;
   remote_ops.to_extra_thread_info = remote_threads_extra_info;
   remote_ops.to_get_ada_task_ptid = remote_get_ada_task_ptid;
@@ -13911,7 +13963,7 @@ Show the maximum size of the address (in bits) in a memory packet."), NULL,
 			 "N stop reply", "no-resumed-stop-reply", 0);
 
   /* Assert that we've registered "set remote foo-packet" commands
-     for all packet configs.  */
+     for alxl packet configs.  */
   {
     int i;
 

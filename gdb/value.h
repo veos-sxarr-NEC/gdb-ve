@@ -1,5 +1,8 @@
 /* Definitions for values of C expressions, for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -22,6 +25,8 @@
 
 #include "doublest.h"
 #include "frame.h"		/* For struct frame_id.  */
+
+LONGEST get_limited_length(struct type *type);
 
 struct block;
 struct expression;
@@ -93,7 +98,7 @@ struct value;
    put into the value history or exposed to Python are taken off this
    list.  */
 
-struct value *value_next (const struct value *);
+extern struct value *value_next (const struct value *);
 
 /* Type of the value.  */
 
@@ -430,6 +435,12 @@ extern CORE_ADDR value_raw_address (const struct value *);
 /* Set the address of a value.  */
 extern void set_value_address (struct value *, CORE_ADDR);
 
+/* If lval == lval_memory, this is the address in the inferior.  If
+   lval == lval_register, this is the byte offset into the registers
+   structure.  */
+extern gdb_upc_pts_t *deprecated_value_upc_shared_addr_hack (struct value *);
+#define VALUE_SHARED_ADDR(val) (*deprecated_value_upc_shared_addr_hack (val))
+
 /* Pointer to internal variable.  */
 extern struct internalvar **deprecated_value_internalvar_hack (struct value *);
 #define VALUE_INTERNALVAR(val) (*deprecated_value_internalvar_hack (val))
@@ -642,9 +653,10 @@ extern struct value *value_at (struct type *type, CORE_ADDR addr);
 extern struct value *value_at_lazy (struct type *type, CORE_ADDR addr);
 
 extern struct value *value_from_contents_and_address_unresolved
-     (struct type *, const gdb_byte *, CORE_ADDR);
+                       (struct type *, const gdb_byte *, unsigned, CORE_ADDR);
 extern struct value *value_from_contents_and_address (struct type *,
 						      const gdb_byte *,
+						      unsigned length,
 						      CORE_ADDR);
 extern struct value *value_from_contents (struct type *, const gdb_byte *);
 
@@ -691,6 +703,7 @@ extern struct value *default_read_var_value (struct symbol *var,
 
 extern struct value *allocate_value (struct type *type);
 extern struct value *allocate_value_lazy (struct type *type);
+extern void allocate_value_contents_limited (struct value *value);
 extern void value_contents_copy (struct value *dst, LONGEST dst_offset,
 				 struct value *src, LONGEST src_offset,
 				 LONGEST length);
@@ -724,6 +737,8 @@ extern LONGEST value_ptrdiff (struct value *arg1, struct value *arg2);
 extern int value_must_coerce_to_target (struct value *arg1);
 
 extern struct value *value_coerce_to_target (struct value *arg1);
+
+extern struct value *value_force_coerce_to_target (struct value *arg1);
 
 extern struct value *value_coerce_array (struct value *arg1);
 
@@ -1067,6 +1082,10 @@ extern struct value *value_slice (struct value *, int, int);
 extern struct value *value_literal_complex (struct value *, struct value *,
 					    struct type *);
 
+extern struct value *value_real (struct value *);
+
+extern struct value *value_imag (struct value *);
+
 extern struct value *find_function_in_inferior (const char *,
 						struct objfile **);
 
@@ -1101,5 +1120,28 @@ extern struct type *result_type_of_xmethod (struct value *method,
 
 extern struct value *call_xmethod (struct value *method,
 				   int argc, struct value **argv);
+
+extern int value_repeated (const struct value *value);
+extern void set_value_repeated (struct value *value,
+				int repeated);
+
+extern int value_from_infcall (const struct value *value);
+extern void set_value_from_infcall (struct value *value,
+				    int from_infcall);
+
+extern unsigned value_length (const struct value *value);
+
+extern void value_copy_contents (struct value *to, struct value *from);
+extern void value_copy_contents_all_raw (struct value *to, struct value *from);
+
+extern void value_contents_ensure_unlimited(struct value* val);
+
+extern void set_value_not_allocated (struct value *v);
+extern void set_value_not_associated (struct value *v);
+extern int value_not_allocated (const struct value *v);
+extern int value_not_associated (const struct value *v);
+
+extern struct value *value_slice_1 (struct value *array, int lowbound, int length,
+				    int stride_length, int call_count);
 
 #endif /* !defined (VALUE_H) */

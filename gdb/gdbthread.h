@@ -1,4 +1,7 @@
 /* Multi-process/thread control defs for GDB, the GNU debugger.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1987-2017 Free Software Foundation, Inc.
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
    
@@ -224,6 +227,9 @@ struct thread_info
   /* The inferior this thread belongs to.  */
   struct inferior *inf;
 
+  /* UPC thread number */
+  int unum;
+
   /* The name of the thread, as specified by the user.  This is NULL
      if the thread does not have a user-given name.  */
   char *name;
@@ -310,6 +316,12 @@ struct thread_info
      resume of the thread, and not immediately.  */
   struct target_waitstatus pending_follow;
 
+  /* Collective breakpoint thread is stopped at. */
+  int collective_bp_num;
+
+  /* Collective step in process. */
+  int collective_step;
+
   /* True if this thread has been explicitly requested to stop.  */
   int stop_requested;
 
@@ -318,6 +330,9 @@ struct thread_info
      bp_longjmp or bp_exception but longjmp has been caught just for
      bp_longjmp_call_dummy.  */
   struct frame_id initiating_frame;
+
+  struct frame_id selected_frame_id;
+  int selected_frame_level;
 
   /* Private data used by the target vector implementation.  */
   struct private_thread_info *priv;
@@ -438,10 +453,14 @@ extern struct thread_info *any_live_thread_of_process (int pid);
 /* Change the ptid of thread OLD_PTID to NEW_PTID.  */
 void thread_change_ptid (ptid_t old_ptid, ptid_t new_ptid);
 
+/* Switch to the thread specified by 'ptid'.  */
+extern void switch_to_thread (ptid_t ptid);
+
 /* Iterator function to call a user-provided callback function
    once for each known thread.  */
 typedef int (*thread_callback_func) (struct thread_info *, void *);
 extern struct thread_info *iterate_over_threads (thread_callback_func, void *);
+extern struct thread_info *iterate_over_inferior_threads (int pid, thread_callback_func, void *);
 
 /* Traverse all threads.  */
 #define ALL_THREADS(T)				\
@@ -517,6 +536,9 @@ extern int is_exited (ptid_t ptid);
 
 /* In the frontend's perpective, is this thread stopped?  */
 extern int is_stopped (ptid_t ptid);
+
+/* In the frontend's perpective is there any thread running?  */
+extern int any_running (void);
 
 /* Marks thread PTID as executing, or not.  If PTID is minus_one_ptid,
    marks all threads.
@@ -635,5 +657,16 @@ extern void print_selected_thread_frame (struct ui_out *uiout,
 					 user_selected_what selection);
 
 extern struct thread_info *thread_list;
+
+/* Collective breakpoints helper routines */
+extern int thread_clear_collective_bp(int);
+extern int thread_check_collective_bp (int);
+extern int thread_check_collective_step (void);
+
+/* Some UPC thread variables */
+extern int upcmode;
+extern int upc_sync_ok;
+extern int upc_thread_active;
+#define CLEAR_ALL_COLLECTIVE_BPS -1
 
 #endif /* GDBTHREAD_H */

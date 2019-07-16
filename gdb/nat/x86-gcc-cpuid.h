@@ -3,6 +3,9 @@
  * include this directly, but pull in x86-cpuid.h and use that func.
  */
 /*
+ * Modified by Arm.
+
+ * Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
  * Copyright (C) 2007-2017 Free Software Foundation, Inc.
  *
  * This file is free software; you can redistribute it and/or modify it
@@ -83,6 +86,10 @@
 #define bit_AVX512ER	(1 << 27)
 #define bit_AVX512CD	(1 << 28)
 #define bit_SHA		(1 << 29)
+
+/* %ecx */
+#define bit_PKU		(1 << 3)
+#define bit_OSPKE	(1 << 4)
 
 /* Extended State Enumeration Sub-leaf (%eax == 13, %ecx == 1) */
 #define bit_XSAVEOPT	(1 << 0)

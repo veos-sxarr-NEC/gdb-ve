@@ -25,9 +25,9 @@ if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} {debug f90}] } 
     return -1
 }
 
-if ![runto MAIN__] {
-    perror "Couldn't run to MAIN__"
-    continue
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
 }
 
 # Depending on the compiler being used, the type names can be printed differently.

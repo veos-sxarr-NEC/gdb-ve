@@ -1,6 +1,9 @@
 /* *INDENT-OFF* */ /* ATTRIBUTE_PRINTF confuses indent, avoid running it
 		      for now.  */
 /* I/O, string, cleanup, and other random utilities for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -51,6 +54,8 @@ extern const char *gdb_bfd_errmsg (bfd_error_type error_tag, char **matching);
 void reset_prompt_for_continue_wait_time (void);
 /* Return the time spent in prompt_for_continue.  */
 struct timeval get_prompt_for_continue_wait_time (void);
+
+int isstartoftemplate (const char *s);
 
 /* Parsing utilites.  */
 
@@ -151,6 +156,7 @@ extern int yquery (const char *, ...) ATTRIBUTE_PRINTF (1, 2);
 extern void begin_line (void);
 
 extern void wrap_here (char *);
+extern void fwrap_here (char *, struct ui_file *);
 
 extern void reinitialize_more_filter (void);
 
@@ -322,6 +328,7 @@ extern pid_t wait_to_die_with_timeout (pid_t pid, int *status, int timeout);
 
 extern int producer_is_gcc_ge_4 (const char *producer);
 extern int producer_is_gcc (const char *producer, int *major, int *minor);
+extern int producer_is_pgi_fortran (const char *producer);
 
 extern int myread (int, char *, int);
 
@@ -385,5 +392,9 @@ extern void dump_core (void);
    Space for the result is malloc'd, caller must free.  */
 
 extern char *make_hex_string (const gdb_byte *data, size_t length);
+
+/* Simplify a path.  */
+
+extern void simplify_path (char *pathl);
 
 #endif /* UTILS_H */

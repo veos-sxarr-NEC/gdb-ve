@@ -1,4 +1,7 @@
 /* Annotation routines for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -104,6 +107,13 @@ annotate_starting (void)
 {
   if (annotation_level > 1)
     printf_filtered (("\n\032\032starting\n"));
+}
+
+void
+annotate_started (void)
+{
+  if (annotation_level > 0)
+    printf_filtered (("\n\032\032started\n"));
 }
 
 void
@@ -421,7 +431,7 @@ annotate_arg_end (void)
 }
 
 void
-annotate_source (char *filename, int line, int character, int mid,
+annotate_source (const char *filename, int line, int character, int mid,
 		 struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   if (annotation_level > 1)
@@ -429,8 +439,14 @@ annotate_source (char *filename, int line, int character, int mid,
   else
     printf_filtered (("\032\032"));
 
-  printf_filtered (("%s:%d:%d:%s:%s\n"), filename, line, character,
-		   mid ? "middle" : "beg", paddress (gdbarch, pc));
+  printf_filtered (("%s:%d:"), filename,
+		   line);
+  if (character != -1)
+    printf_filtered (("%d"), character);
+  else
+    printf_filtered (("??"));
+  printf_filtered ((":%s:"), mid ? "middle" : "beg");
+  printf_filtered (("%s\n"), paddress (gdbarch, pc));
 }
 
 void

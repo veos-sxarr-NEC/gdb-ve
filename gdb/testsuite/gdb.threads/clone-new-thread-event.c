@@ -71,5 +71,11 @@ main (int argc, char **argv)
 		   , NULL, NULL, NULL, NULL);
   assert (new_pid > 0);
 
+  // Wait for the child process to finish, to ensure that SIGUSR1 is caught
+  // before the parent dies.
+  int new_pid_status = 0;
+  int expect_duplicate_pid = waitpid (new_pid, &new_pid_status, __WCLONE);
+  assert (expect_duplicate_pid  == new_pid);
+
   return 0;
 }

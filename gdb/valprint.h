@@ -1,5 +1,8 @@
 /* Declarations for value printing routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -52,6 +55,9 @@ struct value_print_options
      "unlimited".  */
   unsigned int print_max;
 
+  /* Maxiumum number of string chars to print */
+  unsigned int print_smax;
+
   /* Print repeat counts if there are more than this many repetitions
      of an element in an array.  */
   unsigned int repeat_count_threshold;
@@ -92,6 +98,9 @@ struct value_print_options
   /* If nonzero, when printing a pointer, print the symbol to which it
      points, if any.  */
   int symbol_print;
+
+  /* Maximum print depth.  */
+  unsigned int max_depth;
 };
 
 /* The global print options set by the user.  In general this should
@@ -123,6 +132,9 @@ extern void val_print_array_elements (struct type *, const gdb_byte *, LONGEST,
 
 extern void val_print_type_code_int (struct type *, const gdb_byte *,
 				     struct ui_file *);
+
+
+extern int scalar_or_string_type (struct type *type);
 
 extern void val_print_scalar_formatted (struct type *,
 					const gdb_byte *, LONGEST,

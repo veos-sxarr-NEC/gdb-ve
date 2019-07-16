@@ -1,5 +1,8 @@
 /* Frame unwinder for frames with DWARF Call Frame Information.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    Contributed by Mark Kettenis.
@@ -687,8 +690,9 @@ bad CFI data; mismatched DW_CFA_restore_state at %s"),
 	      break;
 
 	    default:
-	      internal_error (__FILE__, __LINE__,
-			      _("Unknown CFI encountered."));
+ 	      warning (_("Unknown CFI encountered."));
+ 	      insn_ptr = insn_end;
+ 	      break;
 	    }
 	}
     }
@@ -1129,7 +1133,7 @@ dwarf2_frame_cache (struct frame_info *this_frame, void **this_cache)
     }
   CATCH (ex, RETURN_MASK_ERROR)
     {
-      if (ex.error == NOT_AVAILABLE_ERROR)
+      if ((ex.error == NOT_AVAILABLE_ERROR) || (ex.error == OPTIMIZED_OUT_ERROR)) 
 	{
 	  cache->unavailable_retaddr = 1;
 	  do_cleanups (old_chain);
@@ -1404,10 +1408,20 @@ dwarf2_frame_sniffer (const struct frame_unwind *self,
      extend one byte before its start address or we could potentially
      select the FDE of the previous function.  */
   CORE_ADDR block_addr = get_frame_address_in_block (this_frame);
+  CORE_ADDR pc = get_frame_pc (this_frame);
   struct dwarf2_fde *fde = dwarf2_frame_find_fde (&block_addr, NULL);
 
   if (!fde)
     return 0;
+
+  /* Note: dwarf2_frame_find_fde modifies block_addr to point to the first
+     instruction of the FDE.  */
+  if (block_addr == pc)
+    {
+      /* Return 0 if at the start of the function.  Some compilers emit bogus
+         unwind information for the first instruction.  */
+      return 0;
+    }
 
   /* On some targets, signal trampolines may have unwind information.
      We need to recognize them so that we set the frame type
@@ -2134,7 +2148,9 @@ decode_frame_entry_1 (struct comp_unit *unit, const gdb_byte *start,
 
       fde->eh_frame_p = eh_frame_p;
 
-      add_fde (fde_table, fde);
+      /* Only add the FDE if it looks sane (i.e. spans < 16Mb code).  */
+      if (fde->address_range < 0x1000000)
+        add_fde (fde_table, fde);
     }
 
   return end;

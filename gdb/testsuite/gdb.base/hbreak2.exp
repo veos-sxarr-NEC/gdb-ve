@@ -325,6 +325,11 @@ gdb_test "info break $expect_out(1,string)" \
     "\[0-9\]*\[ \t\]*hw breakpoint.*:$bp_location1\r\n\[ \t\]*silent.*" \
     "info silent hardware break bp_location1"
 
+# Silent breakpoints are broken by an Allinea patch, as a result the
+# frame is always printed when GDB stops (the culprit might be
+# 'patches/00000_00100_upc.patch'). Silent breakpoints are not used by
+# Forge, so set this up as an expected failure.
+setup_xfail "*-*-*" "1b757fcdf4"
 gdb_test "continue" "Continuing." \
     "hit silent hardware break bp_location1"
 

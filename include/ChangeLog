@@ -1,3 +1,4 @@
+Note: this software has been modified by Arm.
 2016-07-29  Aldy Hernandez  <aldyh@redhat.com>
 
 	* libiberty.h (MAX_ALLOCA_SIZE): New macro.

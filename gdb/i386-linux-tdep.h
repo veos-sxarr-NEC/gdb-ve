@@ -1,5 +1,8 @@
 /* Target-dependent code for GNU/Linux x86.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -62,6 +65,7 @@ extern struct target_desc *tdesc_i386_avx512_linux;
 	  avx512_zmmh_regs0-7[1153..1407]
 	  avx512_zmmh_regs8-15[1408..1663]
 	  avx512_zmm_regs16-31[1664..2687]
+	  pkru[2688..2752]
 	  future_state etc
 	};
 

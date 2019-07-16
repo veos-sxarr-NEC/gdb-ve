@@ -88,3 +88,37 @@ proc fortran_logical4 {} {
 	return "unknown"
     }
 }
+
+proc fortran_gdb_start {} {
+    global gdb_prompt
+
+    if [use_gdb_stub] {
+	# This might not work on Fortran compilers that don't have a
+	# 'main' symbol around.  But I'm not sure what a better
+	# solution is.
+	if ![runto MAIN__] {
+	    return 0
+	}
+	return 1
+    } else {
+	# This path makes use of the gdb 'start' command, which should
+	# work fine whatever the main procedure is called.  However,
+	# it will not work for things like gdbserver.
+	if { [gdb_start_cmd] < 0 } {
+	    return 0
+	}
+	gdb_expect 30 {
+	    -re "$gdb_prompt $" {
+		return 1
+	    }
+	    eof {
+		return 0
+	    }
+	    timeout {
+		return 0
+	    }
+	}
+    }
+
+    return 1
+}

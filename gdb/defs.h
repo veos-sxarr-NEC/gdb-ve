@@ -1,6 +1,9 @@
 /* *INDENT-OFF* */ /* ATTRIBUTE_PRINTF confuses indent, avoid running it
 		      for now.  */
 /* Basic, host-specific, and target-specific definitions for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -102,6 +105,16 @@ enum compile_i_scope_types
 #endif
 
 #include "hashtab.h"
+
+/* Unpacked UPC pointer-to-shared value.  */
+
+typedef struct
+{
+  ULONGEST addrfield;
+  ULONGEST thread;
+  ULONGEST phase;
+  ULONGEST opaque;
+} gdb_upc_pts_t;
 
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -214,6 +227,7 @@ enum language
     language_c,			/* C */
     language_objc,		/* Objective-C */
     language_cplus,		/* C++ */
+    language_upc,		/* UPC */
     language_java,		/* Java */
     language_d,			/* D */
     language_go,		/* Go */
@@ -402,6 +416,8 @@ enum lval_type
     not_lval,
     /* * In memory.  */
     lval_memory,
+    /* In UPC shared memory.  */
+    lval_upc_shared,
     /* * In a register.  Registers are relative to a frame.  */
     lval_register,
     /* * In a gdb internal variable.  */

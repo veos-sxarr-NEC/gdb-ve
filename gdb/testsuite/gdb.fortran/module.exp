@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+if { [skip_fortran_tests] } { return -1 }
+load_lib "fortran.exp"
+
 standard_testfile .f90
 
 if { [prepare_for_testing $testfile.exp $testfile $srcfile {debug f90}] } {
@@ -27,9 +30,9 @@ gdb_test "p modmany::var_i" " = 14" "stopped language detection"
 
 gdb_test "print mod1::var_const" " = 20" "fully qualified name of DW_TAG_constant"
 
-if ![runto MAIN__] then {
-    perror "couldn't run to breakpoint MAIN__"
-    continue
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
 }
 
 # Do not use simple single-letter names as GDB would pick up for expectedly

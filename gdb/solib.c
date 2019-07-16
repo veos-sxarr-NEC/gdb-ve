@@ -1,5 +1,8 @@
 /* Handle shared libraries for GDB, the GNU Debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1990-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -21,6 +24,8 @@
 
 #include <sys/types.h>
 #include <fcntl.h>
+#include <libgen.h>
+#include "string.h"
 #include "symtab.h"
 #include "bfd.h"
 #include "symfile.h"
@@ -258,6 +263,70 @@ solib_find_1 (char *in_pathname, int *fd, int is_solib)
       return temp_pathname;
     }
 
+  if (sysroot != NULL)
+    {
+      char buf[PATH_MAX + 1];
+      ssize_t s;
+      int depth = 0;
+      char *stub;
+      char *p = temp_pathname;
+
+      do {
+	while (!IS_DIR_SEPARATOR (*p) && *p)
+	  {
+	    ++p;
+	  }
+	stub = NULL;
+	if (IS_DIR_SEPARATOR (*p))
+	  {
+	    stub = xstrdup (p + 1);
+	    *p = '\0';
+	  }
+
+	/* at the end.  Can still go back to sq 1 */
+	if ((s = readlink (temp_pathname, buf, PATH_MAX)) != -1)
+	  {
+	    buf[s] = '\0';
+
+	    if (IS_ABSOLUTE_PATH (buf))
+	      {
+		/* can be absolute... */
+		xfree(temp_pathname);
+		temp_pathname = concat (sysroot, "", buf, NULL);
+		p = temp_pathname + strlen (sysroot);
+	      }
+	    else
+	      {
+		/* or relative */
+		char* old_temp = temp_pathname;
+		int old_len = strlen (dirname (temp_pathname));
+
+		temp_pathname[old_len] = '\0';
+		temp_pathname = concat (temp_pathname, SLASH_STRING, buf, NULL);
+		xfree (old_temp);
+		p = temp_pathname + old_len;
+	      }
+
+	    if (stub)
+	      {
+		int len = p - temp_pathname;
+
+		temp_pathname = concat (temp_pathname, *stub ? SLASH_STRING : "", stub, NULL);
+		p = temp_pathname + len;
+		xfree (stub);
+	      }
+	  }
+	else
+	  {
+	    /* replace the dir sep!  */
+	    if (stub != NULL)
+	      *p = '/';
+	    ++p;
+	  }
+      }
+      while (*p != '\0' && depth++ < 50);
+    }
+
   /* Now see if we can open it.  */
   found_file = gdb_open_cloexec (temp_pathname, O_RDONLY | O_BINARY, 0);
   if (found_file < 0)
@@ -373,6 +442,10 @@ solib_find_1 (char *in_pathname, int *fd, int is_solib)
     }
   else
     *fd = found_file;
+
+  if (found_file < 0) {
+      fprintf(stderr, "Could not find solib: %s.", in_pathname);
+  }
 
   return temp_pathname;
 }
@@ -765,7 +838,10 @@ update_solib_list (int from_tty, struct target_ops *target)
 {
   const struct target_so_ops *ops = solib_ops (target_gdbarch ());
   struct so_list *inferior = ops->current_sos();
-  struct so_list *gdb, **gdb_link;
+  struct so_list *i;
+  struct so_list *old_gdb, **new_gdb_link;
+  int not_found = 0;
+  const char *not_found_filename = NULL;  
 
   /* We can reach here due to changing solib-search-path or the
      sysroot, before having any inferior.  */
@@ -806,16 +882,19 @@ update_solib_list (int from_tty, struct target_ops *target)
      the time we're done walking GDB's list, the inferior's list
      contains only the new shared objects, which we then add.  */
 
-  gdb = so_list_head;
-  gdb_link = &so_list_head;
-  while (gdb)
+  i = inferior;
+  old_gdb = so_list_head;
+  new_gdb_link = &so_list_head;
+  *new_gdb_link = NULL;
+  while (i)
     {
-      struct so_list *i = inferior;
-      struct so_list **i_link = &inferior;
+      struct so_list *gdb = old_gdb;
+      struct so_list **gdb_link = &old_gdb;
+      struct so_list *tmp = i->next;
 
       /* Check to see whether the shared object *gdb also appears in
 	 the inferior's current list.  */
-      while (i)
+      while (gdb)
 	{
 	  if (ops->same)
 	    {
@@ -828,63 +907,23 @@ update_solib_list (int from_tty, struct target_ops *target)
 		break;	      
 	    }
 
-	  i_link = &i->next;
-	  i = *i_link;
+	  gdb_link = &gdb->next;
+	  gdb = *gdb_link;
 	}
 
       /* If the shared object appears on the inferior's list too, then
          it's still loaded, so we don't need to do anything.  Delete
          it from the inferior's list, and leave it on GDB's list.  */
-      if (i)
+      if (gdb)
 	{
-	  *i_link = i->next;
 	  free_so (i);
-	  gdb_link = &gdb->next;
-	  gdb = *gdb_link;
+	  *gdb_link = gdb->next;
 	}
 
       /* If it's not on the inferior's list, remove it from GDB's tables.  */
       else
 	{
-	  /* Notify any observer that the shared object has been
-	     unloaded before we remove it from GDB's tables.  */
-	  observer_notify_solib_unloaded (gdb);
-
-	  VEC_safe_push (char_ptr, current_program_space->deleted_solibs,
-			 xstrdup (gdb->so_name));
-
-	  *gdb_link = gdb->next;
-
-	  /* Unless the user loaded it explicitly, free SO's objfile.  */
-	  if (gdb->objfile && ! (gdb->objfile->flags & OBJF_USERLOADED)
-	      && !solib_used (gdb))
-	    free_objfile (gdb->objfile);
-
-	  /* Some targets' section tables might be referring to
-	     sections from so->abfd; remove them.  */
-	  remove_target_sections (gdb);
-
-	  free_so (gdb);
-	  gdb = *gdb_link;
-	}
-    }
-
-  /* Now the inferior's list contains only shared objects that don't
-     appear in GDB's list --- those that are newly loaded.  Add them
-     to GDB's shared object list.  */
-  if (inferior)
-    {
-      int not_found = 0;
-      const char *not_found_filename = NULL;
-
-      struct so_list *i;
-
-      /* Add the new shared objects to GDB's list.  */
-      *gdb_link = inferior;
-
-      /* Fill in the rest of each of the `struct so_list' nodes.  */
-      for (i = inferior; i; i = i->next)
-	{
+	  volatile struct gdb_exception e;
 
 	  i->pspace = current_program_space;
 	  VEC_safe_push (so_list_ptr, current_program_space->added_solibs, i);
@@ -911,27 +950,63 @@ update_solib_list (int from_tty, struct target_ops *target)
 	  /* Notify any observer that the shared object has been
 	     loaded now that we've added it to GDB's tables.  */
 	  observer_notify_solib_loaded (i);
+	  gdb = i;
 	}
 
-      /* If a library was not found, issue an appropriate warning
-	 message.  We have to use a single call to warning in case the
-	 front end does something special with warnings, e.g., pop up
-	 a dialog box.  It Would Be Nice if we could get a "warning: "
-	 prefix on each line in the CLI front end, though - it doesn't
-	 stand out well.  */
+      *new_gdb_link = gdb;
+      gdb->next = NULL;
+      new_gdb_link = &gdb->next;
+      i = tmp;
+    }
 
-      if (not_found == 1)
-	warning (_("Could not load shared library symbols for %s.\n"
-		   "Do you need \"set solib-search-path\" "
-		   "or \"set sysroot\"?"),
-		 not_found_filename);
-      else if (not_found > 1)
-	warning (_("\
+  /* Now the old_gdb list contains only shared objects that don't
+     appear in the inferior's list --- those that are unloaded.  Remove them
+     from GDB's shared object list.  */
+  if (old_gdb)
+    {
+      while (old_gdb)
+	{
+	  struct so_list *tmp = old_gdb->next;
+
+	  /* Notify any observer that the shared object has been
+	     unloaded before we remove it from GDB's tables.  */
+	  observer_notify_solib_unloaded (old_gdb);
+
+	  VEC_safe_push (char_ptr, current_program_space->deleted_solibs,
+			 xstrdup (old_gdb->so_name));
+
+	  /* Unless the user loaded it explicitly, free SO's objfile.  */
+	  if (old_gdb->objfile && ! (old_gdb->objfile->flags & OBJF_USERLOADED)
+	      && !solib_used (old_gdb))
+	    free_objfile (old_gdb->objfile);
+
+	  /* Some targets' section tables might be referring to
+	     sections from so->abfd; remove them.  */
+	  remove_target_sections (old_gdb);
+
+	  free_so (old_gdb);
+	  old_gdb = tmp;
+	}
+    }
+
+  /* If a library was not found, issue an appropriate warning
+     message.  We have to use a single call to warning in case the
+     front end does something special with warnings, e.g., pop up
+     a dialog box.  It Would Be Nice if we could get a "warning: "
+     prefix on each line in the CLI front end, though - it doesn't
+     stand out well.  */
+
+  if (not_found == 1)
+    warning (_("Could not load shared library symbols for %s.\n"
+	      "Do you need \"set solib-search-path\" "
+	      "or \"set sysroot\"?"),
+	      not_found_filename);
+  else if (not_found > 1)
+    warning (_("\
 Could not load shared library symbols for %d libraries, e.g. %s.\n\
 Use the \"info sharedlibrary\" command to see the complete listing.\n\
 Do you need \"set solib-search-path\" or \"set sysroot\"?"),
-		 not_found, not_found_filename);
-    }
+	      not_found, not_found_filename);
 }
 
 
@@ -1026,6 +1101,21 @@ solib_add (const char *pattern, int from_tty,
 		}
 	      else if (solib_read_symbols (gdb, flags))
 		loaded_any_symbols = 1;
+	    }
+
+	  /* Ensure the objfiles are in the same order as the shared libraries.  */
+	  if (gdb->objfile && ! (gdb->objfile->flags & OBJF_USERLOADED))
+	    {
+	      struct objfile *child;	      
+
+	      objfile_to_back (gdb->objfile);
+
+	      for (child = gdb->objfile->separate_debug_objfile; child;)
+		{
+		  struct objfile *next_child = child->separate_debug_objfile_link;
+		  put_objfile_before (child, gdb->objfile);
+		  child = next_child;
+		}
 	    }
 	}
 

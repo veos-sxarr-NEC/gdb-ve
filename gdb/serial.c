@@ -1,5 +1,8 @@
 /* Generic serial interface routines
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -313,7 +316,7 @@ do_serial_close (struct serial *scb, int really_close)
 {
   struct serial *tmp_scb;
 
-  if (serial_logfp)
+  if (serial_logfp && really_close)
     {
       fputs_unfiltered ("\nEnd of log\n", serial_logfp);
       serial_current_type = 0;

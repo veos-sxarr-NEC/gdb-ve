@@ -1,3 +1,6 @@
+# Modified by Arm.
+
+# Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 # Copyright (C) 2011-2017 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -47,10 +50,11 @@ gdb_test "source $pyfile" ".*Python script imported.*" \
 gdb_breakpoint "throw_exception_1"
 gdb_test "continue" "Breakpoint .*throw_exception_1.*" "run to exception 1"
 
-gdb_test "python print (len(gdb.breakpoints()))" "3" "check BP count"
+gdb_test "python print (len(gdb.breakpoints()))" "4" "check BP count"
+
 gdb_test "python ExceptionFinishBreakpoint(gdb.newest_frame())" "init ExceptionFinishBreakpoint" "set FinishBP after the exception"
 gdb_test "continue" ".*stopped at ExceptionFinishBreakpoint.*" "check FinishBreakpoint in catch()"
-gdb_test "python print (len(gdb.breakpoints()))" "3" "check finish BP removal"
+gdb_test "python print (len(gdb.breakpoints()))" "4" "check finish BP removal"
 
 gdb_test "continue" ".*Breakpoint.* throw_exception_1.*" "continue to second exception"
 gdb_test "python ExceptionFinishBreakpoint(gdb.newest_frame())" "init ExceptionFinishBreakpoint" "set FinishBP after the exception"

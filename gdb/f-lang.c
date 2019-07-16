@@ -1,5 +1,8 @@
 /* Fortran language support routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1993-2017 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C parser by Farooq Butt
@@ -28,11 +31,13 @@
 #include "language.h"
 #include "varobj.h"
 #include "f-lang.h"
+#include "f-module.h"
 #include "valprint.h"
 #include "value.h"
 #include "cp-support.h"
 #include "charset.h"
 #include "c-lang.h"
+#include "dwarf2loc.h"          /* dl added this for the baton stuff */
 
 
 /* Local functions */
@@ -95,7 +100,7 @@ f_printchar (int c, struct type *type, struct ui_file *stream)
 }
 
 /* Print the character string STRING, printing at most LENGTH characters.
-   Printing stops early if the number hits print_max; repeat counts
+   Printing stops early if the number hits print_smax; repeat counts
    are printed as appropriate.  Print ellipses at the end if we
    had to stop before printing LENGTH characters, or if FORCE_ELLIPSES.
    FIXME:  This is a copy of the same function from c-exp.y.  It should
@@ -108,9 +113,6 @@ f_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 {
   const char *type_encoding = f_get_encoding (type);
 
-  if (TYPE_LENGTH (type) == 4)
-    fputs_filtered ("4_", stream);
-
   if (!encoding || !*encoding)
     encoding = type_encoding;
 
@@ -119,6 +121,67 @@ f_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 }
 
 
+static int
+is_associated_address (CORE_ADDR addr)
+{
+  return addr != 0;
+}
+
+static int
+is_allocated_address (CORE_ADDR addr)
+{
+  return addr != 0;
+}
+
+struct value *
+f_follow_pointers (struct value *v)
+{
+  struct type *type;
+  CORE_ADDR address;
+
+  if (!v)
+    return v;
+
+  type = value_type (v);
+
+  if (TYPE_CODE (value_type (v)) != TYPE_CODE_PTR
+      && VALUE_LVAL (v) == lval_memory
+      && !is_allocated_address (value_address (v)))
+    set_value_not_allocated (v);
+  if (type_not_allocated (type))
+    set_value_not_allocated (v);
+  if (TYPE_CODE (value_type (v)) == TYPE_CODE_PTR
+      && !is_associated_address (value_as_address (v)))
+    set_value_not_associated (v);
+  if (type_not_associated (type))
+    set_value_not_associated (v);
+
+  if (!value_not_associated (v)
+      && !value_not_allocated (v))
+    {
+      /* Automatically follow pointers.  */
+      while (TYPE_CODE (type) == TYPE_CODE_PTR)
+        {
+	  address = unpack_pointer (type, value_contents (v));
+
+	  /* If address is invalid then leave the pointer intact.  */
+	  if (address < 65536)
+	    break;
+	  type = TYPE_TARGET_TYPE (type);   
+	  v = value_at_lazy (type, address);
+	}
+    }
+
+  return v;
+}
+
+static struct value *
+f_read_var_value (struct symbol *var, const struct block *var_block,
+                  struct frame_info *frame)
+{
+  return f_follow_pointers (default_read_var_value(var, var_block, frame));
+}
+
 /* Table of operators and their precedences for printing expressions.  */
 
 static const struct op_print f_op_print_tab[] =
@@ -143,6 +206,17 @@ static const struct op_print f_op_print_tab[] =
   {".LT.", BINOP_LESS, PREC_ORDER, 0},
   {"**", UNOP_IND, PREC_PREFIX, 0},
   {"@", BINOP_REPEAT, PREC_REPEAT, 0},
+  {"ABS", UNOP_FABS, PREC_BUILTIN_FUNCTION, 0},
+  {"AIMAG", UNOP_CIMAG, PREC_BUILTIN_FUNCTION, 0},
+  {"REALPART", UNOP_CREAL, PREC_BUILTIN_FUNCTION, 0},
+  {"CMPLX", BINOP_CMPLX, PREC_BUILTIN_FUNCTION, 0},
+  {"IEEE_IS_INF", UNOP_IEEE_IS_INF, PREC_BUILTIN_FUNCTION, 0},
+  {"IEEE_IS_FINITE", UNOP_IEEE_IS_FINITE, PREC_BUILTIN_FUNCTION, 0},
+  {"IEEE_IS_NAN", UNOP_IEEE_IS_NAN, PREC_BUILTIN_FUNCTION, 0},
+  {"IEEE_IS_NORMAL", UNOP_IEEE_IS_NORMAL, PREC_BUILTIN_FUNCTION, 0},
+  {"CEILING", UNOP_CEIL, PREC_BUILTIN_FUNCTION, 0},
+  {"FLOOR", UNOP_FLOOR, PREC_BUILTIN_FUNCTION, 0},
+  {"MOD", BINOP_FMOD, PREC_BUILTIN_FUNCTION, 0},
   {NULL, OP_NULL, PREC_REPEAT, 0}
 };
 
@@ -154,6 +228,7 @@ enum f_primitive_types {
   f_primitive_type_logical_s8,
   f_primitive_type_integer,
   f_primitive_type_integer_s2,
+  f_primitive_type_integer_s8,
   f_primitive_type_real,
   f_primitive_type_real_s8,
   f_primitive_type_real_s16,
@@ -184,6 +259,8 @@ f_language_arch_info (struct gdbarch *gdbarch,
     = builtin->builtin_logical_s2;
   lai->primitive_type_vector [f_primitive_type_logical_s8]
     = builtin->builtin_logical_s8;
+  lai->primitive_type_vector [f_primitive_type_integer_s8]
+    = builtin->builtin_integer_s8;    
   lai->primitive_type_vector [f_primitive_type_real]
     = builtin->builtin_real;
   lai->primitive_type_vector [f_primitive_type_real_s8]
@@ -239,8 +316,18 @@ static const char *f_extensions[] =
 {
   ".f", ".F", ".for", ".FOR", ".ftn", ".FTN", ".fpp", ".FPP",
   ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
+  ".f77", ".F77",
   NULL
 };
+
+/* In Fortran all data is passed by reference by default, except the hidden
+   length argument of strings.  */
+
+static int
+f_pass_by_reference (struct type *type)
+{
+  return 1;
+}
 
 const struct language_defn f_language_defn =
 {
@@ -263,7 +350,7 @@ const struct language_defn f_language_defn =
   default_print_typedef,	/* Print a typedef using appropriate syntax */
   f_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* FIXME */
-  default_read_var_value,	/* la_read_var_value */
+  f_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,                    	/* name_of_this */
   cp_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -285,7 +372,8 @@ const struct language_defn f_language_defn =
   f_make_symbol_completion_list,
   f_language_arch_info,
   default_print_array_index,
-  default_pass_by_reference,
+  f_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -313,6 +401,9 @@ build_fortran_types (struct gdbarch *gdbarch)
   builtin_f_type->builtin_integer_s2
     = arch_integer_type (gdbarch, gdbarch_short_bit (gdbarch), 0,
 			 "integer*2");
+  builtin_f_type->builtin_integer_s8
+    = arch_integer_type (gdbarch, gdbarch_long_long_bit (gdbarch), 0,
+			 "integer*8");
 
   builtin_f_type->builtin_logical_s2
     = arch_boolean_type (gdbarch, gdbarch_short_bit (gdbarch), 1,

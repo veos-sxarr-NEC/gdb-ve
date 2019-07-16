@@ -1,5 +1,8 @@
 /* Block-related functions for the GNU debugger, GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -99,6 +102,8 @@ contained_in (const struct block *a, const struct block *b)
 struct symbol *
 block_linkage_function (const struct block *bl)
 {
+  if (!bl) return NULL;
+
   while ((BLOCK_FUNCTION (bl) == NULL || block_inlined_p (bl))
 	 && BLOCK_SUPERBLOCK (bl) != NULL)
     bl = BLOCK_SUPERBLOCK (bl);

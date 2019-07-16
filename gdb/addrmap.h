@@ -1,5 +1,8 @@
 /* addrmap.h --- interface to address map data structure.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -101,5 +104,11 @@ typedef int (*addrmap_foreach_fn) (void *data, CORE_ADDR start_addr,
    iteration ceases immediately, and the value is returned.
    Otherwise, this function returns 0.  */
 int addrmap_foreach (struct addrmap *map, addrmap_foreach_fn fn, void *data);
+
+/* Assigns FN to MAP. FN will be used to determine precedence of
+   objects inserted using addrmap_set_empty.  This does not overwrite
+   a previously applied function.  */
+void addrmap_assign_precedence_fn (struct addrmap *map,
+                                   int (*fn) (void *, void *));
 
 #endif /* ADDRMAP_H */

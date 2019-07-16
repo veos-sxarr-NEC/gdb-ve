@@ -1,5 +1,8 @@
 /* Cache and manage the values of registers for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -793,7 +796,8 @@ struct value *
 regcache_cooked_read_value (struct regcache *regcache, int regnum)
 {
   gdb_assert (regnum >= 0);
-  gdb_assert (regnum < regcache->descr->nr_cooked_registers);
+  if (regnum >= regcache->descr->nr_cooked_registers)
+	throw_error (NOT_AVAILABLE_ERROR, _("Register %d does not exist"), regnum);
 
   if (regnum < regcache->descr->nr_raw_registers
       || (regcache->readonly_p

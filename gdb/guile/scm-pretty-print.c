@@ -1,5 +1,8 @@
 /* GDB/Scheme pretty-printing.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -987,6 +990,7 @@ gdbscm_apply_val_pretty_printer (const struct extension_language_defn *extlang,
   if (valaddr)
     valaddr += embedded_offset;
   value = value_from_contents_and_address (type, valaddr,
+					   val ? value_length (val) : TYPE_LENGTH (type),
 					   address + embedded_offset);
 
   set_value_component_location (value, val);

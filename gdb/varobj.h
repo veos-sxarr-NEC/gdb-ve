@@ -1,4 +1,7 @@
 /* GDB variable objects API.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
@@ -154,6 +157,9 @@ struct varobj
      requested.  */
   int from;
   int to;
+
+  /* Variable causes changes in memory.  */
+  int changes_memory;
 
   /* Dynamic part of varobj.  */
   struct varobj_dynamic *dynamic;

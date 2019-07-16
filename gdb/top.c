@@ -1,5 +1,8 @@
 /* Top level stuff for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -105,6 +108,13 @@ gen_ret_current_ui_field_ptr (struct ui_file *, gdb_stdin)
 gen_ret_current_ui_field_ptr (struct ui_file *, gdb_stderr)
 gen_ret_current_ui_field_ptr (struct ui_file *, gdb_stdlog)
 gen_ret_current_ui_field_ptr (struct ui_out *, current_uiout)
+
+bool
+has_gdb_stderr ()
+{
+  return (current_ui != NULL
+	  && current_ui->m_gdb_stderr != NULL);
+}
 
 /* Initialization file name for gdb.  This is host-dependent.  */
 
@@ -1343,7 +1353,7 @@ print_gdb_version (struct ui_file *stream)
   /* Second line is a copyright notice.  */
 
   fprintf_filtered (stream,
-		    "Copyright (C) 2017 Free Software Foundation, Inc.\n");
+		    "Modified by Arm. Copyright (C) 2002-2019 Arm Limited (or its affiliates). All rights reserved.\nCopyright (C) 2017 Free Software Foundation, Inc.\n");
 
   /* Following the copyright is a brief statement that the program is
      free software, that users are free to copy and change it on
@@ -1621,6 +1631,36 @@ undo_terminal_modifications_before_exit (void)
   current_ui = saved_top_level;
 }
 
+#if 0
+/* Helper routine for quit_force that requires error handling.  */
+
+static int
+quit_target (void *arg)
+{
+  struct qt_args *qt = (struct qt_args *)arg;
+
+  /* Kill or detach all inferiors.  */
+  iterate_over_inferiors (kill_or_detach, qt);
+
+  /* Give all pushed targets a chance to do minimal cleanup, and pop
+     them all out.  */
+  pop_all_targets (1);
+
+  /* Save the history information if it is appropriate to do so.  */
+  if (write_history_p && history_filename)
+    write_history (history_filename);
+
+  do_final_cleanups (all_cleanups ());    /* Do any final cleanups before
+					     exiting.  */
+  return 0;
+}
+#endif
+
+static void
+emergency_exit(int signo)
+{
+    exit(1);
+}
 
 /* Quit without asking for confirmation.  */
 
@@ -1645,6 +1685,11 @@ quit_force (char *args, int from_tty)
 
   qt.args = args;
   qt.from_tty = from_tty;
+
+  /* ALL-1028: quit_target may deadlock if the process heald a needed lock when
+     the signal arrived. */
+  signal (SIGALRM, emergency_exit);
+  alarm (2);
 
   /* We want to handle any quit errors and exit regardless.  */
 
@@ -1886,9 +1931,15 @@ set_verbose (char *args, int from_tty, struct cmd_list_element *c)
    overrides all of this.  */
 
 void
-init_history (void)
+init_history (int no_init)
 {
   char *tmpenv;
+
+  if (no_init)
+    {
+      history_size_setshow_var = -1;
+      return;
+    }
 
   tmpenv = getenv ("GDBHISTSIZE");
   if (tmpenv)

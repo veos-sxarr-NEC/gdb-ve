@@ -1,5 +1,8 @@
 /* GDB CLI commands.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -61,7 +64,9 @@
 
 static void complete_command (char *, int);
 
+static void fecho_command (struct ui_file*, char *, int);
 static void echo_command (char *, int);
+static void warning_command (char *, int);
 
 static void pwd_command (char *, int);
 
@@ -178,6 +183,10 @@ struct cmd_list_element *showdebuglist;
 struct cmd_list_element *setchecklist;
 
 struct cmd_list_element *showchecklist;
+
+struct cmd_list_element *setsourcelist;
+
+struct cmd_list_element *showsourcelist;
 
 /* Command tracing state.  */
 
@@ -694,7 +703,7 @@ source_command (char *args, int from_tty)
 
 
 static void
-echo_command (char *text, int from_tty)
+fecho_command (struct ui_file *file, char *text, int from_tty)
 {
   const char *p = text;
   int c;
@@ -711,15 +720,27 @@ echo_command (char *text, int from_tty)
 
 	    c = parse_escape (get_current_arch (), &p);
 	    if (c >= 0)
-	      printf_filtered ("%c", c);
+	      fprintf_filtered (file, "%c", c);
 	  }
 	else
-	  printf_filtered ("%c", c);
+	  fprintf_filtered (file, "%c", c);
       }
 
   /* Force this output to appear now.  */
-  wrap_here ("");
-  gdb_flush (gdb_stdout);
+  fwrap_here ("", file);
+  gdb_flush (file);
+}
+
+static void
+echo_command (char *text, int from_tty)
+{
+  fecho_command(gdb_stdout, text, from_tty);
+}
+
+static void
+warning_command (char *text, int from_tty)
+{
+  fecho_command(gdb_stderr, text, from_tty);
 }
 
 static void
@@ -1767,6 +1788,15 @@ until the next time it is started."), &cmdlist);
 
   add_com ("echo", class_support, echo_command, _("\
 Print a constant string.  Give string as argument.\n\
+C escape sequences may be used in the argument.\n\
+No newline is added at the end of the argument;\n\
+use \"\\n\" if you want a newline to be printed.\n\
+Since leading and trailing whitespace are ignored in command arguments,\n\
+if you want to print some you must use \"\\\" before leading whitespace\n\
+to be printed or after trailing whitespace."));
+
+  add_com ("warning", class_support, warning_command, _("\
+Print a warning to stderr.  Give string as argument.\n\
 C escape sequences may be used in the argument.\n\
 No newline is added at the end of the argument;\n\
 use \"\\n\" if you want a newline to be printed.\n\

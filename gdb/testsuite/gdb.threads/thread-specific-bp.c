@@ -16,6 +16,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <pthread.h>
+#include <unistd.h>
 
 static void *
 start (void *arg)
@@ -35,6 +36,14 @@ main (void)
 
   pthread_create (&thread, NULL, start, NULL);
   pthread_join (thread, NULL);
+
+  // There is a race condition between when gdb detects that
+  // the thread has joined and when the parent hits the break
+  // point on end(). The gdb unit test expects that the thread
+  // is reported as joined before the break point is hit. This
+  // sleep is a nasty solution, but it works.
+  sleep (1);
+
   end ();
   return 0;
 }

@@ -1,5 +1,8 @@
 /* Standard language operator definitions for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -34,6 +37,7 @@ OP (BINOP_LSH)			/* << */
 OP (BINOP_RSH)			/* >> */
 OP (BINOP_LOGICAL_AND)		/* && */
 OP (BINOP_LOGICAL_OR)		/* || */
+OP (BINOP_LOGICAL_XOR)		/* ^^ */
 OP (BINOP_BITWISE_AND)		/* & */
 OP (BINOP_BITWISE_IOR)		/* | */
 OP (BINOP_BITWISE_XOR)		/* ^ */
@@ -86,6 +90,11 @@ OP (BINOP_VAL)
    If the first operand is a integer expression, then it means concatenate
    the second operand with itself that many times.  */
 OP (BINOP_CONCAT)
+
+/* Intrinsic functions (fmod etc.).  */
+OP (BINOP_FMOD)
+OP (BINOP_CMPLX)
+OP (BINOP_MODULO)
 
 /* This must be the highest BINOP_ value, for expprint.c.  */
 OP (BINOP_END)
@@ -162,6 +171,34 @@ OP (OP_FUNCALL)
    pointer.  This is an Objective C message.  */
 OP (OP_OBJC_MSGCALL)
 
+/* This is similar like OP_FUNCALL but is semantically different.
+   It is not a Function in itself but an intrinsic. However, it
+   can accept variablle number of arguments. Thus this operator
+   indicates that we have found something of the form
+   UBOUND(<arg>).  */
+OP (OP_UBOUND)
+
+/* This is similar like OP_FUNCALL but is semantically different.
+   It is not a Function in itself but an intrinsic. However, it
+   can accept variablle number of arguments. Thus this operator
+   indicates that we have found something of the form
+   ASSOCIATED(<arg>).  Number of args is maximum 2. */
+OP (OP_ASSOCIATED)
+
+/* This is similar like OP_FUNCALL but is semantically different.
+   It is not a Function in itself but an intrinsic. However, it
+   can accept variablle number of arguments. Thus this operator
+   indicates that we have found something of the form
+   SIZE(<arg>).  */
+OP (OP_SIZE)
+
+/* This is similar like OP_FUNCALL but is semantically different.
+   It is not a Function in itself but an intrinsic. However, it
+   can accept variablle number of arguments. Thus this operator
+   indicates that we have found something of the form
+   LBOUND(<arg>).  */
+OP (OP_LBOUND)
+
 /* This is EXACTLY like OP_FUNCALL but is semantically different.
    In F77, array subscript expressions, substring expressions and
    function calls are all exactly the same syntactically.  They
@@ -235,6 +272,9 @@ OP (UNOP_POSTINCREMENT)		/* ++ after an expression */
 OP (UNOP_PREDECREMENT)		/* -- before an expression */
 OP (UNOP_POSTDECREMENT)		/* -- after an expression */
 OP (UNOP_SIZEOF)		/* Unary sizeof (followed by expression) */
+OP (UNOP_LOC)			/* Unary loc (followed by expression) */
+OP (UNOP_RANK)			/* Unary rank (followed by expression) */
+OP (UNOP_ALLOCATED)		/* Unary allocated (followed by expression) */
 
 OP (UNOP_PLUS)			/* Unary plus */
 
@@ -249,8 +289,25 @@ OP (UNOP_MIN)
 OP (UNOP_ODD)
 OP (UNOP_TRUNC)
 
+/* Intrinsic functions (isnan, isinf, creal, cimag, etc.).  */
+OP (UNOP_ISNAN)
+OP (UNOP_ISINF)
+OP (UNOP_ISFINITE)
+OP (UNOP_ISNORMAL)
+OP (UNOP_CREAL)
+OP (UNOP_CIMAG)
+OP (UNOP_FABS)
+OP (UNOP_CEIL)
+OP (UNOP_FLOOR)
+OP (UNOP_IEEE_IS_NAN)
+OP (UNOP_IEEE_IS_INF)
+OP (UNOP_IEEE_IS_FINITE)
+OP (UNOP_IEEE_IS_NORMAL)
+
 OP (OP_BOOL)			/* Modula-2 builtin BOOLEAN type */
 OP (OP_M2_STRING)		/* Modula-2 string constants */
+
+OP (UNOP_KIND)		  	/* Unary Fortran kind (followed by expression) */
 
 /* STRUCTOP_... operate on a value from a following subexpression
    by extracting a structure component specified by a string

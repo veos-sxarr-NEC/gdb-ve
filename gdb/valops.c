@@ -1,5 +1,8 @@
 /* Perform non-arithmetic operations on values, for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -27,6 +30,7 @@
 #include "target.h"
 #include "demangle.h"
 #include "language.h"
+#include "upc-lang.h"
 #include "gdbcmd.h"
 #include "regcache.h"
 #include "cp-abi.h"
@@ -36,6 +40,10 @@
 #include "cp-support.h"
 #include "dfp.h"
 #include "tracepoint.h"
+#include <ctype.h>
+#include <errno.h>
+#include "gdb_assert.h"
+#include "cp-support.h"
 #include "observer.h"
 #include "objfiles.h"
 #include "extension.h"
@@ -191,7 +199,7 @@ value_allocate_space_in_inferior (int len)
   struct value *blocklen;
 
   blocklen = value_from_longest (builtin_type (gdbarch)->builtin_int, len);
-  val = call_function_by_hand (val, 1, &blocklen);
+  val = call_function_by_hand_ex (val, language_c, 1, &blocklen);
   if (value_logical_not (val))
     {
       if (!target_has_execution)
@@ -378,6 +386,9 @@ value_cast (struct type *type, struct value *arg2)
 
   code2 = TYPE_CODE (check_typedef (value_type (arg2)));
 
+  if (code1 == code2 && code1 == TYPE_CODE_STRING)
+    return arg2;
+
   if (code2 == TYPE_CODE_REF)
     /* We deref the value and then do the cast.  */
     return value_cast (type, coerce_ref (arg2)); 
@@ -402,7 +413,7 @@ value_cast (struct type *type, struct value *arg2)
       if (element_length > 0 && TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (type))
 	{
 	  struct type *range_type = TYPE_INDEX_TYPE (type);
-	  int val_length = TYPE_LENGTH (type2);
+	  int val_length = value_length (arg2);
 	  LONGEST low_bound, high_bound, new_length;
 
 	  if (get_discrete_bounds (range_type, &low_bound, &high_bound) < 0)
@@ -473,7 +484,7 @@ value_cast (struct type *type, struct value *arg2)
       if (code2 == TYPE_CODE_FLT)
 	decimal_from_floating (arg2, dec, dec_len, byte_order);
       else if (code2 == TYPE_CODE_DECFLOAT)
-	decimal_convert (value_contents (arg2), TYPE_LENGTH (type2),
+	decimal_convert (value_contents (arg2), value_length (arg2),
 			 byte_order, dec, dec_len, byte_order);
       else
 	/* The only option left is an integral type.  */
@@ -496,7 +507,7 @@ value_cast (struct type *type, struct value *arg2)
          bits.  */
       if (code2 == TYPE_CODE_PTR)
         longest = extract_unsigned_integer
-		    (value_contents (arg2), TYPE_LENGTH (type2),
+		    (value_contents (arg2), value_length (arg2),
 		     gdbarch_byte_order (get_type_arch (type2)));
       else
         longest = value_as_long (arg2);
@@ -916,7 +927,7 @@ get_value_at (struct type *type, CORE_ADDR addr, int lazy)
   if (TYPE_CODE (check_typedef (type)) == TYPE_CODE_VOID)
     error (_("Attempt to dereference a generic pointer."));
 
-  val = value_from_contents_and_address (type, NULL, addr);
+  val = value_from_contents_and_address (type, NULL, 0, addr);
 
   if (!lazy)
     value_fetch_lazy (val);
@@ -1008,18 +1019,12 @@ value_assign (struct value *toval, struct value *fromval)
   if (!deprecated_value_modifiable (toval))
     error (_("Left operand of assignment is not a modifiable lvalue."));
 
-  toval = coerce_ref (toval);
+  if (VALUE_LVAL (toval) != lval_internalvar)
+    toval = coerce_ref (toval);
 
   type = value_type (toval);
   if (VALUE_LVAL (toval) != lval_internalvar)
     fromval = value_cast (type, fromval);
-  else
-    {
-      /* Coerce arrays and functions to pointers, except for arrays
-	 which only live in GDB's storage.  */
-      if (!value_must_coerce_to_target (fromval))
-	fromval = coerce_array (fromval);
-    }
 
   type = check_typedef (type);
 
@@ -1030,6 +1035,10 @@ value_assign (struct value *toval, struct value *fromval)
 
   switch (VALUE_LVAL (toval))
     {
+    case lval_upc_shared:
+      upc_value_assign (toval, fromval);
+      break;
+
     case lval_internalvar:
       set_internalvar (VALUE_INTERNALVAR (toval), fromval);
       return value_of_internalvar (get_type_arch (type),
@@ -1173,7 +1182,7 @@ value_assign (struct value *toval, struct value *fromval)
 	      {
 		put_frame_register_bytes (frame, value_reg,
 					  value_offset (toval),
-					  TYPE_LENGTH (type),
+					  min (value_length (toval), value_length (fromval)),
 					  value_contents (fromval));
 	      }
 	  }
@@ -1255,7 +1264,7 @@ value_assign (struct value *toval, struct value *fromval)
   val = value_copy (toval);
   set_value_lazy (val, 0);
   memcpy (value_contents_raw (val), value_contents (fromval),
-	  TYPE_LENGTH (type));
+	  min (value_length (val), value_length (fromval)));
 
   /* We copy over the enclosing type and pointed-to offset from FROMVAL
      in the case of pointer types.  For object types, the enclosing type
@@ -1277,19 +1286,30 @@ value_repeat (struct value *arg1, int count)
 {
   struct value *val;
 
-  if (VALUE_LVAL (arg1) != lval_memory)
+  if (VALUE_LVAL (arg1) != lval_memory &&
+      VALUE_LVAL (arg1) != lval_upc_shared)
     error (_("Only values in memory can be extended with '@'."));
   if (count < 1)
     error (_("Invalid number %d of repetitions."), count);
 
   val = allocate_repeat_value (value_enclosing_type (arg1), count);
+  set_value_repeated (val, 1);
 
-  VALUE_LVAL (val) = lval_memory;
-  set_value_address (val, value_address (arg1));
+  if (VALUE_LVAL (arg1) == lval_upc_shared)
+    {
+      VALUE_LVAL (val) = lval_upc_shared;
+      VALUE_SHARED_ADDR (val) = VALUE_SHARED_ADDR (arg1);
+      upc_value_fetch_lazy (val);
+    }
+  else
+    {
+      VALUE_LVAL (val) = lval_memory;
+      set_value_address (val, value_address (arg1));
 
-  read_value_memory (val, 0, value_stack (val), value_address (val),
-		     value_contents_all_raw (val),
-		     type_length_units (value_enclosing_type (val)));
+      read_value_memory (val, 0, value_stack (val), value_address (val),
+		         value_contents_all_raw (val),
+			 value_length (val));
+    }
 
   return val;
 }
@@ -1395,7 +1415,24 @@ value_coerce_to_target (struct value *val)
   if (!value_must_coerce_to_target (val))
     return val;
 
-  length = TYPE_LENGTH (check_typedef (value_type (val)));
+  length = value_length (val);
+  addr = allocate_space_in_inferior (length);
+  write_memory (addr, value_contents (val), length);
+  return value_at_lazy (value_type (val), addr);
+}
+
+/* Make sure that VAL always lives in target memory.  */
+
+struct value *
+value_force_coerce_to_target (struct value *val)
+{
+  LONGEST length;
+  CORE_ADDR addr;
+
+  if (VALUE_LVAL (val) == lval_memory)
+      return val;
+
+  length = value_length (val);
   addr = allocate_space_in_inferior (length);
   write_memory (addr, value_contents (val), length);
   return value_at_lazy (value_type (val), addr);
@@ -1428,17 +1465,28 @@ struct value *
 value_coerce_array (struct value *arg1)
 {
   struct type *type = check_typedef (value_type (arg1));
+  struct type *tt   = check_typedef (TYPE_TARGET_TYPE (type));
+  struct type *pt   = lookup_pointer_type (tt);
+  struct value *retval;
 
   /* If the user tries to do something requiring a pointer with an
      array that has not yet been pushed to the target, then this would
      be a good time to do so.  */
   arg1 = value_coerce_to_target (arg1);
 
-  if (VALUE_LVAL (arg1) != lval_memory)
-    error (_("Attempt to take address of value not located in memory."));
-
-  return value_from_pointer (lookup_pointer_type (TYPE_TARGET_TYPE (type)),
+  switch (VALUE_LVAL (arg1))
+    {
+    case lval_memory:
+      retval = value_from_pointer (lookup_pointer_type (TYPE_TARGET_TYPE (type)),
 			     value_address (arg1));
+      break;
+    case lval_upc_shared:
+      retval = upc_value_from_pts (pt, VALUE_SHARED_ADDR (arg1));
+      break;
+    default:
+      error (_("Attempt to take address of value not located in memory."));
+    }
+  return retval;
 }
 
 /* Given a value which is a function, return a value which is a pointer
@@ -1465,6 +1513,7 @@ value_addr (struct value *arg1)
 {
   struct value *arg2;
   struct type *type = check_typedef (value_type (arg1));
+  struct type *pt   = lookup_pointer_type (type);
 
   if (TYPE_CODE (type) == TYPE_CODE_REF)
     {
@@ -1498,21 +1547,28 @@ value_addr (struct value *arg1)
      then this would be a good time to force it to memory.  */
   arg1 = value_coerce_to_target (arg1);
 
-  if (VALUE_LVAL (arg1) != lval_memory)
-    error (_("Attempt to take address of value not located in memory."));
+  switch (VALUE_LVAL (arg1))
+    {
+    case lval_memory:
+      /* Get target memory address.  */
+      arg2 = value_from_pointer (lookup_pointer_type (value_type (arg1)),
+				(value_address (arg1)
+				 + value_embedded_offset (arg1)));
 
-  /* Get target memory address.  */
-  arg2 = value_from_pointer (lookup_pointer_type (value_type (arg1)),
-			     (value_address (arg1)
-			      + value_embedded_offset (arg1)));
-
-  /* This may be a pointer to a base subobject; so remember the
-     full derived object's type ...  */
-  set_value_enclosing_type (arg2,
-			    lookup_pointer_type (value_enclosing_type (arg1)));
-  /* ... and also the relative position of the subobject in the full
-     object.  */
-  set_value_pointed_to_offset (arg2, value_embedded_offset (arg1));
+      /* This may be a pointer to a base subobject; so remember the
+	 full derived object's type ...  */
+      set_value_enclosing_type (arg2,
+			       lookup_pointer_type (value_enclosing_type (arg1)));
+      /* ... and also the relative position of the subobject in the full
+	 object.  */
+      set_value_pointed_to_offset (arg2, value_embedded_offset (arg1));
+      break;
+    case lval_upc_shared:
+      arg2 = upc_value_from_pts (pt, VALUE_SHARED_ADDR (arg1));
+      return arg2;
+    default:
+      error (_("Attempt to take address of value not located in memory."));
+    }
   return arg2;
 }
 
@@ -1562,6 +1618,17 @@ value_ind (struct value *arg1)
   if (TYPE_CODE (base_type) == TYPE_CODE_PTR)
     {
       struct type *enc_type;
+      struct type *tt = check_typedef (TYPE_TARGET_TYPE (base_type));
+
+      if (upc_shared_type_p (tt))
+        {
+	  /* FIXME: handle enclosing objects for UPC shared types. */
+	  arg2 = upc_value_at_lazy (tt, upc_value_as_pts(arg1));
+	  return arg2;
+	}      
+
+      if( type_not_associated(base_type))
+	error (_("Attempt to take contents of a not-associated pointer."));
 
       /* We may be pointing to something embedded in a larger object.
          Get the real type of the enclosing object.  */
@@ -1575,10 +1642,22 @@ value_ind (struct value *arg1)
 	arg2 = value_at_lazy (enc_type, 
 			      find_function_addr (arg1, NULL));
       else
-	/* Retrieve the enclosing object pointed to.  */
-	arg2 = value_at_lazy (enc_type, 
-			      (value_as_address (arg1)
-			       - value_pointed_to_offset (arg1)));
+	{
+	  struct value *tmp, *mark;
+	  struct type *ptrt;
+
+	  /* Retrieve the enclosing object pointed to.  */
+	  arg2 = value_at_lazy (enc_type, 
+				(value_as_address (arg1)
+				 - value_pointed_to_offset (arg1)));
+	  mark = value_mark ();
+	  tmp = value_at_lazy (TYPE_TARGET_TYPE (base_type),
+			       value_as_address (arg1));
+	  ptrt = copy_type (base_type);
+	  TYPE_TARGET_TYPE (ptrt) = value_type (tmp);
+	  base_type = ptrt;
+	  value_free_to_mark (mark);
+	}
 
       enc_type = value_type (arg2);
       return readjust_indirect_value_type (arg2, enc_type, base_type, arg1);
@@ -1603,7 +1682,7 @@ value_array (int lowbound, int highbound, struct value **elemvec)
 {
   int nelem;
   int idx;
-  ULONGEST typelength;
+  ULONGEST typelength, vallength;
   struct value *val;
   struct type *arraytype;
 
@@ -1616,6 +1695,7 @@ value_array (int lowbound, int highbound, struct value **elemvec)
       error (_("bad array bounds (%d, %d)"), lowbound, highbound);
     }
   typelength = type_length_units (value_enclosing_type (elemvec[0]));
+  vallength = value_length (elemvec[0]);
   for (idx = 1; idx < nelem; idx++)
     {
       if (type_length_units (value_enclosing_type (elemvec[idx]))
@@ -1633,7 +1713,7 @@ value_array (int lowbound, int highbound, struct value **elemvec)
       val = allocate_value (arraytype);
       for (idx = 0; idx < nelem; idx++)
 	value_contents_copy (val, idx * typelength, elemvec[idx], 0,
-			     typelength);
+			     vallength);
       return val;
     }
 
@@ -1642,7 +1722,7 @@ value_array (int lowbound, int highbound, struct value **elemvec)
 
   val = allocate_value (arraytype);
   for (idx = 0; idx < nelem; idx++)
-    value_contents_copy (val, idx * typelength, elemvec[idx], 0, typelength);
+    value_contents_copy (val, idx * typelength, elemvec[idx], 0, vallength);
   return val;
 }
 
@@ -1918,7 +1998,7 @@ do_search_struct_field (const char *name, struct value *arg1, LONGEST offset,
 	      v2 = value_at_lazy (basetype, base_addr);
 	      if (target_read_memory (base_addr, 
 				      value_contents_raw (v2),
-				      TYPE_LENGTH (value_type (v2))) != 0)
+				      value_length (v2)) != 0)
 		error (_("virtual baseclass botch"));
 	    }
 	  else
@@ -2078,6 +2158,7 @@ search_struct_method (const char *name, struct value **arg1p,
 
 	      base_val = value_from_contents_and_address (baseclass,
 							  tmp,
+							  TYPE_LENGTH (baseclass),
 							  address + offset);
 	      base_valaddr = value_contents_for_printing (base_val);
 	      this_offset = 0;
@@ -2165,11 +2246,34 @@ value_struct_elt (struct value **argp, struct value **args,
 
   if (!args)
     {
+      int i;
+      char *nname;
+      int len;
+
+      len = strlen (name);
+      if (current_language
+	  && current_language->la_case_sensitivity == case_sensitive_off)
+	{
+	  int i;
+	  nname = (char *) xmalloc (len + 1);
+	  for (i = 0; i < len + 1; i++)
+	    nname[i] = tolower (name[i]);
+	}
+      else
+	{
+	  nname = (char *) xmalloc (len + 1);
+	  memcpy (nname, name, len + 1);
+	}
+
       /* if there are no arguments ...do this...  */
 
       /* Try as a field first, because if we succeed, there is less
          work to be done.  */
+
       v = search_struct_field (name, *argp, t, 0);
+
+      xfree(nname);
+
       if (v)
 	return v;
 
@@ -3544,7 +3648,7 @@ value_namespace_elt (const struct type *curtype,
   struct value *retval = value_maybe_namespace_elt (curtype, name,
 						    want_address, 
 						    noside);
-
+   printf("lookup symbol in namespace valops\n");
   if (retval == NULL)
     error (_("No symbol \"%s\" in namespace \"%s\"."), 
 	   name, TYPE_TAG_NAME (curtype));
@@ -3595,6 +3699,7 @@ value_rtti_indirect_type (struct value *v, int *full,
 {
   struct value *target = NULL;
   struct type *type, *real_type, *target_type;
+  struct type_quals type_quals;
 
   type = value_type (v);
   type = check_typedef (type);
@@ -3629,8 +3734,8 @@ value_rtti_indirect_type (struct value *v, int *full,
     {
       /* Copy qualifiers to the referenced object.  */
       target_type = value_type (target);
-      real_type = make_cv_type (TYPE_CONST (target_type),
-				TYPE_VOLATILE (target_type), real_type, NULL);
+      type_quals = TYPE_QUALS (target_type);
+      real_type = make_qual_variant_type (type_quals, real_type, NULL);
       if (TYPE_CODE (type) == TYPE_CODE_REF)
         real_type = lookup_reference_type (real_type);
       else if (TYPE_CODE (type) == TYPE_CODE_PTR)
@@ -3639,8 +3744,8 @@ value_rtti_indirect_type (struct value *v, int *full,
         internal_error (__FILE__, __LINE__, _("Unexpected value type."));
 
       /* Copy qualifiers to the pointer/reference.  */
-      real_type = make_cv_type (TYPE_CONST (type), TYPE_VOLATILE (type),
-				real_type, NULL);
+      type_quals = TYPE_QUALS (type);
+      real_type = make_qual_variant_type (type_quals, real_type, NULL);
     }
 
   return real_type;
@@ -3775,56 +3880,189 @@ value_of_this_silent (const struct language_defn *lang)
 struct value *
 value_slice (struct value *array, int lowbound, int length)
 {
-  struct type *slice_range_type, *slice_type, *range_type;
-  LONGEST lowerbound, upperbound;
-  struct value *slice;
-  struct type *array_type;
+  /* Pass unaltered arguments to VALUE_SLICE_1, plus a default stride
+     value of '1', which returns every element between LOWBOUND and
+     (LOWBOUND + LENGTH).  We also provide a default CALL_COUNT of '1'
+     as we are only considering the highest dimension, or we are
+     working on a one dimensional array.  So we call VALUE_SLICE_1
+     exactly once.  */
+  return value_slice_1 (array, lowbound, length, 1, 1);
+}
 
-  array_type = check_typedef (value_type (array));
+/* CALL_COUNT is used to determine if we are calling the function once, e.g.
+   we are working on the current dimension of ARRAY, or if we are calling
+   the function repeatedly.  In the later case we need to take elements
+   from the TARGET_TYPE of ARRAY.
+   With a CALL_COUNT greater than 1 we calculate the offsets for every element
+   that should be in the result array.  Then we fetch the contents and then
+   copy them into the result array.  The result array will have one dimension
+   less than the input array, so later on we need to recreate the indices and
+   ranges in the calling function.  */
+
+struct value *
+value_slice_1 (struct value *array, int lowbound, int length,
+	       int stride_length, int call_count)
+{
+  struct type *slice_range_type, *slice_type, *range_type;
+  struct type *array_type = check_typedef (value_type (array));
+  struct type *elt_type = check_typedef (TYPE_TARGET_TYPE (array_type));
+  unsigned int elt_size, elt_offs;
+  LONGEST ary_high_bound, ary_low_bound;
+  struct value *v;
+  int slice_range_size, i = 0, row_count = 1, elem_count = 1;
+
+  /* Check for legacy code if we are actually dealing with an array or
+     string.  */
   if (TYPE_CODE (array_type) != TYPE_CODE_ARRAY
       && TYPE_CODE (array_type) != TYPE_CODE_STRING)
     error (_("cannot take slice of non-array"));
 
-  range_type = TYPE_INDEX_TYPE (array_type);
-  if (get_discrete_bounds (range_type, &lowerbound, &upperbound) < 0)
-    error (_("slice from bad array or bitstring"));
+  ary_low_bound = TYPE_LOW_BOUND (TYPE_INDEX_TYPE (array_type));
+  ary_high_bound = TYPE_HIGH_BOUND (TYPE_INDEX_TYPE (array_type));
 
-  if (lowbound < lowerbound || length < 0
-      || lowbound + length - 1 > upperbound)
-    error (_("slice out of range"));
+  /* When we are working on a multi-dimensional array, we need to get the
+     attributes of the underlying type.  */
+  if (call_count > 1)
+    {
+      ary_low_bound = TYPE_LOW_BOUND (TYPE_INDEX_TYPE (elt_type));
+      ary_high_bound = TYPE_HIGH_BOUND (TYPE_INDEX_TYPE (elt_type));
+      elt_type = check_typedef (TYPE_TARGET_TYPE (elt_type));
+      row_count = TYPE_LENGTH (array_type)
+		    / TYPE_LENGTH (TYPE_TARGET_TYPE (array_type));
+    }
+
+  /* With a stride of '1', the number of elements per result row is equal to
+     the LENGTH of the subarray.  With non-default stride values, we skip
+     elements, but have to add the start element to the total number of
+     elements per row.  */
+  if (stride_length == 1)
+    elem_count = length;
+  else
+    elem_count = ((length - 1) / stride_length) + 1;
+
+  elt_size = TYPE_LENGTH (elt_type);
+  elt_offs = lowbound - ary_low_bound;
+
+  elt_offs *= elt_size;
+
+  /* Check for valid user input.  In case of Fortran this was already done
+     in the calling function.  */
+  if (call_count == 1
+	&& (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
+	      && elt_offs >= TYPE_LENGTH (array_type)))
+    error (_("no such vector element"));
+
+  /* CALL_COUNT is 1 when we are dealing either with the highest dimension
+     of the array, or a one dimensional array.  Set RANGE_TYPE accordingly.
+     In both cases we calculate how many rows/elements will be in the output
+     array by setting slice_range_size.  */
+  if (call_count == 1)
+    {
+  range_type = TYPE_INDEX_TYPE (array_type);
+      slice_range_size = ary_low_bound + elem_count - 1;
+
+      /* Check if the array bounds are valid.  */
+      if (get_discrete_bounds (range_type, &ary_low_bound, &ary_high_bound) < 0)
+	error (_("slice from bad array or bitstring"));
+    }
+  /* When CALL_COUNT is greater than 1, we are dealing with an array of arrays.
+     So we need to get the type below the current one and set the RANGE_TYPE
+     accordingly.  */
+  else
+    {
+      range_type = TYPE_INDEX_TYPE (TYPE_TARGET_TYPE (array_type));
+      slice_range_size = ary_low_bound + (row_count * elem_count) - 1;
+      ary_low_bound = TYPE_LOW_BOUND (range_type);
+    }
 
   /* FIXME-type-allocation: need a way to free this type when we are
      done with it.  */
-  slice_range_type = create_static_range_type ((struct type *) NULL,
-					       TYPE_TARGET_TYPE (range_type),
-					       lowbound,
-					       lowbound + length - 1);
 
+  slice_range_type = create_static_range_type (NULL, TYPE_TARGET_TYPE (range_type),
+					ary_low_bound, slice_range_size);
   {
-    struct type *element_type = TYPE_TARGET_TYPE (array_type);
-    LONGEST offset
-      = (lowbound - lowerbound) * TYPE_LENGTH (check_typedef (element_type));
+    struct type *element_type = NULL;
 
-    slice_type = create_array_type ((struct type *) NULL,
-				    element_type,
-				    slice_range_type);
+    /* When both CALL_COUNT and STRIDE_LENGTH equal 1, we can use the legacy
+       code for subarrays.  */
+    if (call_count == 1 && stride_length == 1)
+      {
+	element_type = TYPE_TARGET_TYPE (array_type);
+
+	slice_type = create_array_type (NULL, element_type, slice_range_type);
+
     TYPE_CODE (slice_type) = TYPE_CODE (array_type);
 
     if (VALUE_LVAL (array) == lval_memory && value_lazy (array))
-      slice = allocate_value_lazy (slice_type);
+	  v = allocate_value_lazy (slice_type);
     else
       {
-	slice = allocate_value (slice_type);
-	value_contents_copy (slice, 0, array, offset,
-			     type_length_units (slice_type));
+	v = allocate_value (slice_type);
+	value_contents_copy (v,
+			     value_embedded_offset (v),
+			     array,
+			     value_embedded_offset (array) + elt_offs,
+			     elt_size * longest_to_int (length));
       }
 
-    set_value_component_location (slice, array);
-    VALUE_FRAME_ID (slice) = VALUE_FRAME_ID (array);
-    set_value_offset (slice, value_offset (array) + offset);
+  }
+    /* With CALL_COUNT or STRIDE_LENGTH are greater than 1 we are working
+       on a range of ranges.  So we copy the relevant elements into the
+       new array we return.  */
+    else
+      {
+	int j, offs_store = elt_offs;
+	LONGEST dst_offset = 0;
+	LONGEST src_row_length = TYPE_LENGTH (TYPE_TARGET_TYPE (array_type));
+
+	if (call_count == 1)
+	  {
+	    /* When CALL_COUNT is greater than 1 we are working on a range of
+               ranges.  */
+	    element_type = TYPE_TARGET_TYPE (array_type);
+	  }
+	else
+	  {
+	    /* Working on an array of arrays, the type of the elements is the type
+               of the subarrays' type.  */
+	    element_type = TYPE_TARGET_TYPE (TYPE_TARGET_TYPE (array_type));
+	  }
+
+	slice_type = create_array_type (NULL, element_type, slice_range_type);
+
+	/* If we have a one dimensional array, we copy its TYPE_CODE.  For a
+	   multi dimensional array we copy the embedded type's TYPE_CODE.  */
+	if (call_count == 1)
+	  TYPE_CODE (slice_type) = TYPE_CODE (array_type);
+	else
+	  TYPE_CODE (slice_type) = TYPE_CODE (TYPE_TARGET_TYPE (array_type));
+
+	v = allocate_value (slice_type);
+
+	/* Iterate through the rows of the outer array and set the new offset
+	   for each row.  */
+	for (i = 0; i < row_count; i++)
+	  {
+	    elt_offs = offs_store + i * src_row_length;
+
+	    /* Iterate through the elements in each row to copy only those.  */
+	    for (j = 1; j <= elem_count; j++)
+	      {
+		/* Fetches the contents of ARRAY and copies them into V.  */
+		value_contents_copy (v, dst_offset, array, elt_offs, elt_size);
+		elt_offs += elt_size * stride_length;
+		dst_offset += elt_size;
+	      }
+	  }
+      }
+
+    set_value_component_location (v, array);
+    VALUE_REGNUM (v) = VALUE_REGNUM (array);
+    VALUE_FRAME_ID (v) = VALUE_FRAME_ID (array);
+    set_value_offset (v, value_offset (array) + elt_offs);
   }
 
-  return slice;
+  return v;
 }
 
 /* Create a value for a FORTRAN complex number.  Currently most of the
@@ -3846,9 +4084,9 @@ value_literal_complex (struct value *arg1,
   arg2 = value_cast (real_type, arg2);
 
   memcpy (value_contents_raw (val),
-	  value_contents (arg1), TYPE_LENGTH (real_type));
+	  value_contents (arg1), value_length (arg1));
   memcpy (value_contents_raw (val) + TYPE_LENGTH (real_type),
-	  value_contents (arg2), TYPE_LENGTH (real_type));
+	  value_contents (arg2), value_length (arg2));
   return val;
 }
 
@@ -3866,10 +4104,10 @@ cast_into_complex (struct type *type, struct value *val)
       struct value *im_val = allocate_value (val_real_type);
 
       memcpy (value_contents_raw (re_val),
-	      value_contents (val), TYPE_LENGTH (val_real_type));
+	      value_contents (val), value_length (re_val));
       memcpy (value_contents_raw (im_val),
 	      value_contents (val) + TYPE_LENGTH (val_real_type),
-	      TYPE_LENGTH (val_real_type));
+	      value_length (im_val));
 
       return value_literal_complex (re_val, im_val, type);
     }
@@ -3880,6 +4118,43 @@ cast_into_complex (struct type *type, struct value *val)
 				  type);
   else
     error (_("cannot cast non-number to complex"));
+}
+
+struct value *
+value_real (struct value *val)
+{
+  struct type *val_real_type = TYPE_TARGET_TYPE (value_type (val));
+
+  if (TYPE_CODE (value_type (val)) == TYPE_CODE_COMPLEX)
+    {
+      struct value *re_val = allocate_value(val_real_type);
+
+      memcpy (value_contents_raw (re_val),
+	      value_contents (val), value_length (re_val));
+
+      return re_val;
+    }
+  else
+    error (_("value is not a complex number"));
+}
+
+struct value *
+value_imag (struct value *val)
+{
+  struct type *val_real_type = TYPE_TARGET_TYPE (value_type (val));
+
+  if (TYPE_CODE (value_type (val)) == TYPE_CODE_COMPLEX)
+    {
+      struct value *im_val = allocate_value(val_real_type);
+
+      memcpy (value_contents_raw (im_val),
+	      value_contents (val) + TYPE_LENGTH (val_real_type),
+	      value_length (im_val));
+
+      return im_val;
+    }
+  else
+    error (_("value is not a complex number"));
 }
 
 void

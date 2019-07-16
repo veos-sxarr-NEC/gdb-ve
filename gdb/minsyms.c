@@ -1,4 +1,7 @@
 /* GDB routines for manipulating the minimal symbol tables.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
@@ -51,6 +54,7 @@
 #include "language.h"
 #include "cli/cli-utils.h"
 #include "symbol.h"
+#include "gdbcmd.h"
 
 /* Accumulate the minimal symbols for each objfile in bunches of BUNCH_SIZE.
    At the end, copy them all into one newly allocated location on an objfile's
@@ -76,6 +80,12 @@ static int msym_bunch_index;
 /* Total number of minimal symbols recorded so far for the objfile.  */
 
 static int msym_count;
+
+/* Some (non-gcc) compilers generate incorrect symbol sizes, which leads to
+   issues mapping pc to symbols.  Setting this to true tries to work around
+   this, however, this can cause other issues.  */
+
+static int workaround_incorrect_symbol_sizes = 0;
 
 /* See minsyms.h.  */
 
@@ -108,6 +118,31 @@ msymbol_hash (const char *string)
   return hash;
 }
 
+/* Compute a hash code for a string lower case.  */
+
+static unsigned int
+msymbol_lc_hash (const char *string)
+{
+  unsigned int hash = 0;
+  for (; *string; ++string)
+    hash = hash * 67 + (tolower(*string)) - 113;
+  return hash;
+}
+
+static int
+strcmp_lower (const char* s1, const char *s2)
+{
+  while (*s1 && *s2 && tolower(*s1) == tolower(*s2))
+    {
+      s1++; 
+      s2++;
+    }
+  if (!*s1 && *s2) return -1;
+  if (*s1 && !*s2) return 1;
+  if (*s1 == *s2) return 0;
+  else return (*s1 < *s2) ? -1 : 1;
+
+}
 /* Add the minimal symbol SYM to an objfile's minsym hash table, TABLE.  */
 static void
 add_minsym_to_hash_table (struct minimal_symbol *sym,
@@ -135,6 +170,21 @@ add_minsym_to_demangled_hash_table (struct minimal_symbol *sym,
 	% MINIMAL_SYMBOL_HASH_SIZE;
 
       sym->demangled_hash_next = table[hash];
+      table[hash] = sym;
+    }
+}
+
+/* Add the minimal symbol SYM to an objfile's minsym lowercase hash table,
+   TABLE.  */
+static void
+add_minsym_to_lowercase_hash_table (struct minimal_symbol *sym,
+				   struct minimal_symbol **table)
+{
+  if (sym->lowercase_hash_next == NULL)
+    {
+      unsigned int hash
+	= msymbol_lc_hash (MSYMBOL_SEARCH_NAME (sym)) % MINIMAL_SYMBOL_HASH_SIZE;
+      sym->lowercase_hash_next = table[hash];
       table[hash] = sym;
     }
 }
@@ -170,9 +220,16 @@ lookup_minimal_symbol (const char *name, const char *sfile,
 
   unsigned int hash = msymbol_hash (name) % MINIMAL_SYMBOL_HASH_SIZE;
   unsigned int dem_hash = msymbol_hash_iw (name) % MINIMAL_SYMBOL_HASH_SIZE;
+  unsigned int lc_hash = msymbol_lc_hash (name) % MINIMAL_SYMBOL_HASH_SIZE;
 
   int needtofreename = 0;
+
   const char *modified_name;
+
+  int case_insensitive = (case_sensitivity == case_sensitive_off
+			  || current_language->la_case_sensitivity
+			  == case_sensitive_off);
+
 
   if (sfile != NULL)
     sfile = lbasename (sfile);
@@ -211,13 +268,15 @@ lookup_minimal_symbol (const char *name, const char *sfile,
 				objfile_debug_name (objfile));
 	  }
 
-        for (pass = 1; pass <= 2 && found_symbol.minsym == NULL; pass++)
+        for (pass = 1; pass <= (case_insensitive?3:2) && found_symbol.minsym == NULL; pass++)
 	    {
             /* Select hash list according to pass.  */
             if (pass == 1)
               msymbol = objfile->per_bfd->msymbol_hash[hash];
-            else
+            else if (pass == 2)
               msymbol = objfile->per_bfd->msymbol_demangled_hash[dem_hash];
+	    else if (pass == 3)
+	      msymbol = objfile->per_bfd->msymbol_lowercase_hash[lc_hash];
 
             while (msymbol != NULL && found_symbol.minsym == NULL)
 		{
@@ -232,11 +291,16 @@ lookup_minimal_symbol (const char *name, const char *sfile,
 		      match = cmp (MSYMBOL_LINKAGE_NAME (msymbol),
 				   modified_name) == 0;
 		    }
-		  else
+		  else if (pass == 2)
 		    {
 		      /* The function respects CASE_SENSITIVITY.  */
 		      match = MSYMBOL_MATCHES_SEARCH_NAME (msymbol,
 							  modified_name);
+		    }
+		  else if (pass == 3)
+		    {
+		      match = strcmp_lower (MSYMBOL_LINKAGE_NAME (msymbol), 
+					    modified_name) == 0;
 		    }
 
 		  if (match)
@@ -278,8 +342,10 @@ lookup_minimal_symbol (const char *name, const char *sfile,
                 /* Find the next symbol on the hash chain.  */
                 if (pass == 1)
                   msymbol = msymbol->hash_next;
-                else
+                else if (pass == 2)
                   msymbol = msymbol->demangled_hash_next;
+                else if (pass == 3)
+                  msymbol = msymbol->lowercase_hash_next;
 		}
 	    }
 	}
@@ -737,10 +803,8 @@ lookup_minimal_symbol_by_pc_section_1 (CORE_ADDR pc_in,
 
 	      /* If the minimal symbol has a non-zero size, and this
 		 PC appears to be outside the symbol's contents, then
-		 refuse to use this symbol.  If we found a zero-sized
-		 symbol with an address greater than this symbol's,
-		 use that instead.  We assume that if symbols have
-		 specified sizes, they do not overlap.  */
+		 refuse to use this symbol if we found a zero-sized
+		 symbol with an address greater than this symbol's. */
 
 	      if (hi >= 0
 		  && MSYMBOL_SIZE (&msymbol[hi]) != 0
@@ -749,7 +813,7 @@ lookup_minimal_symbol_by_pc_section_1 (CORE_ADDR pc_in,
 		{
 		  if (best_zero_sized != -1)
 		    hi = best_zero_sized;
-		  else
+		  else if (!workaround_incorrect_symbol_sizes)
 		    /* Go on to the next object file.  */
 		    continue;
 		}
@@ -1024,6 +1088,7 @@ prim_record_minimal_symbol_full (const char *name, int name_len, int copy_name,
      add_minsym_to_hash_table will NOT add this msymbol to the hash table.  */
   msymbol->hash_next = NULL;
   msymbol->demangled_hash_next = NULL;
+  msymbol->lowercase_hash_next = NULL;
 
   /* If we already read minimal symbols for this objfile, then don't
      ever allocate a new one.  */
@@ -1202,6 +1267,7 @@ build_minimal_symbol_hash_tables (struct objfile *objfile)
     {
       objfile->per_bfd->msymbol_hash[i] = 0;
       objfile->per_bfd->msymbol_demangled_hash[i] = 0;
+      objfile->per_bfd->msymbol_lowercase_hash[i] = 0;
     }
 
   /* Now, (re)insert the actual entries.  */
@@ -1217,6 +1283,8 @@ build_minimal_symbol_hash_tables (struct objfile *objfile)
       if (MSYMBOL_SEARCH_NAME (msym) != MSYMBOL_LINKAGE_NAME (msym))
 	add_minsym_to_demangled_hash_table (msym,
                                             objfile->per_bfd->msymbol_demangled_hash);
+      msym->lowercase_hash_next = 0;
+      add_minsym_to_lowercase_hash_table (msym, objfile->per_bfd->msymbol_lowercase_hash);
     }
 }
 
@@ -1473,3 +1541,21 @@ minimal_symbol_upper_bound (struct bound_minimal_symbol minsym)
 
   return result;
 }
+
+void
+_initialize_minsyms (void)
+{
+  add_setshow_boolean_cmd ("incorrect-symbol-size-workaround",
+			   no_class, &workaround_incorrect_symbol_sizes,
+			   _("Set usage of incorrect symbol size workaround."),
+			   _("Show usage of incorrect symbol size workaround."),
+			   _("When on assume symbol sizes might be wrong "
+			     "when mapping addresses to symbols."),
+			   NULL,
+			   NULL, /* FIXME: i18n: Usage of ARM 32-bit
+				    mode is %s.  */
+			   &setlist, &showlist);
+
+}
+
+

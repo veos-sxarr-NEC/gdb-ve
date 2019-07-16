@@ -1,3 +1,4 @@
+Note: this software has been modified by Arm.
 2016-06-13  Nick Clifton  <nickc@redhat.com>
 
 	* texi2pod.pl: Escape curly braces, whilst searching for keyword

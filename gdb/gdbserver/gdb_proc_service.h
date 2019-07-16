@@ -1,4 +1,7 @@
 /* <proc_service.h> replacement for systems that don't have it.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -20,6 +23,22 @@
 #define GDB_PROC_SERVICE_H
 
 #include <sys/types.h>
+
+/* ANDROID: */
+#ifdef  __ANDROID__
+#if defined(__aarch64__) || defined(__arm__)
+#include <sys/ptrace.h>
+typedef unsigned long elf_greg_t;
+typedef elf_greg_t elf_gregset_t[(sizeof (struct user_pt_regs) / sizeof(elf_greg_t))];
+#else
+#ifdef __x86_64__
+#include <ucontext.h>
+typedef greg_t elf_greg_t;
+typedef gregset_t elf_gregset_t;
+typedef fpregset_t elf_fpregset_t;
+#endif
+#endif
+#endif
 
 #ifdef HAVE_PROC_SERVICE_H
 
@@ -47,6 +66,10 @@ EXTERN_C_POP
 #endif
 
 EXTERN_C_PUSH
+#ifdef __ANDROID__
+/* ANDROID: for AT_PHDR and AT_PHNUM */
+#include <linux/auxvec.h>
+#endif
 
 typedef enum
 {

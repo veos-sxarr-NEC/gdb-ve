@@ -1,5 +1,8 @@
 /* Target-dependent code for the IA-64 for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -60,7 +63,7 @@
 
 #define KERNEL_START 0xc000000000000000ULL
 
-static size_t ktab_size = 0;
+static LONGEST ktab_size = 0;
 struct ia64_table_entry
   {
     uint64_t start_offset;
@@ -644,7 +647,11 @@ ia64_memory_insert_breakpoint (struct gdbarch *gdbarch,
   struct cleanup *cleanup;
 
   if (slotnum > 2)
-    error (_("Can't insert breakpoint for slot numbers greater than 2."));
+    {
+      warning (_("Can't insert breakpoint for slot numbers greater than 2.\n"
+	       "Using slot 0 instead"));
+      slotnum = 0;
+    }
 
   addr &= ~0x0f;
 
@@ -2645,7 +2652,7 @@ ia64_access_mem (unw_addr_space_t as,
 		 unw_word_t addr, unw_word_t *val,
 		 int write, void *arg)
 {
-  if (addr - KERNEL_START < ktab_size)
+  if (ktab_size >= 0 && (addr - KERNEL_START < ktab_size))
     {
       unw_word_t *laddr = (unw_word_t*) ((char *) ktab
                           + (addr - KERNEL_START));

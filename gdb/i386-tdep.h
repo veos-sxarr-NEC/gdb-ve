@@ -1,5 +1,8 @@
 /* Target-dependent code for the i386.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -189,6 +192,15 @@ struct gdbarch_tdep
   /* YMM16-31 register names.  Only used for tdesc_numbered_register.  */
   const char **ymm_avx512_register_names;
 
+  /* Number of PKEYS registers  */
+  int num_pkeys_regs;
+
+  /* Register number for PKRU register  */
+  int pkru_regnum;
+
+  /* PKEYS register names  */
+  const char **pkeys_register_names;
+
   /* Target description.  */
   const struct target_desc *tdesc;
 
@@ -345,6 +357,7 @@ extern int i386_bnd_regnum_p (struct gdbarch *gdbarch, int regnum);
 extern int i386_k_regnum_p (struct gdbarch *gdbarch, int regnum);
 extern int i386_zmm_regnum_p (struct gdbarch *gdbarch, int regnum);
 extern int i386_zmmh_regnum_p (struct gdbarch *gdbarch, int regnum);
+extern int i386_pkru_regnum_p (struct gdbarch *gdbarch, int regnum);
 
 extern const char *i386_pseudo_register_name (struct gdbarch *gdbarch,
 					      int regnum);

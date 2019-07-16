@@ -1,4 +1,7 @@
 dnl Autoconf configure script for GDB, the GNU debugger.
+dnl Modified by Arm.
+
+dnl Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 dnl Copyright (C) 1995-2017 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
@@ -138,6 +141,8 @@ GDB_AC_WITH_DIR(DEBUGDIR, separate-debug-dir,
 # This breaks GDB's relocatable path conversions since paths passed in
 # config.h would not get so translated, the path prefixes no longer match.
 AC_DEFINE_DIR(BINDIR, bindir, [Directory of programs.])
+
+AC_DEFINE_DIR(LIBDIR, libdir, [Directory of libraries.])
 
 # GDB's datadir relocation
 
@@ -484,8 +489,10 @@ fi
 
 ACX_PKGVERSION([GDB])
 ACX_BUGURL([http://www.gnu.org/software/gdb/bugs/])
+ACX_PYTHONHOME([])
 AC_DEFINE_UNQUOTED([PKGVERSION], ["$PKGVERSION"], [Additional package description])
 AC_DEFINE_UNQUOTED([REPORT_BUGS_TO], ["$REPORT_BUGS_TO"], [Bug reporting address])
+AC_DEFINE_UNQUOTED([PYTHONHOME_PATH], ["$PYTHONHOME_PATH"], [Set python home for gdb])
 
 # --------------------- #
 # Checks for programs.  #
@@ -647,6 +654,14 @@ AC_SUBST(READLINE_DEPS)
 AC_SUBST(READLINE_CFLAGS)
 AC_SUBST(READLINE_TEXI_INCFLAG)
 
+# If we build for mingw32/Windows, then also build file properties
+# for GDB executable.
+case $host_os in
+  *mingw32*)
+    CONFIG_OBS="$CONFIG_OBS windows_exe_properties.o"
+    ;;
+esac
+
 # Generate jit-reader.h
 
 # This is typedeffed to GDB_CORE_ADDR in jit-reader.h
@@ -685,8 +700,14 @@ if test "${with_expat}" = no; then
   AC_MSG_WARN([expat support disabled; some features may be unavailable.])
   HAVE_LIBEXPAT=no
 else
-  AC_LIB_HAVE_LINKFLAGS([expat], [], [#include "expat.h"],
-			[XML_Parser p = XML_ParserCreate (0);])
+  if test -d "${srcdir}/../expat"; then
+    HAVE_LIBEXPAT=yes
+    LIBEXPAT=../expat/.libs/libexpat.a
+    AC_DEFINE(HAVE_LIBEXPAT, 1, [Define if you have the $1 library.])
+  else
+    AC_LIB_HAVE_LINKFLAGS([expat], [], [#include "expat.h"],
+			  [XML_Parser p = XML_ParserCreate (0);])
+  fi
   if test "$HAVE_LIBEXPAT" != yes; then
     if test "$with_expat" = yes; then
       AC_MSG_ERROR([expat is missing or unusable])

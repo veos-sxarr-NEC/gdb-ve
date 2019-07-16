@@ -1,4 +1,7 @@
 /* Read AIX xcoff symbol tables and convert to internal format, for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
    Derived from coffread.c, dbxread.c, and a lot of hacking.
    Contributed by IBM Corporation.
@@ -943,7 +946,7 @@ record_minimal_symbol (const char *name, CORE_ADDR address,
    nested.  At any given time, a symbol can only be in one static block.
    This is the base address of current static block, zero if non exists.  */
 
-static int static_block_base = 0;
+static CORE_ADDR static_block_base = 0;
 
 /* Section number for the current static block.  */
 
@@ -1141,7 +1144,7 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 	}
 
       if ((cs->c_sclass == C_EXT || cs->c_sclass == C_HIDEXT)
-	  && cs->c_naux == 1)
+	  && cs->c_naux > 0)
 	{
 	  /* Dealing with a symbol with a csect entry.  */
 
@@ -1151,9 +1154,11 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 #define	CSECT_SMTYP(PP) (SMTYP_SMTYP(CSECT(PP).x_smtyp))
 #define	CSECT_SCLAS(PP) (CSECT(PP).x_smclas)
 
-	  /* Convert the auxent to something we can access.  */
-	  bfd_coff_swap_aux_in (abfd, raw_auxptr, cs->c_type, cs->c_sclass,
-				0, cs->c_naux, &main_aux);
+          /* Use the last aux entry.   */
+	  bfd_coff_swap_aux_in (abfd,
+                                raw_symbol - coff_data(abfd)->local_auxesz,
+                                cs->c_type, cs->c_sclass,
+				cs->c_naux - 1, cs->c_naux, &main_aux);
 
 	  switch (CSECT_SMTYP (&main_aux))
 	    {
@@ -1247,7 +1252,8 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 		  /* save the function header info, which will be used
 		     when `.bf' is seen.  */
 		  fcn_cs_saved = *cs;
-		  fcn_aux_saved = main_aux;
+		  bfd_coff_swap_aux_in (abfd, raw_auxptr, cs->c_type, cs->c_sclass,
+ 				        0, cs->c_naux, &fcn_aux_saved);
 		  continue;
 
 		case XMC_GL:
@@ -1285,8 +1291,6 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 	 after the above CSECT check.  */
       if (ISFCN (cs->c_type) && cs->c_sclass != C_TPDEF)
 	{
-	  bfd_coff_swap_aux_in (abfd, raw_auxptr, cs->c_type, cs->c_sclass,
-				0, cs->c_naux, &main_aux);
 	  goto function_entry_point;
 	}
 
@@ -1359,6 +1363,12 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 		 fcn_stab_saved.c_name, 0, 0, objfile);
 	      if (newobj->name != NULL)
 		SYMBOL_SECTION (newobj->name) = SECT_OFF_TEXT (objfile);
+	      /* Store the end address now. Don't defer until .ef as we may
+		 see a nested function in the meantime. */
+	      newobj->end_addr = fcn_cs_saved.c_value
+		+ fcn_aux_saved.x_sym.x_misc.x_fsize
+		+ ANOFFSET (objfile->section_offsets,
+			    SECT_OFF_TEXT (objfile));
 	    }
 	  else if (strcmp (cs->c_name, ".ef") == 0)
 	    {
@@ -1378,19 +1388,17 @@ read_xcoff_symtab (struct objfile *objfile, struct partial_symtab *pst)
 		}
 	      newobj = pop_context ();
 	      /* Stack must be empty now.  */
-	      if (context_stack_depth > 0 || newobj == NULL)
+              /*	      if (context_stack_depth > 0 || newobj == NULL)
 		{
 		  ef_complaint (cs->c_symnum);
 		  within_function = 0;
 		  break;
 		}
+	      */
 
 	      finish_block (newobj->name, &local_symbols, newobj->old_blocks,
-			    NULL, newobj->start_addr,
-			    (fcn_cs_saved.c_value
-			     + fcn_aux_saved.x_sym.x_misc.x_fsize
-			     + ANOFFSET (objfile->section_offsets,
-					 SECT_OFF_TEXT (objfile))));
+			    NULL, newobj->start_addr, newobj->end_addr, objfile);
+	      local_symbols = newobj->locals;
 	      within_function = 0;
 	    }
 	  break;

@@ -40,6 +40,7 @@ if [is_remote target] then {
 
 set breakpoints_invalid "\r\n\032\032breakpoints-invalid\r\n"
 set frames_invalid "\r\n\032\032frames-invalid\r\n"
+set gdb_started "\r\n\032\032started\r\n"
 
 #
 # line number where we need to stop in main
@@ -135,7 +136,9 @@ set pat [multi_line "" \
 	     "Continuing." \
 	     "" \
 	     "\032\032starting" \
-	     "\(${frames_invalid}\)*a.x is 1" \
+	     "\(${frames_invalid}\)*" \
+	     "\032\032started" \
+	     "\(${frames_invalid}\)*a.x is 1"\
 	     "\(${frames_invalid}\)*"\
 	     "\032\032exited 0" \
 	     "$inferior_exited_re normally." \
@@ -218,6 +221,8 @@ set pat [multi_line "" \
 	     "\032\032post-prompt" \
 	     "" \
 	     "\032\032starting" \
+	     "\(${frames_invalid}\)*"\
+	     "\032\032started" \
 	     "\(${frames_invalid}\)*${breakpoints_invalid}" \
 	     "\032\032watchpoint 3" \
 	     ".*atchpoint 3: a.x" \
@@ -255,22 +260,21 @@ gdb_test_multiple "next" "watch triggered on a.x" {
     }
 }
 
-
 #
 # send ^C to gdb, so that the quit() function gets called 
 # and annotate-quit is tested
 # test:
 # annotate-quit
 #
-if ![target_info exists gdb,nointerrupts] {
-    send_gdb "\003"
-    gdb_expect {
-	-re "\r\n\032\032error-begin\r\nQuit\r\n\r\n\032\032quit\r\n$gdb_prompt$" \
-	    { pass "annotate-quit" }
-	-re ".*$gdb_prompt$" { fail "annotate-quit" }
-	timeout { fail "annotate-quit (timeout)" }
-    }
-}
+# if ![target_info exists gdb,nointerrupts] {
+#     send_gdb "\003"
+#     gdb_expect {
+# 	-re "\r\n\032\032error-begin\r\nQuit\r\n\r\n\032\032quit\r\n$gdb_prompt$" \
+# 	    { pass "annotate-quit" }
+# 	-re ".*$gdb_prompt$" { fail "annotate-quit" }
+# 	timeout { fail "annotate-quit (timeout)" }
+#     }
+# }
 
 #
 # FIXME: the testsuite does not currently have tests for 

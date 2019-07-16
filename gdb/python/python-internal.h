@@ -1,5 +1,8 @@
 /* Gdb/Python header for private use by Python module.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -574,6 +577,7 @@ extern PyObject *gdbpy_to_string_cst;
 extern PyObject *gdbpy_display_hint_cst;
 extern PyObject *gdbpy_enabled_cst;
 extern PyObject *gdbpy_value_cst;
+extern PyObject *gdbpy_child_cst;
 
 /* Exception types.  */
 extern PyObject *gdbpy_gdb_error;

@@ -1,5 +1,8 @@
 /* Multi-process control for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -166,7 +169,8 @@ add_inferior (int pid)
   struct inferior *inf = add_inferior_silent (pid);
 
   if (print_inferior_events)
-    printf_unfiltered (_("[New inferior %d]\n"), pid);
+    printf_unfiltered (_("[New inferior %d [%s]]\n"), inf->num,
+		       target_pid_to_str (pid_to_ptid (inf->pid)));
 
   return inf;
 }
@@ -273,11 +277,13 @@ void
 exit_inferior (int pid)
 {
   struct inferior *inf = find_inferior_pid (pid);
+  int num = inf->num;
 
   exit_inferior_1 (inf, 0);
 
   if (print_inferior_events)
-    printf_unfiltered (_("[Inferior %d exited]\n"), pid);
+    printf_unfiltered (_("[Inferior %d [%s] exited]\n"), num,
+		       target_pid_to_str (pid_to_ptid (pid)));
 }
 
 void
@@ -300,11 +306,15 @@ void
 detach_inferior (int pid)
 {
   struct inferior *inf = find_inferior_pid (pid);
+  /* From remote_follow_fork we are called with PID not in the inferior
+     list.  */
+  int num = (inf == NULL) ? 0 : inf->num;
 
   exit_inferior_1 (inf, 0);
 
   if (print_inferior_events)
-    printf_unfiltered (_("[Inferior %d detached]\n"), pid);
+    printf_unfiltered (_("[Inferior %d [%s] detached]\n"), num,
+		       target_pid_to_str (pid_to_ptid (pid)));
 }
 
 void
@@ -315,6 +325,10 @@ inferior_appeared (struct inferior *inf, int pid)
   inf->exit_code = 0;
 
   observer_notify_inferior_appeared (inf);
+
+  if (print_inferior_events)
+    printf_unfiltered (_("[Inferior %d [%s]]\n"), inf->num,
+		       target_pid_to_str (pid_to_ptid (pid)));
 }
 
 void
@@ -746,13 +760,19 @@ inferior_command (char *args, int from_tty)
   if (inf == NULL)
     error (_("Inferior ID %d not known."), num);
 
+  if (current_inferior_)
+    current_inferior_->last_thread = inferior_ptid;
+
   if (inf->pid != 0)
     {
       if (inf->pid != ptid_get_pid (inferior_ptid))
 	{
-	  struct thread_info *tp;
+	  struct thread_info *tp = NULL;
 
-	  tp = any_thread_of_process (inf->pid);
+	  if (!ptid_equal (inf->last_thread, null_ptid))
+	    tp = find_thread_ptid (inf->last_thread);
+	  if (!tp)
+	    tp = any_thread_of_process (inf->pid); 
 	  if (!tp)
 	    error (_("Inferior has no threads."));
 

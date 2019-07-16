@@ -1,5 +1,8 @@
 /* Rust language support routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2016-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -1243,9 +1246,9 @@ rust_range (struct expression *exp, int *pos, enum noside noside)
   kind = (enum range_type) longest_to_int (exp->elts[*pos + 1].longconst);
   *pos += 3;
 
-  if (kind == HIGH_BOUND_DEFAULT || kind == NONE_BOUND_DEFAULT)
+  if ((kind & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
     low = evaluate_subexp (NULL_TYPE, exp, pos, noside);
-  if (kind == LOW_BOUND_DEFAULT || kind == NONE_BOUND_DEFAULT)
+  if ((kind & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
     high = evaluate_subexp (NULL_TYPE, exp, pos, noside);
 
   if (noside == EVAL_SKIP)
@@ -1334,7 +1337,7 @@ rust_compute_range (struct type *type, struct value *range,
 
   *low = 0;
   *high = 0;
-  *kind = BOTH_BOUND_DEFAULT;
+  *kind = SUBARRAY_NONE_BOUND;
 
   if (TYPE_NFIELDS (type) == 0)
     return;
@@ -1342,15 +1345,14 @@ rust_compute_range (struct type *type, struct value *range,
   i = 0;
   if (strcmp (TYPE_FIELD_NAME (type, 0), "start") == 0)
     {
-      *kind = HIGH_BOUND_DEFAULT;
+      *kind = (enum range_type) (((int) *kind) | ((int) SUBARRAY_LOW_BOUND));
       *low = value_as_long (value_field (range, 0));
       ++i;
     }
   if (TYPE_NFIELDS (type) > i
       && strcmp (TYPE_FIELD_NAME (type, i), "end") == 0)
     {
-      *kind = (*kind == BOTH_BOUND_DEFAULT
-	       ? LOW_BOUND_DEFAULT : NONE_BOUND_DEFAULT);
+      *kind = (enum range_type) (((int) *kind) | ((int) SUBARRAY_HIGH_BOUND));
       *high = value_as_long (value_field (range, i));
     }
 }
@@ -1365,7 +1367,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
   struct type *rhstype;
   LONGEST low, high_bound;
   /* Initialized to appease the compiler.  */
-  enum range_type kind = BOTH_BOUND_DEFAULT;
+  enum range_type kind = SUBARRAY_NONE_BOUND;
   LONGEST high = 0;
   int want_slice = 0;
 
@@ -1426,8 +1428,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
       else
 	error (_("Cannot subscript non-array type"));
 
-      if (want_slice
-	  && (kind == BOTH_BOUND_DEFAULT || kind == LOW_BOUND_DEFAULT))
+      if (want_slice && ((kind & SUBARRAY_LOW_BOUND) == 0))
 	low = low_bound;
       if (low < 0)
 	error (_("Index less than zero"));
@@ -1445,7 +1446,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
 	  CORE_ADDR addr;
 	  struct value *addrval, *tem;
 
-	  if (kind == BOTH_BOUND_DEFAULT || kind == HIGH_BOUND_DEFAULT)
+	  if ((kind & SUBARRAY_HIGH_BOUND) == 0)
 	    high = high_bound;
 	  if (high < 0)
 	    error (_("High index less than zero"));
@@ -2113,6 +2114,7 @@ static const struct language_defn rust_language_defn =
   rust_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,

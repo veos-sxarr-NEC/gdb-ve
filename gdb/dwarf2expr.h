@@ -1,5 +1,8 @@
 /* DWARF 2 Expression Evaluator.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    Contributed by Daniel Berlin <dan@dberlin.org>.
@@ -126,6 +129,16 @@ struct dwarf_stack_value
   int in_stack_memory;
 };
 
+
+/* Blocks are a bunch of untyped bytes.  */
+struct dwarf_block
+  {
+    size_t size;
+
+    /* Valid only if SIZE is not zero.  */
+    gdb_byte *data;
+  };
+
 /* The expression evaluator works with a dwarf_expr_context, describing
    its current state and its callbacks.  */
 struct dwarf_expr_context
@@ -200,6 +213,10 @@ struct dwarf_expr_context
      two cases need to be handled separately.)  */
   int num_pieces;
   struct dwarf_expr_piece *pieces;
+
+  /* Special flag to indicate that the expression we are processing was
+     created by the pgi compiler, and so needs some special work arounds.  */
+  int producer_is_pgi : 1;
 };
 
 

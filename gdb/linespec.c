@@ -1,5 +1,8 @@
 /* Parser for linespec for the GNU debugger, GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -2630,6 +2633,10 @@ decode_line_full (const struct event_location *location, int flags,
     decode_line_2 (state, &result, select_mode);
 
   do_cleanups (cleanups);
+
+  
+
+  
 }
 
 /* See linespec.h.  */
@@ -3505,6 +3512,7 @@ decode_digits_ordinary (struct linespec_state *self,
 	  sal.symtab = elt;
 	  sal.line = line;
 	  sal.pc = pc;
+	  sal.explicit_line = 1; //added by kdavis@cray.com
 	  add_sal_to_sals_basic (sals, &sal);
 	}
 

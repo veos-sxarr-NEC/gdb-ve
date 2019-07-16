@@ -1,5 +1,8 @@
 /* Floating point routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -524,6 +527,30 @@ floatformat_is_negative (const struct floatformat *fmt,
     uval = newfrom;
 
   return get_field (uval, order, fmt->totalsize, fmt->sign_start, 1);
+}
+
+int
+floatformat_is_inf (const struct floatformat *fmt, 
+                    const bfd_byte *uval, unsigned int len)
+{
+#ifdef AIX_INFINITY
+    /* XLF/XLC rudely do not follow proper standard for INF */
+#ifdef INFINITY
+  if (len == 4)
+    {
+      float f = INFINITY;
+      return ((*((int*) &f) ^ *((int*) uval))
+          & 0x7FFFFFFF) == 0;
+    }
+  else if (len == 8)
+    {
+      long long f = 0x7ff0000000000000LL;
+      return ((*((long long *) &f) ^ *((long long *) uval))
+          & 0x7FFFFFFFFFFFFFFLL) == 0;
+    }
+#endif
+#endif
+    return 0;
 }
 
 /* Check if VAL is "not a number" (NaN) for FMT.  */

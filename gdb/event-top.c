@@ -1,5 +1,8 @@
 /* Top level stuff for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
@@ -57,7 +60,6 @@ static void handle_sigquit (int sig);
 #ifdef SIGHUP
 static void handle_sighup (int sig);
 #endif
-static void handle_sigfpe (int sig);
 
 /* Functions to be invoked by the event loop in response to
    signals.  */
@@ -67,7 +69,7 @@ static void async_do_nothing (gdb_client_data);
 #ifdef SIGHUP
 static void async_disconnect (gdb_client_data);
 #endif
-static void async_float_handler (gdb_client_data);
+
 #ifdef STOP_SIGNAL
 static void async_stop_sig (gdb_client_data);
 #endif
@@ -110,7 +112,6 @@ static struct async_signal_handler *sighup_token;
 #ifdef SIGQUIT
 static struct async_signal_handler *sigquit_token;
 #endif
-static struct async_signal_handler *sigfpe_token;
 #ifdef STOP_SIGNAL
 static struct async_signal_handler *sigtstp_token;
 #endif
@@ -968,9 +969,6 @@ async_init_signals (void)
     sighup_token =
       create_async_signal_handler (async_do_nothing, NULL);
 #endif
-  signal (SIGFPE, handle_sigfpe);
-  sigfpe_token =
-    create_async_signal_handler (async_float_handler, NULL);
 
 #ifdef STOP_SIGNAL
   sigtstp_token =
@@ -1076,7 +1074,8 @@ handle_sigint (int sig)
      it may be quite a while before we get back to the event loop.  So
      set quit_flag to 1 here.  Then if QUIT is called before we get to
      the event loop, we will unwind as expected.  */
-  set_quit_flag ();
+  if (!target_terminal_is_ours ())
+    set_quit_flag ();
 
   /* In case nothing calls QUIT before the event loop is reached, the
      event loop handles it.  */
@@ -1255,24 +1254,6 @@ async_stop_sig (gdb_client_data arg)
   dont_repeat ();
 }
 #endif /* STOP_SIGNAL */
-
-/* Tell the event loop what to do if SIGFPE is received.
-   See event-signal.c.  */
-static void
-handle_sigfpe (int sig)
-{
-  mark_async_signal_handler (sigfpe_token);
-  signal (sig, handle_sigfpe);
-}
-
-/* Event loop will call this functin to process a SIGFPE.  */
-static void
-async_float_handler (gdb_client_data arg)
-{
-  /* This message is based on ANSI C, section 4.7.  Note that integer
-     divide by zero causes this, so "float" is a misnomer.  */
-  error (_("Erroneous arithmetic operation."));
-}
 
 
 /* Set things up for readline to be invoked via the alternate

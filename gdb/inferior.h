@@ -1,6 +1,9 @@
 /* Variables that describe the inferior process running under GDB:
    Where it is, why it stopped, and how to step it.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -149,6 +152,13 @@ extern char *construct_inferior_arguments (int, char **);
 
 extern void setup_inferior (int from_tty);
 
+enum focus_kind
+  {
+    FOCUS_CURRENT_THREAD,
+    FOCUS_CURRENT_INFERIOR,
+    FOCUS_ALL_THREADS
+  };
+
 extern void post_create_inferior (struct target_ops *, int);
 
 extern void attach_command (char *, int);
@@ -161,9 +171,9 @@ extern void set_inferior_args_vector (int, char **);
 
 extern void registers_info (char *, int);
 
-extern void continue_1 (int all_threads);
+extern void continue_1 (enum focus_kind focus);
 
-extern void interrupt_target_1 (int all_threads);
+extern void interrupt_target_1 (enum focus_kind focus);
 
 extern void delete_longjmp_breakpoint_cleanup (void *arg);
 
@@ -409,6 +419,9 @@ struct inferior
      this gdbarch.  */
   struct gdbarch *gdbarch;
 
+  /* The last thread of this inferior that was current.  */
+  ptid_t last_thread;
+  
   /* Per inferior data-pointers required by other GDB modules.  */
   REGISTRY_FIELDS;
 };

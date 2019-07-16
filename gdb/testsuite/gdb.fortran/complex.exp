@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+if { [skip_fortran_tests] } { return -1 }
+load_lib "fortran.exp"
+
 standard_testfile .f
 
 if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug f90 quiet}]} {
@@ -20,9 +23,9 @@ if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug f90 quiet}]} {
     return -1
 }
 
-if ![runto MAIN__] then {
-    perror "Couldn't run to MAIN__"
-    continue
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
 }
 
 set bp_location [gdb_get_line_number "stop"]

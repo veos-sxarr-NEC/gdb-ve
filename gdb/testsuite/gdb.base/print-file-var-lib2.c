@@ -21,3 +21,9 @@ get_version_2 (void)
 {
   return this_version_id;
 }
+
+int
+compare_versions (int v)
+{
+  return (this_version_id == v);
+}

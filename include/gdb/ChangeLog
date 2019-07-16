@@ -1,3 +1,4 @@
+Note: this software has been modified by Arm.
 2016-07-15  John Baldwin  <jhb@FreeBSD.org>
 
 	* signals.def: Add GDB_SIGNAL_LIBRT.

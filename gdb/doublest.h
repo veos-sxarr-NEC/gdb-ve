@@ -1,5 +1,8 @@
 /* Floating point definitions for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -75,6 +78,9 @@ extern void floatformat_to_doublest (const struct floatformat *,
 				     const void *in, DOUBLEST *out);
 extern void floatformat_from_doublest (const struct floatformat *,
 				       const DOUBLEST *in, void *out);
+
+extern int floatformat_is_inf (const struct floatformat *fmt, 
+                               const bfd_byte *uval, unsigned int len);
 
 extern int floatformat_is_negative (const struct floatformat *,
 				    const bfd_byte *);

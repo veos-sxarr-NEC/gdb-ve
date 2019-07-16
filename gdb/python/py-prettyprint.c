@@ -1,5 +1,8 @@
 /* Python pretty-printing
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -523,6 +526,10 @@ print_children (PyObject *printer, const char *hint,
 	pretty = options->prettyformat_structs;
     }
 
+  if (pretty == Val_prettyformat_default)
+    pretty = ((is_array ? options->prettyformat_arrays : options->prettyformat_structs)
+	      ? Val_prettyformat : Val_no_prettyformat);
+  
   /* Manufacture a dummy Python frame to work around Python 2.4 bug,
      where it insists on having a non-NULL tstate->frame when
      a generator is called.  */
@@ -667,6 +674,8 @@ print_children (PyObject *printer, const char *hint,
 	      gdbpy_print_stack ();
 	      error (_("Error while executing Python code."));
 	    }
+	  else if (is_map && i % 2 == 0)
+	    common_val_print (value, stream, 0, options, language);
 	  else
 	    common_val_print (value, stream, recurse + 1, options, language);
 	}
@@ -731,6 +740,7 @@ gdbpy_apply_val_pretty_printer (const struct extension_language_defn *extlang,
   if (valaddr)
     valaddr += embedded_offset;
   value = value_from_contents_and_address (type, valaddr,
+					   val ? value_length (val) : TYPE_LENGTH (type),
 					   address + embedded_offset);
 
   set_value_component_location (value, val);
@@ -863,4 +873,148 @@ gdbpy_default_visualizer (PyObject *self, PyObject *args)
 
   cons = find_pretty_printer (val_obj);
   return cons;
+}
+
+static int
+my_value_equal (struct value *arg1, struct value *arg2, const struct language_defn *language)
+{
+  if (binop_user_defined_p (BINOP_EQUAL, arg1, arg2))
+    {
+      return !value_as_long (value_x_binop (arg1, arg2, BINOP_LESS, OP_NULL, EVAL_NORMAL)) &&
+	     !value_as_long (value_x_binop (arg2, arg1, BINOP_LESS, OP_NULL, EVAL_NORMAL));
+    }
+  else
+    {
+      binop_promote (language, get_type_arch (value_type (arg1)), &arg1, &arg2);
+      return value_equal (arg1, arg2);      
+    }  
+}
+
+struct value *
+apply_val_child (struct value *object,
+		 struct value *index,
+		 const struct language_defn *language)
+{
+  struct gdbarch *gdbarch = get_type_arch (value_type (object));
+  PyObject *printer, *val_obj, *index_obj;
+  struct value *result = NULL, *key;
+  struct cleanup *cleanups;
+  volatile struct gdb_exception except;
+  PyObject *child, *children, *iter, *frame, *item, *name;
+  char *hint = NULL;
+  int is_map;
+  cleanups = ensure_python_env (gdbarch, language);
+
+  /* Instantiate the printer.  */
+
+  /* The value is still on the value chain and we don't want it to be freed when
+     the last reference to the value object goes away. */
+  value_incref (object);
+  val_obj = value_to_value_object (object);
+  if (! val_obj)
+    goto done;
+  
+  /* Find the constructor.  */
+  printer = find_pretty_printer (val_obj);
+  Py_DECREF (val_obj);
+  make_cleanup_py_decref (printer);
+  if (! printer || printer == Py_None)
+    goto done;
+
+  hint = gdbpy_get_display_hint (printer);
+  make_cleanup (free_current_contents, &hint);
+
+  /* The value is still on the value chain and we don't want it to be freed when
+     the last reference to the value object goes away. */
+  value_incref (index);
+  index_obj = value_to_value_object (index);
+  if (! index_obj)
+    goto done;
+  make_cleanup_py_decref (index_obj);
+  
+  if (PyObject_HasAttr (printer, gdbpy_child_cst))
+    {
+      TRY
+	{
+	  child = PyObject_CallMethodObjArgs (printer, gdbpy_child_cst, index_obj, NULL);
+	  if (! child)
+	    goto done;
+	  make_cleanup_py_decref (child);
+	  result = convert_value_from_python (child);
+	}
+      CATCH (except, RETURN_MASK_ALL)
+	{
+	}
+      END_CATCH
+    }
+  else if (PyObject_HasAttr (printer, gdbpy_children_cst))
+    {
+      is_map = hint && ! strcmp (hint, "map");      
+      children = PyObject_CallMethodObjArgs (printer, gdbpy_children_cst,
+					     NULL);
+      if (! children)
+	goto done;
+      make_cleanup_py_decref (children);
+      iter = PyObject_GetIter (children);
+      if (!iter)
+	goto done;
+      make_cleanup_py_decref (iter);
+      /* Manufacture a dummy Python frame to work around Python 2.4 bug,
+	where it insists on having a non-NULL tstate->frame when
+	a generator is called.  */
+      frame = push_dummy_python_frame ();
+      if (!frame)
+	goto done;
+      make_cleanup_py_decref (frame);
+      if (is_map)
+	{
+	  int found;
+	  for (;;)
+	    {
+	      item = PyIter_Next (iter);
+	      if (!item)
+		goto done;
+	      if (! PyArg_ParseTuple (item, "sO", &name, &child))
+		{
+		  Py_DECREF (item);
+		  goto done;
+		}
+	      key = convert_value_from_python (child);
+	      found = my_value_equal (key, index, language);
+	      item = PyIter_Next (iter);
+	      if (!item)
+		goto done;
+	      if (found)
+		break;
+	      Py_DECREF (item);
+	    }
+	  make_cleanup_py_decref (item);
+	}
+      else
+	{
+	  LONGEST lindex = value_as_long (index);
+	  for (;;lindex--)
+	    {
+	      item = PyIter_Next (iter);
+	      if (!item)
+		goto done;
+	      if (lindex == 0)
+		break;
+	      Py_DECREF (item);
+	    }
+	}
+      make_cleanup_py_decref (item);
+      if (! PyArg_ParseTuple (item, "sO", &name, &child))
+	goto done;
+      result = convert_value_from_python (child);
+    }
+
+ done:
+  if (PyErr_Occurred ())
+    {
+      result = NULL;
+      gdbpy_print_stack ();
+    }
+  do_cleanups (cleanups);
+  return result;
 }

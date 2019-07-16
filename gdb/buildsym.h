@@ -1,4 +1,7 @@
 /* Build symbol tables in GDB's internal format.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -37,7 +40,15 @@ struct compunit_symtab;
    this technique.  */
 
 struct block;
-struct pending_block;
+
+/* List of blocks already made (lexical contexts already closed).
+   This is used at the end to make the blockvector.  */
+
+struct pending_block
+  {
+    struct pending_block *next;
+    struct block *block;
+  };
 
 struct dynamic_prop;
 
@@ -188,6 +199,13 @@ EXTERN int within_function;
 typedef void (record_line_ftype) (struct subfile *subfile, int line,
 				  CORE_ADDR pc);
 
+/* Pointer to the head of a linked list of symbol blocks which have
+   already been finalized (lexical contexts already closed) and which
+   are just waiting to be built into a blockvector when finalizing the
+   associated symtab.  */
+
+EXTERN struct pending_block *pending_blocks;
+
 
 
 #define next_symbol_text(objfile) (*next_symbol_text_func)(objfile)
@@ -213,6 +231,8 @@ extern void record_block_range (struct block *,
                                 CORE_ADDR start, CORE_ADDR end_inclusive);
 
 extern void really_free_pendings (void *dummy);
+
+extern struct subfile *find_subfile (const char *name, const char *dirname);
 
 extern void start_subfile (const char *name);
 

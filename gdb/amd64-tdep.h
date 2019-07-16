@@ -1,5 +1,8 @@
 /* Target-dependent definitions for AMD64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
@@ -66,7 +69,8 @@ enum amd64_regnum
   AMD64_YMM0H_REGNUM,		/* %ymm0h */
   AMD64_YMM15H_REGNUM = AMD64_YMM0H_REGNUM + 15,
   AMD64_BND0R_REGNUM = AMD64_YMM15H_REGNUM + 1,
-  AMD64_BND3R_REGNUM = AMD64_BND0R_REGNUM + 3,
+  AMD64_BND1R_REGNUM, AMD64_BND2R_REGNUM,
+  AMD64_BND3R_REGNUM,
   AMD64_BNDCFGU_REGNUM,
   AMD64_BNDSTATUS_REGNUM,
   AMD64_XMM16_REGNUM,
@@ -76,8 +80,9 @@ enum amd64_regnum
   AMD64_K0_REGNUM,
   AMD64_K7_REGNUM = AMD64_K0_REGNUM + 7,
   AMD64_ZMM0H_REGNUM,
-  AMD64_ZMM31H_REGNUM = AMD64_ZMM0H_REGNUM + 31
-};
+  AMD64_ZMM31H_REGNUM = AMD64_ZMM0H_REGNUM + 31,
+  AMD64_PKRU_REGNUM
+  };
 
 /* Number of general purpose registers.  */
 #define AMD64_NUM_GREGS		24

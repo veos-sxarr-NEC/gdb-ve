@@ -1,5 +1,8 @@
 /* Target-dependent code for GNU/Linux, architecture independent.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2009-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -21,6 +24,7 @@
 #define LINUX_TDEP_H
 
 #include "bfd.h"
+#include "enum-flags.h"
 
 struct regcache;
 

@@ -1,5 +1,8 @@
 /* Memory-access and commands for "inferior" process, for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -399,6 +402,9 @@ strip_bg_char (const char *args, int *bg_char_p)
 	return NULL;
     }
 
+  /* In upcmode we used to force background execution on, but with the
+     update from 7.6.2 to 7.10.1 this was dropped.  */
+
   *bg_char_p = 0;
   return xstrdup (args);
 }
@@ -485,6 +491,8 @@ post_create_inferior (struct target_ops *target, int from_tty)
 static void
 kill_if_already_running (int from_tty)
 {
+  struct inferior *inf, *infnext;
+
   if (! ptid_equal (inferior_ptid, null_ptid) && target_has_execution)
     {
       /* Bail out before killing the program if we will not be able to
@@ -495,7 +503,28 @@ kill_if_already_running (int from_tty)
 	  && !query (_("The program being debugged has been started already.\n\
 Start it from the beginning? ")))
 	error (_("Program not restarted."));
-      target_kill ();
+
+      /* kill all inferiors */
+      for (inf = inferior_list; inf; inf = infnext)
+	{
+	  struct thread_info *tp;
+	  infnext = inf->next;
+	  if (!inf->pid)
+	    continue;
+	  tp = any_thread_of_process (inf->pid);
+	  if (!tp)
+	    error (_("Inferior has no threads."));
+          else
+	    {
+	      switch_to_thread (tp->ptid); 
+              target_kill ();
+	    } 
+	}
+      /* UPC clean-up - can we have an observer for this purpose */
+      {
+        void upc_thread_kill_cleanup ();
+        upc_thread_kill_cleanup ();
+      }
     }
 }
 
@@ -557,6 +586,10 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
 
   args = strip_bg_char (args, &async_exec);
   args_chain = make_cleanup (xfree, args);
+
+  /* Force async for UPC programs.  */
+  if (upc_thread_active)
+    async_exec = 1;
 
   /* Do validation and preparation before possibly changing anything
      in the inferior.  */
@@ -634,6 +667,8 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
      breakpoint right at the entry point.  */
   proceed (regcache_read_pc (get_current_regcache ()), GDB_SIGNAL_0);
 
+  upc_sync_ok = 1;
+
   /* Since there was no error, there's no need to finish the thread
      states here.  */
   discard_cleanups (old_chain);
@@ -664,6 +699,18 @@ start_command (char *args, int from_tty)
 static int
 proceed_thread_callback (struct thread_info *thread, void *arg)
 {
+  if (arg)
+    {
+      int pid = *(int *)arg;
+      if (ptid_get_pid (thread->ptid) != pid)
+	return 0;
+    }
+
+  /* If stopped on collective BP do not run - we want to wait for
+     all threads to arrive on collective BP */
+  if (is_collective_breakpoints() && thread->collective_bp_num)
+    return 0;
+
   /* We go through all threads individually instead of compressing
      into a single target `resume_all' request, because some threads
      may be stopped in internal breakpoints/events, or stopped waiting
@@ -720,12 +767,13 @@ ensure_not_running (void)
 }
 
 void
-continue_1 (int all_threads)
+continue_1 (enum focus_kind focus)
 {
+  int pid;  
   ERROR_NO_INFERIOR;
   ensure_not_tfind_mode ();
 
-  if (non_stop && all_threads)
+  if (non_stop && !inferior_stop && focus != FOCUS_CURRENT_THREAD)
     {
       /* Don't error out if the current thread is running, because
 	 there may be other stopped threads.  */
@@ -734,7 +782,15 @@ continue_1 (int all_threads)
       /* Backup current thread and selected frame.  */
       old_chain = make_cleanup_restore_current_thread ();
 
-      iterate_over_threads (proceed_thread_callback, NULL);
+      if (focus == FOCUS_CURRENT_INFERIOR)
+	{
+	  pid = ptid_get_pid (inferior_ptid);
+	  iterate_over_threads (proceed_thread_callback, &pid);
+	}
+       else
+	{
+	  iterate_over_threads (proceed_thread_callback, NULL);
+        }
 
       if (current_ui->prompt_state == PROMPT_BLOCKED)
 	{
@@ -772,30 +828,41 @@ static void
 continue_command (char *args, int from_tty)
 {
   int async_exec;
-  int all_threads = 0;
   struct cleanup *args_chain;
+  enum focus_kind focus = FOCUS_CURRENT_THREAD;
 
   ERROR_NO_INFERIOR;
 
   /* Find out whether we must run in the background.  */
   args = strip_bg_char (args, &async_exec);
   args_chain = make_cleanup (xfree, args);
+  if (upcmode)
+    async_exec = 1;
 
   if (args != NULL)
     {
       if (startswith (args, "-a"))
 	{
-	  all_threads = 1;
+	  focus = FOCUS_ALL_THREADS;
 	  args += sizeof ("-a") - 1;
 	  if (*args == '\0')
 	    args = NULL;
 	}
+      else if (strncmp (args, "-i", sizeof ("-i") - 1) == 0)
+	{
+	  focus = FOCUS_CURRENT_INFERIOR;
+	  args += sizeof ("-i") - 1;
+	  if (*args == '\0')
+	    args = NULL;
+	}
     }
+  if (upcmode && is_collective_breakpoints()) focus = FOCUS_ALL_THREADS;
 
-  if (!non_stop && all_threads)
-    error (_("`-a' is meaningless in all-stop mode."));
+  if ((!non_stop || inferior_stop) && focus != FOCUS_CURRENT_THREAD)
+    error (_("`%s' is meaningless in all-stop mode."),
+           (focus == FOCUS_ALL_THREADS) ? "-a" : "-i");
 
-  if (args != NULL && all_threads)
+  if (args != NULL && focus != FOCUS_CURRENT_THREAD)
     error (_("Can't resume all threads and specify "
 	     "proceed count simultaneously."));
 
@@ -807,8 +874,9 @@ continue_command (char *args, int from_tty)
       int num, stat;
       int stopped = 0;
       struct thread_info *tp;
+      char stop;
 
-      if (non_stop)
+      if (non_stop && !inferior_stop)
 	tp = find_thread_ptid (inferior_ptid);
       else
 	{
@@ -821,7 +889,7 @@ continue_command (char *args, int from_tty)
       if (tp != NULL)
 	bs = tp->control.stop_bpstat;
 
-      while ((stat = bpstat_num (&bs, &num)) != 0)
+      while ((stat = bpstat_num (&bs, &num, &stop)) != 0)
 	if (stat > 0)
 	  {
 	    set_ignore_count (num,
@@ -847,7 +915,7 @@ continue_command (char *args, int from_tty)
   ERROR_NO_INFERIOR;
   ensure_not_tfind_mode ();
 
-  if (!non_stop || !all_threads)
+  if (!non_stop || !(focus == FOCUS_ALL_THREADS))
     {
       ensure_valid_thread ();
       ensure_not_running ();
@@ -858,7 +926,7 @@ continue_command (char *args, int from_tty)
   if (from_tty)
     printf_filtered (_("Continuing.\n"));
 
-  continue_1 (all_threads);
+  continue_1 (focus);
 }
 
 /* Record the starting point of a "step" or "next" command.  */
@@ -984,6 +1052,14 @@ step_command_fsm_prepare (struct step_command_fsm *sm,
 
 static int prepare_one_step (struct step_command_fsm *sm);
 
+/* Support for collective single stepping over multiple threads */
+struct step_arg {
+    int skip_subroutines;
+    int single_inst;
+    int count;
+    int thread;
+};
+
 static void
 step_1 (int skip_subroutines, int single_inst, char *count_string)
 {
@@ -1000,6 +1076,8 @@ step_1 (int skip_subroutines, int single_inst, char *count_string)
 
   count_string = strip_bg_char (count_string, &async_exec);
   args_chain = make_cleanup (xfree, count_string);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -1018,6 +1096,12 @@ step_1 (int skip_subroutines, int single_inst, char *count_string)
 
   step_command_fsm_prepare (step_sm, skip_subroutines,
 			    single_inst, count, thr);
+
+  /* Collective breakpoints is not a supported feature in this version of
+     GDB, some of the support for this feature has been removed, but not
+     all (yet).   */
+  if (upcmode && is_collective_stepping ())
+    error ("unsupported feature in function %s", __PRETTY_FUNCTION__);
 
   /* Do only one step for now, before returning control to the event
      loop.  Let the continuation figure out how many other steps we
@@ -1119,6 +1203,7 @@ prepare_one_step (struct step_command_fsm *sm)
 
 	      step_into_inline_frame (inferior_ptid);
 	      sm->count--;
+	      tp->control.stop_step = 1;
 	      return prepare_one_step (sm);
 	    }
 
@@ -1195,6 +1280,8 @@ jump_command (char *arg, int from_tty)
   /* Find out whether we must run in the background.  */
   arg = strip_bg_char (arg, &async_exec);
   args_chain = make_cleanup (xfree, arg);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -1280,6 +1367,8 @@ signal_command (char *signum_exp, int from_tty)
   /* Find out whether we must run in the background.  */
   signum_exp = strip_bg_char (signum_exp, &async_exec);
   args_chain = make_cleanup (xfree, signum_exp);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -1558,6 +1647,8 @@ until_command (char *arg, int from_tty)
   /* Find out whether we must run in the background.  */
   arg = strip_bg_char (arg, &async_exec);
   args_chain = make_cleanup (xfree, arg);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -1587,6 +1678,8 @@ advance_command (char *arg, int from_tty)
   /* Find out whether we must run in the background.  */
   arg = strip_bg_char (arg, &async_exec);
   args_chain = make_cleanup (xfree, arg);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -1987,6 +2080,8 @@ finish_command (char *arg, int from_tty)
   /* Find out whether we must run in the background.  */
   arg = strip_bg_char (arg, &async_exec);
   args_chain = make_cleanup (xfree, arg);
+  if (upcmode)
+    async_exec = 1;
 
   prepare_execution_command (&current_target, async_exec);
 
@@ -2082,6 +2177,7 @@ program_info (char *args, int from_tty)
   int num, stat;
   struct thread_info *tp;
   ptid_t ptid;
+  char stop;
 
   if (!target_has_execution)
     {
@@ -2089,7 +2185,7 @@ program_info (char *args, int from_tty)
       return;
     }
 
-  if (non_stop)
+  if (non_stop && !inferior_stop)
     ptid = inferior_ptid;
   else
     {
@@ -2098,14 +2194,14 @@ program_info (char *args, int from_tty)
       get_last_target_status (&ptid, &ws);
     }
 
-  if (ptid_equal (ptid, null_ptid) || is_exited (ptid))
+  if (ptid_equal (ptid, null_ptid) || !find_thread_ptid (ptid) || is_exited (ptid))
     error (_("Invalid selected thread."));
   else if (is_running (ptid))
     error (_("Selected thread is running."));
 
   tp = find_thread_ptid (ptid);
   bs = tp->control.stop_bpstat;
-  stat = bpstat_num (&bs, &num);
+  stat = bpstat_num (&bs, &num, &stop);
 
   target_files_info ();
   printf_filtered (_("Program stopped at %s.\n"),
@@ -2123,9 +2219,9 @@ program_info (char *args, int from_tty)
 	      printf_filtered (_("It stopped at a breakpoint "
 				 "that has since been deleted.\n"));
 	    }
-	  else
-	    printf_filtered (_("It stopped at breakpoint %d.\n"), num);
-	  stat = bpstat_num (&bs, &num);
+      else if( stop) // fixes #33774 when non-stopping watchpoints (like software watchpoints on same value assignments) were printed in 'info program'
+        printf_filtered (_("It stopped at breakpoint %d.\n"), num);
+      stat = bpstat_num (&bs, &num, &stop);
 	}
     }
   else if (tp->suspend.stop_signal != GDB_SIGNAL_0)
@@ -2691,7 +2787,8 @@ enum attach_post_wait_mode
    should be running.  Else if ATTACH, */
 
 static void
-attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode)
+attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode,
+		  int async_stop)
 {
   struct inferior *inferior;
 
@@ -2701,7 +2798,7 @@ attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode)
   if (inferior->needs_setup)
     setup_inferior (from_tty);
 
-  if (mode == ATTACH_POST_WAIT_RESUME)
+  if (mode == ATTACH_POST_WAIT_RESUME && !async_stop)
     {
       /* The user requested an `attach&', so be sure to leave threads
 	 that didn't get a signal running.  */
@@ -2710,7 +2807,7 @@ attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode)
 	 and this inferior only.  This should have no effect on
 	 already running threads.  If a thread has been stopped with a
 	 signal, leave it be.  */
-      if (non_stop)
+      if (non_stop && !inferior_stop)
 	proceed_after_attach (inferior->pid);
       else
 	{
@@ -2721,7 +2818,7 @@ attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode)
 	    }
 	}
     }
-  else if (mode == ATTACH_POST_WAIT_STOP)
+  else if (mode == ATTACH_POST_WAIT_STOP || async_stop)
     {
       /* The user requested a plain `attach', so be sure to leave
 	 the inferior stopped.  */
@@ -2733,7 +2830,7 @@ attach_post_wait (char *args, int from_tty, enum attach_post_wait_mode mode)
 	 selected thread is stopped, others may still be executing.
 	 Be sure to explicitly stop all threads of the process.  This
 	 should have no effect on already stopped threads.  */
-      if (non_stop)
+      if (non_stop && !inferior_stop)
 	target_stop (pid_to_ptid (inferior->pid));
       else if (target_is_non_stop_p ())
 	{
@@ -2772,6 +2869,7 @@ struct attach_command_continuation_args
   char *args;
   int from_tty;
   enum attach_post_wait_mode mode;
+  int async_stop;
 };
 
 static void
@@ -2783,7 +2881,7 @@ attach_command_continuation (void *args, int err)
   if (err)
     return;
 
-  attach_post_wait (a->args, a->from_tty, a->mode);
+  attach_post_wait (a->args, a->from_tty, a->mode, a->async_stop);
 }
 
 static void
@@ -2803,7 +2901,7 @@ attach_command_continuation_free_args (void *args)
 void
 attach_command (char *args, int from_tty)
 {
-  int async_exec;
+  int async_exec = 0, async_stop = 0;
   struct cleanup *args_chain;
   struct target_ops *attach_target;
   struct inferior *inferior = current_inferior ();
@@ -2829,6 +2927,8 @@ attach_command (char *args, int from_tty)
 
   args = strip_bg_char (args, &async_exec);
   args_chain = make_cleanup (xfree, args);
+  if (upcmode)
+    async_exec = 1;
 
   attach_target = find_attach_target ();
 
@@ -2837,6 +2937,11 @@ attach_command (char *args, int from_tty)
   if (non_stop && !attach_target->to_supports_non_stop (attach_target))
     error (_("Cannot attach to this target in non-stop mode"));
 
+  if (args && strncmp(args, "-s ", 3) == 0)
+    {
+      async_stop = 1;
+      args += 3;
+    }
   attach_target->to_attach (attach_target, args, from_tty);
   /* to_attach should push the target, so after this point we
      shouldn't refer to attach_target again.  */
@@ -2869,13 +2974,13 @@ attach_command (char *args, int from_tty)
 
   inferior->needs_setup = 1;
 
-  if (target_is_non_stop_p ())
+  if (target_is_non_stop_p () && !inferior_stop)
     {
       /* If we find that the current thread isn't stopped, explicitly
 	 do so now, because we're going to install breakpoints and
 	 poke at memory.  */
 
-      if (async_exec)
+      if (async_exec && !async_stop)
 	/* The user requested an `attach&'; stop just one thread.  */
 	target_stop (inferior_ptid);
       else
@@ -2904,6 +3009,7 @@ attach_command (char *args, int from_tty)
       a->args = xstrdup (args);
       a->from_tty = from_tty;
       a->mode = mode;
+      a->async_stop = async_stop;
       add_inferior_continuation (attach_command_continuation, a,
 				 attach_command_continuation_free_args);
       /* Done with ARGS.  */
@@ -2917,7 +3023,7 @@ attach_command (char *args, int from_tty)
   /* Done with ARGS.  */
   do_cleanups (args_chain);
 
-  attach_post_wait (args, from_tty, mode);
+  attach_post_wait (args, from_tty, mode, async_stop);
 }
 
 /* We had just found out that the target was already attached to an
@@ -2965,6 +3071,7 @@ notice_new_inferior (ptid_t ptid, int leave_running, int from_tty)
       a->args = xstrdup ("");
       a->from_tty = from_tty;
       a->mode = mode;
+      a->async_stop = 0;
       add_inferior_continuation (attach_command_continuation, a,
 				 attach_command_continuation_free_args);
 
@@ -2972,7 +3079,7 @@ notice_new_inferior (ptid_t ptid, int leave_running, int from_tty)
       return;
     }
 
-  attach_post_wait ("" /* args */, from_tty, mode);
+  attach_post_wait ("" /* args */, from_tty, mode, 0);
 
   do_cleanups (old_chain);
 }
@@ -3044,13 +3151,15 @@ disconnect_command (char *args, int from_tty)
     deprecated_detach_hook ();
 }
 
-void 
-interrupt_target_1 (int all_threads)
+void
+interrupt_target_1 (enum focus_kind focus)
 {
   ptid_t ptid;
 
-  if (all_threads)
+  if (focus == FOCUS_ALL_THREADS)
     ptid = minus_one_ptid;
+  else if (focus == FOCUS_CURRENT_INFERIOR)
+    ptid = pid_to_ptid (ptid_get_pid (inferior_ptid));
   else
     ptid = inferior_ptid;
 
@@ -3073,25 +3182,36 @@ interrupt_target_1 (int all_threads)
    Stop the execution of the target while running in async mode, in
    the backgound.  In all-stop, stop the whole process.  In non-stop
    mode, stop the current thread only by default, or stop all threads
-   if the `-a' switch is used.  */
-
+   if the `-a' switch is used, or stop all threads in the current
+   inferior if the `-i' switch is used.  */
+ 
+/* interrupt [-a] [-i]  */
 static void
 interrupt_command (char *args, int from_tty)
 {
+  if (ptid_equal (inferior_ptid, null_ptid))
+    error (_("The program is not being run."));
+  
   if (target_can_async_p ())
     {
-      int all_threads = 0;
+      enum focus_kind focus =
+          inferior_stop ? FOCUS_CURRENT_INFERIOR : FOCUS_CURRENT_THREAD;
 
       dont_repeat ();		/* Not for the faint of heart.  */
 
       if (args != NULL
-	  && startswith (args, "-a"))
-	all_threads = 1;
+	  && strncmp (args, "-a", sizeof ("-a") - 1) == 0)
+	focus = FOCUS_ALL_THREADS;
+      if (args != NULL
+	  && strncmp (args, "-i", sizeof ("-i") - 1) == 0)
+	focus = FOCUS_CURRENT_INFERIOR; 
+      if (upcmode && is_collective_breakpoints()) focus = FOCUS_ALL_THREADS;
 
-      if (!non_stop && all_threads)
-	error (_("-a is meaningless in all-stop mode."));
+      if (!non_stop && focus != FOCUS_CURRENT_THREAD)
+        error (_("%s is meaningless in all-stop mode."),
+	       (focus == FOCUS_ALL_THREADS) ? "-a" : "-i");
 
-      interrupt_target_1 (all_threads);
+      interrupt_target_1 (focus);
     }
 }
 

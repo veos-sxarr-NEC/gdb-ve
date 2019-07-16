@@ -1,4 +1,7 @@
 /* ppc.h -- Header file for PowerPC opcode table
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1994-2016 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support
 
@@ -179,9 +182,6 @@ extern const int vle_num_opcodes;
 /* Opcode which is supported by the e500 family */
 #define PPC_OPCODE_E500	       0x100000000ull
 
-/* Opcode is supported by Extended Altivec Vector Unit */
-#define PPC_OPCODE_ALTIVEC2    0x200000000ull
-
 /* Opcode is supported by Power E6500 */
 #define PPC_OPCODE_E6500       0x400000000ull
 
@@ -211,8 +211,14 @@ extern const int vle_num_opcodes;
 /* Opcode is only supported by Power9 architecture.  */
 #define PPC_OPCODE_POWER9     0x20000000000ull
 
-/* Opcode is supported by Vector-Scalar (VSX) Unit from ISA 2.08.  */
-#define PPC_OPCODE_VSX3       0x40000000000ull
+/* Opcode is supported by e200z4.  */
+#define PPC_OPCODE_E200Z4    0x80000000000ull
+
+/* Disassemble to instructions matching later in the opcode table
+   with fewer "mask" bits set rather than the earlist match.  Fewer
+   "mask" bits set imply a more general form of the opcode, in fact
+   the underlying machine instruction.  */
+#define PPC_OPCODE_RAW	    0x100000000000ull
 
 /* A macro to extract the major opcode from an instruction.  */
 #define PPC_OP(i) (((i) >> 26) & 0x3f)
@@ -404,6 +410,10 @@ extern const unsigned int num_powerpc_operands;
    is omitted, then the value it should use for the operand is stored
    in the SHIFT field of the immediatly following operand field.  */
 #define PPC_OPERAND_OPTIONAL_VALUE (0x400000)
+
+/* This flag is only used with PPC_OPERAND_OPTIONAL.  The operand is
+   only optional when generating 32-bit code.  */
+#define PPC_OPERAND_OPTIONAL32 (0x800000)
 
 /* The POWER and PowerPC assemblers use a few macros.  We keep them
    with the operands table for simplicity.  The macro table is an

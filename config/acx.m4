@@ -597,6 +597,32 @@ AC_DEFUN([ACX_BUGURL],[
   AC_SUBST(REPORT_BUGS_TEXI)
 ])
 
+dnl Support the --with-pythonhome configure option.
+dnl ACX_PYTHONHOME(default-python)
+AC_DEFUN([ACX_PYTHONHOME],[
+  AC_ARG_WITH(pythonhome,
+    AS_HELP_STRING([--with-pythonhome=PATH],
+		   [Set the gdb's pythonhome]),
+    [case "$withval" in
+      yes) AC_MSG_ERROR([pythonhome not specified]) ;;
+      no)  PYTHONHOME=
+	  ;;
+      *)   PYTHONHOME="$withval"
+	  ;;
+     esac],
+     PYTHONHOME="$1"
+  )
+  case ${PYTHONHOME} in
+  "")
+    PYTHONHOME_PATH=
+    ;;
+  *)
+    PYTHONHOME_PATH="$PYTHONHOME"
+    ;;
+  esac;
+  AC_SUBST(PYTHONHOME_PATH)
+])
+
 dnl ####
 dnl # ACX_CHECK_CYGWIN_CAT_WORKS
 dnl # On Cygwin hosts, check that the cat command ignores 

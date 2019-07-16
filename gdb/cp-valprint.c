@@ -1,5 +1,8 @@
 /* Support for printing C++ values for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -35,6 +38,7 @@
 #include "language.h"
 #include "extension.h"
 #include "typeprint.h"
+
 
 /* Controls printing of vtbl's.  */
 static void
@@ -267,13 +271,24 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 				   current_language->la_language,
 				   DMGL_PARAMS | DMGL_ANSI);
 	  annotate_field_name_end ();
+	  /* Records whether the value currently being printed is an anon scope.
+	     If it is then the recurse depth is not updated so that GDB only stops
+	     when something useful has been reached. i.e. {...} is not useful but
+	     {raw = {...}} is as it provides one unit more of type information.*/
+	  bool is_anon = false;
 	  /* Do not print leading '=' in case of anonymous
 	     unions.  */
 	  if (strcmp (TYPE_FIELD_NAME (type, i), ""))
 	    fputs_filtered (" = ", stream);
+	  else
+	    is_anon = true;
 	  annotate_field_value ();
 
-	  if (!field_is_static (&TYPE_FIELD (type, i))
+	  if (!scalar_or_string_type(TYPE_FIELD_TYPE (type, i)) && !is_anon && recurse >= options->max_depth)
+	    {
+	      fputs_filtered ("{...}", stream);
+	    }
+	  else if (!field_is_static (&TYPE_FIELD (type, i))
 	      && TYPE_FIELD_PACKED (type, i))
 	    {
 	      struct value *v;
@@ -299,9 +314,10 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		  opts.deref_ref = 0;
 
 		  v = value_field_bitfield (type, i, valaddr, offset, val);
-
-		  common_val_print (v, stream, recurse + 1, &opts,
-				    current_language);
+		  /* The recursion depth is held steady if nothing useful
+		     has been printed.  */
+		  common_val_print (v, stream, recurse + (is_anon ? 0 : 1),
+				    &opts, current_language);
 		}
 	    }
 	  else
@@ -329,7 +345,8 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		  END_CATCH
 
 		  cp_print_static_field (TYPE_FIELD_TYPE (type, i),
-					 v, stream, recurse + 1,
+					 v, stream,
+					 recurse + (is_anon ? 0 : 1),
 					 options);
 		}
 	      else if (i == vptr_fieldno && type == vptr_basetype)
@@ -356,7 +373,7 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 			     valaddr, 
 			     offset + TYPE_FIELD_BITPOS (type, i) / 8,
 			     address,
-			     stream, recurse + 1, val, &opts,
+			     stream, recurse + (is_anon ? 0 : 1), val, &opts,
 			     current_language);
 		}
 	    }
@@ -439,6 +456,7 @@ cp_print_value_fields_rtti (struct type *type,
 
       /* Ugh, we have to convert back to a value here.  */
       value = value_from_contents_and_address (type, valaddr + offset,
+					       val ? value_length (val) : TYPE_LENGTH (type),
 					       address + offset);
       type = value_type (value);
       /* We don't actually care about most of the result here -- just
@@ -544,6 +562,7 @@ cp_print_value (struct type *type, struct type *real_type,
 		    skip = 1;
 		  base_val = value_from_contents_and_address (baseclass,
 							      buf,
+							      TYPE_LENGTH (baseclass),
 							      address + boffset);
 		  baseclass = value_type (base_val);
 		  thisoffset = 0;
@@ -637,6 +656,12 @@ cp_print_static_field (struct type *type,
 		       int recurse,
 		       const struct value_print_options *options)
 {
+  static int structure_depth = 0; /* Don't unroll structs/classes too deep - 
+									 recursively defined classes could get in an
+									 infinite loop. */
+
+  static const int MAX_STRUCTURE_DEPTH = 10;  /* That should be deep enough! */
+
   struct value_print_options opts;
 
   if (value_entirely_optimized_out (val))
@@ -647,35 +672,40 @@ cp_print_static_field (struct type *type,
 
   if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
     {
-      CORE_ADDR *first_dont_print;
-      CORE_ADDR addr;
-      int i;
-
-      first_dont_print
-	= (CORE_ADDR *) obstack_base (&dont_print_statmem_obstack);
-      i = obstack_object_size (&dont_print_statmem_obstack)
-	/ sizeof (CORE_ADDR);
-
-      while (--i >= 0)
+      if (++structure_depth <= MAX_STRUCTURE_DEPTH)
 	{
-	  if (value_address (val) == first_dont_print[i])
-	    {
-	      fputs_filtered ("<same as static member of an already"
-			      " seen type>",
-			      stream);
-	      return;
-	    }
-	}
+	  CORE_ADDR *first_dont_print;
+	  CORE_ADDR addr;
+	  int i;
 
-      addr = value_address (val);
-      obstack_grow (&dont_print_statmem_obstack, (char *) &addr,
-		    sizeof (CORE_ADDR));
-      type = check_typedef (type);
-      cp_print_value_fields (type, value_enclosing_type (val),
-			     value_contents_for_printing (val),
-			     value_embedded_offset (val), addr,
-			     stream, recurse, val,
-			     options, NULL, 1);
+	  first_dont_print
+	    = (CORE_ADDR *) obstack_base (&dont_print_statmem_obstack);
+	  i = obstack_object_size (&dont_print_statmem_obstack)
+	    / sizeof (CORE_ADDR);
+
+	  while (--i >= 0)
+	    {
+	      if (value_address (val) == first_dont_print[i])
+		{
+		  fputs_filtered ("<same as static member of an already"
+				  " seen type>",
+				  stream);
+		  --structure_depth;
+		  return;
+		}
+	    }
+
+	  addr = value_address (val);
+	  obstack_grow (&dont_print_statmem_obstack, (char *) &addr,
+			sizeof (CORE_ADDR));
+	  type = check_typedef (type);
+	  cp_print_value_fields (type, value_enclosing_type (val),
+				 value_contents_for_printing (val),
+				 value_embedded_offset (val), addr,
+				 stream, recurse, val,
+				 options, NULL, 1);
+	}
+      --structure_depth;
       return;
     }
 

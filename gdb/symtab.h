@@ -1,5 +1,8 @@
 /* Symbol table definitions for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -368,10 +371,15 @@ struct minimal_symbol
 
   struct minimal_symbol *hash_next;
 
-  /* Minimal symbols are stored in two different hash tables.  This is
+  /* Minimal symbols are stored in three different hash tables.  This is
      the `next' pointer for the demangled hash table.  */
 
   struct minimal_symbol *demangled_hash_next;
+
+  /* Minimal symbols are stored in three different hash tables.  This is
+     the `next' pointer for the lowercase hash table.  */
+
+  struct minimal_symbol *lowercase_hash_next;
 };
 
 #define MSYMBOL_TARGET_FLAG_1(msymbol)  (msymbol)->target_flag_1
@@ -1427,14 +1435,27 @@ struct symtab_and_line
 
   CORE_ADDR pc;
   CORE_ADDR end;
+  struct program_space *explicit_pspace;  
   int explicit_pc;
   int explicit_line;
 
   /* The probe associated with this symtab_and_line.  */
   struct probe *probe;
+
   /* If PROBE is not NULL, then this is the objfile in which the probe
      originated.  */
   struct objfile *objfile;
+
+   /*********************************** Fast track debugging **********************************************************************************
+    added by kdavis@cray.com
+   mlink@cray.com:
+
+   Debug jump address is probably the first instruction of the fast-track function we will be "jumping" to. 
+   This address is saved here for when the breakpoint is actually created after the sals have been expanded.
+   */
+  CORE_ADDR debug_jump_addr;
+  /*********************************** Fast track debugging **********************************************************************************/	
+
 };
 
 extern void init_sal (struct symtab_and_line *sal);
@@ -1571,6 +1592,7 @@ extern struct cleanup *make_cleanup_free_search_symbols (struct symbol_search
    FIXME: cagney/2001-03-20: Can't make main_name() const since some
    of the calling code currently assumes that the string isn't
    const.  */
+extern void set_main_name (const char *name, enum language lang);
 extern /*const */ char *main_name (void);
 extern enum language main_language (void);
 
@@ -1583,6 +1605,15 @@ extern struct block_symbol
   lookup_global_symbol_from_objfile (struct objfile *main_objfile,
 				     const char *name,
 				     const domain_enum domain);
+
+/********************** Fast track debugging function definition**********************************************
+added by kdavis@cray.com*/
+extern struct symtabs_and_lines expand_line_sal (struct symtab_and_line sal);				
+		  
+/********************** Fast track debugging function definition**********************************************/
+
+
+						  
 
 /* Return 1 if the supplied producer string matches the ARM RealView
    compiler (armcc).  */

@@ -1,0 +1,109 @@
+
+if { [skip_fortran_tests] } { return -1 }
+load_lib "fortran.exp"
+
+standard_testfile .f90
+if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} {debug optimize=-O3 f90}] } {
+    return -1
+}
+
+
+gdb_exit
+gdb_start
+gdb_reinitialize_dir $srcdir/$subdir
+gdb_load ${binfile}
+
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
+}
+
+gdb_test_no_output "set max-value-size -1"
+
+# Before allocation
+if ![runto [gdb_get_line_number "Breakpoint allocate"] ] then {
+    perror "couldn't run to breakpoint "
+    continue
+}
+
+set test "type-printing for optimized-out array"
+gdb_test_multiple "ptype arr_in" $test {
+    -re "type = real\\\(kind=8\\\), ALLOCATABLE \\\(\\\*\\\)\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "type = <not allocated>\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "No symbol \"arr_in\" in current context.\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "type = real\\\(kind=8\\\), ALLOCATABLE \\\(-?\[0-9\]+:-?\[0-9\]+\\\)\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+    -re "type = double precision, POINTER \\\(-?\[0-9\]+:-?\[0-9\]+\\\)\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+}
+
+set test "printing optimized-out array"
+gdb_test_multiple "p arr_in" $test {
+    -re "\\\$$decimal = <optimized out>\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "\\\$$decimal = <not allocated>\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "No symbol \"arr_in\" in current context.\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "\\\$$decimal = <not associated>\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+    -re "\\\$$decimal = Cannot access memory at address 0x\[0-9a-f\]+\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+}
+
+# After allocation
+if ![runto [gdb_get_line_number "Breakpoint deallocate"] ] then {
+    perror "couldn't run to breakpoint "
+    continue
+}
+
+set test "type-printing for optimized-out array"
+gdb_test_multiple "ptype arr_in" $test {
+    -re "type = (REAL|real)\\\((kind=)?8\\\), ALLOCATABLE \\\(10\\\)\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "No symbol \"arr_in\" in current context.\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "type = real\\\(kind=8\\\), ALLOCATABLE \\\(\[0-9\]+:\[0-9\]+\\\)\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+    -re "type = double precision \\\(-?\[0-9\]+:-?\[0-9\]+\\\)\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+    -re "type = <not allocated>\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+}
+
+set test "printing optimized-out array"
+gdb_test_multiple "p arr_in" $test {
+    -re "\\\$$decimal = \\(.*\\)\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "\\\$$decimal = <optimized out>\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "No symbol \"arr_in\" in current context.\r\n$gdb_prompt $" {
+    pass $test
+    }
+    -re "(\\\$$decimal = )?Cannot access memory at address 0x\[0-9a-f\]+\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+    -re "\\\$$decimal = <not allocated>\r\n$gdb_prompt $" {
+    kfail "allinea" $test
+    }
+}

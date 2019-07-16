@@ -1,3 +1,6 @@
+# Modified by Arm.
+
+# Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 # Copyright (C) 2009-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -111,7 +114,7 @@ if {[istarget powerpc64-*] && [is_lp64_target]} {
 }
 
 gdb_test "p gnu_ifunc" " = {<text gnu-indirect-function variable, no debug info>} 0x\[0-9a-f\]+ <${func_prefix}gnu_ifunc>" "p gnu_ifunc executing"
-gdb_test "info sym gnu_ifunc" "gnu_ifunc in section .*" "info sym gnu_ifunc executing"
+gdb_test "info symbol gnu_ifunc" "gnu_ifunc in section .*" "info symbol gnu_ifunc executing"
 
 set test "info addr gnu_ifunc"
 gdb_test_multiple $test $test {
@@ -119,7 +122,7 @@ gdb_test_multiple $test $test {
 	pass $test
     }
 }
-gdb_test "info sym $expect_out(1,string)" "gnu_ifunc in section .*" "info sym <gnu_ifunc-address>"
+gdb_test "info symbol $expect_out(1,string)" "gnu_ifunc in section .*" "info symbol <gnu_ifunc-address>"
 
 
 # Test statically linked ifunc resolving during inferior start.

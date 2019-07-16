@@ -1,0 +1,70 @@
+# Copyright 1999-2017 Free Software Foundation, Inc.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# Test that printing fortran stacks while in C language mode does not crash GDB.
+
+load_lib mi-support.exp
+set MIFLAGS "-i=mi"
+set srcfile "print-fortran-stack-in-c-lang.f90"
+standard_testfile $srcfile
+
+if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug f90 nowarnings}] != "" } {
+     untested print-fortran-stack-in-c-lang.exp
+     return -1
+}
+
+proc test_fortran_stack_print_in_c_lang_mode {} {
+    global srcfile
+
+    set line_body [gdb_get_line_number "break here"]
+
+    mi_create_breakpoint "-t --source $srcfile --line $line_body" \
+        "insert temp explicit breakpoint at $srcfile:$line_body" \
+        -file ".*$srcfile" -line $line_body
+    mi_gdb_test "set max-value-size unlimited" ".*" "Unlimited memory allocation"
+    mi_run_cmd
+
+    mi_expect_stop "breakpoint-hit" "p_string" ".*" ".*$srcfile" $line_body\
+        {"" "disp=\"del\"" } "Run to break point."
+
+    mi_gdb_test "set language c" ".*" "Force the language to C"
+    # Override the behaviour of gdb_test_multiple on an eof. This is
+    # taken to mean that GDB has gone away unexpectedly and in this case it
+    # indicates a crash.
+    gdb_test_multiple "-stack-list-arguments --simple-values" "test"    {
+        eof
+        { 
+            fail "a"
+        }
+        -re ".*\\\^done.*" {
+            pass "OK!"
+        }
+    }
+}
+
+proc test_break {} {
+    global srcdir subdir binfile
+    mi_gdb_exit
+    set start_ops ""
+    if [mi_gdb_start $start_ops] {
+        return
+    }
+    mi_delete_breakpoints
+    mi_gdb_reinitialize_dir $srcdir/$subdir
+    mi_gdb_load ${binfile}
+    test_fortran_stack_print_in_c_lang_mode
+}
+
+test_break

@@ -1,0 +1,90 @@
+# Copyright 2005-2017 Free Software Foundation, Inc.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+standard_testfile .cc
+
+if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug c++}]} {
+    untested $testfile.exp
+    return -1
+}
+
+if ![runto_main] {
+    untested $testfile.exp
+    return -1
+}
+
+# Base case, should print {...} for all structs/unions.
+gdb_test_no_output "set print max-depth 0"
+foreach_with_prefix struct {"s1" "s2" "s3" "s4" "s5" "s6" "s7" "s8" "s9" "s10" "s11"} {
+  gdb_test "p $struct" "$decimal = {...}"
+}
+
+proc test_object_depth {object results} {
+    global decimal
+    set depth 0
+    foreach_with_prefix result $results {
+      set depth [expr $depth + 1]
+      gdb_test_no_output "set print max-depth $depth"
+      gdb_test "p $object" "$decimal = $result"
+    }
+}
+
+# max-depth has should have no effect as the anon scopes are ignored.
+# There is no name for the scope so the members are aggregated into the
+# parent scope.
+test_object_depth "s1" {"{x = 0, y = 0}" "{x = 0, y = 0}"}
+
+test_object_depth "s2" {"{x = 0, y = 0, {z = 0, a = 0}}" \
+			"{x = 0, y = 0, {z = 0, a = 0}}"}
+
+test_object_depth "s3" {"{x = 0, y = 0, {z = 0, a = 0, {b = 0, c = 0}}}" \
+			"{x = 0, y = 0, {z = 0, a = 0, {b = 0, c = 0}}}" \
+			"{x = 0, y = 0, {z = 0, a = 0, {b = 0, c = 0}}}"}
+
+# Increasing max-depth unfurls more of the object.
+test_object_depth "s4" {"{x = 0, y = 0, l1 = {...}}" \
+			"{x = 0, y = 0, l1 = {x = 0, y = 0, l2 = {...}}}" \
+			"{x = 0, y = 0, l1 = {x = 0, y = 0, l2 = {x = 0, y = 0}}}"}
+
+# Union.
+# raw is printed instead of just {...} as this is not useful.
+test_object_depth "s5" {"{{raw = {...}, {x = 0, y = 0, z = 0}}}" \
+		        "{{raw = \\\{0, 0, 0\\\}, {x = 0, y = 0, z = 0}}}"}
+
+# Typedef.
+test_object_depth "s6" {"{{raw = {...}, {x = 0, y = 0, z = 0}}}" \
+		        "{{raw = \\\{0, 0, 0\\\}, {x = 0, y = 0, z = 0}}}"}
+
+# Wide.
+test_object_depth "s7" {"{{x = 0, y = 0}, {z = 0, a = 0}, {b = 0, c = 0}}" \
+			"{{x = 0, y = 0}, {z = 0, a = 0}, {b = 0, c = 0}}"}
+
+# Flip flop between named and anon. Expected to unfurl to the first non-anon type.
+test_object_depth "s8" {"{x = 0, y = 0, d1 = {...}}" \
+			"{x = 0, y = 0, d1 = {z = 0, a = 0, {b = 0, c = 0}}}"}
+
+# Imbalanced tree. Will unfurl one size more than the other as one side has more
+# anon levels.
+test_object_depth "s9" {"{x = 0, y = 0, {k = 0, j = 0, d1 = {...}}, d2 = {...}}" \
+			"{x = 0, y = 0, {k = 0, j = 0, d1 = {z = 0, a = 0, {b = 0, c = 0}}}, d2 = {z = 0, a = 0, {b = 0, c = 0}}}"}
+
+# Arrays are treated as an extra level, while scalars are not.
+test_object_depth "s10" {"{x = {...}, y = 0, {k = {...}, j = 0, d1 = {...}}, d2 = {...}}" \
+			 "{x = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, y = 0, {k = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, j = 0, d1 = {z = 0, a = 0, {b = {...}, c = 0}}}, d2 = {z = 0, a = 0, {b = {...}, c = 0}}}" \
+			 "{x = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, y = 0, {k = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, j = 0, d1 = {z = 0, a = 0, {b = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, c = 0}}}, d2 = {z = 0, a = 0, {b = \\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\\}, c = 0}}}"}
+
+# Strings are treated as scalars.
+test_object_depth "s11" {"{x = 0, s = \"\\\\000\\\\000\\\\000\\\\000\\\\000\\\\000\\\\000\\\\000\\\\000\", {z = 0, a = 0}}"}

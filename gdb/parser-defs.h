@@ -1,5 +1,8 @@
 /* Parser definitions for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    Modified from expread.y by the Department of Computer Science at the
@@ -132,6 +135,9 @@ enum type_pieces
     tp_function_with_arguments,
     tp_const, 
     tp_volatile, 
+    tp_shared, 
+    tp_strict, 
+    tp_relaxed, 
     tp_space_identifier,
     tp_type_stack
   };

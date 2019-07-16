@@ -1,4 +1,7 @@
 /* Remote utility routines for the remote server for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -394,6 +397,11 @@ remote_open (char *name)
 
       /* Register the event loop handler.  */
       add_file_handler (listen_desc, handle_accept_event, NULL);
+
+#ifdef GUM_ENABLE_NOACK
+      /* For GUM we disable NOACK gdbserver feature */
+      transport_is_reliable = 1;
+#endif
     }
 }
 
@@ -578,13 +586,19 @@ read_ptid (char *buf, char **obuf)
   /* No multi-process.  Just a tid.  */
   tid = hex_or_minus_one (p, &pp);
 
+  if (obuf)
+    *obuf = pp;
+
+  if (tid == -1)
+    return minus_one_ptid;
+  else if (tid == 0)
+    return null_ptid;
+
   /* Since GDB is not sending a process id (multi-process extensions
      are off), then there's only one process.  Default to the first in
      the list.  */
   pid = pid_of (get_first_process ());
 
-  if (obuf)
-    *obuf = pp;
   return ptid_build (pid, tid, 0);
 }
 

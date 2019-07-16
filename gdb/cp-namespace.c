@@ -1,4 +1,7 @@
 /* Helper routines for C++ support in GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    Contributed by David Carlton and by Kealia, Inc.
@@ -52,7 +55,9 @@ void
 cp_scan_for_anonymous_namespaces (const struct symbol *const symbol,
 				  struct objfile *const objfile)
 {
-  if (SYMBOL_DEMANGLED_NAME (symbol) != NULL)
+  if (SYMBOL_DEMANGLED_NAME (symbol) != NULL &&
+      symbol_symtab (symbol) != NULL &&
+      symbol_objfile (symbol) != NULL) 
     {
       const char *name = SYMBOL_DEMANGLED_NAME (symbol);
       unsigned int previous_component;

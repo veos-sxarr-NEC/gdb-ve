@@ -1,5 +1,8 @@
 /* Perform an inferior function call, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -39,6 +42,17 @@
 #include "top.h"
 #include "interps.h"
 #include "thread-fsm.h"
+
+#if defined (__linux__)
+extern int linux_ptrace_force_use_entry_point_to_call_inferior_functions;
+#endif
+
+static struct value *
+call_function_by_hand_inner (struct value *function,
+			     enum language lang,
+			     int nargs, struct value **args,
+			     dummy_frame_dtor_ftype *dummy_dtor,
+			     void *dummy_dtor_data);
 
 /* If we can't find a function's name from its address,
    we print this instead.  */
@@ -127,6 +141,23 @@ show_unwind_on_terminating_exception_p (struct ui_file *file, int from_tty,
 		      "unhandled while in a call dummy is %s.\n"),
 		    value);
 }
+
+/* This boolean is used to disable the function calls.
+*/
+
+static int disable_function_calls_p = 0;
+
+static void
+show_disable_function_calls_p (struct ui_file *file, int from_tty,
+					struct cmd_list_element *c,
+					const char *value)
+
+{
+  fprintf_filtered (file,
+		    _("Disable function calls is %s\n"),
+		    value);
+}
+
 
 /* Perform the standard coercions that are specified
    for arguments to be passed to C or Ada functions.
@@ -414,6 +445,7 @@ get_call_return_value (struct call_return_meta_info *ri)
       if (stack_temporaries)
 	{
 	  retval = value_from_contents_and_address (ri->value_type, NULL,
+						    TYPE_LENGTH (ri->value_type),
 						    ri->struct_addr);
 	  push_thread_stack_temporary (inferior_ptid, retval);
 	}
@@ -446,6 +478,7 @@ get_call_return_value (struct call_return_meta_info *ri)
     }
 
   gdb_assert (retval != NULL);
+  set_value_from_infcall (retval, 1);
   return retval;
 }
 
@@ -565,7 +598,7 @@ call_thread_fsm_should_notify_stop (struct thread_fsm *self)
    Return the exception if there's an error, or an exception with
    reason >= 0 if there's no error.
 
-   This is done inside a TRY_CATCH so the caller needn't worry about
+   This is done inside a TRY .... CATCH so the caller needn't worry about
    thrown errors.  The caller should rethrow if there's an error.  */
 
 static struct gdb_exception
@@ -684,6 +717,14 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
   return call_function_by_hand_dummy (function, nargs, args, NULL, NULL);
 }
 
+struct value *
+call_function_by_hand_ex (struct value *function, enum language lang,
+			  int nargs, struct value **args)
+{
+  return call_function_by_hand_inner (function, lang, nargs, args,
+				      NULL, NULL);
+}
+
 /* All this stuff with a dummy frame may seem unnecessarily complicated
    (why not just save registers in GDB?).  The purpose of pushing a dummy
    frame which looks just like a real frame is so that if you call a
@@ -696,14 +737,17 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 /* Perform a function call in the inferior.
    ARGS is a vector of values of arguments (NARGS of them).
    FUNCTION is a value, the function to be called.
+   LANG is the language used for calling the function, if not given
+        (normal function) or language_unknown specified (in _ex function)
+        the current language will used.
    Returns a value representing what the function returned.
    May fail to return, if a breakpoint or signal is hit
    during the execution of the function.
 
    ARGS is modified to contain coerced values.  */
-
-struct value *
-call_function_by_hand_dummy (struct value *function,
+static struct value *
+call_function_by_hand_inner (struct value *function,
+			     enum language lang,
 			     int nargs, struct value **args,
 			     dummy_frame_dtor_ftype *dummy_dtor,
 			     void *dummy_dtor_data)
@@ -728,6 +772,20 @@ call_function_by_hand_dummy (struct value *function,
   struct gdb_exception e;
   char name_buf[RAW_FUNCTION_ADDRESS_SIZE];
   int stack_temporaries = thread_stack_temporaries_enabled_p (inferior_ptid);
+  enum language original_lang = current_language->la_language;
+  int call_dummy_location;
+
+  /* ALL-533: Set correct language of function, so that arguments can be passed
+     in the right way. Fixes infinite recursion when calling a Fortran function
+     which passes arguments by reference (see language_pass_by_reference) that
+     requires memory allocated in the target memory.
+
+     To allocate memory we call malloc(size_t) a C function in the target
+     program. But if we could call malloc using the Fortran language
+     malloc itself requires a call to malloc and so on!
+  */
+  if (lang != language_unknown)
+    original_lang = set_language(lang);
 
   if (TYPE_CODE (ftype) == TYPE_CODE_PTR)
     ftype = check_typedef (TYPE_TARGET_TYPE (ftype));
@@ -740,6 +798,9 @@ call_function_by_hand_dummy (struct value *function,
 
   if (execution_direction == EXEC_REVERSE)
     error (_("Cannot call functions in reverse mode."));
+
+  if (disable_function_calls_p)
+    error(_("Function calls disabled."));
 
   frame = get_current_frame ();
   gdbarch = get_frame_arch (frame);
@@ -894,7 +955,16 @@ call_function_by_hand_dummy (struct value *function,
      not just the breakpoint but also an extra word containing the
      size (?) of the structure being passed.  */
 
-  switch (gdbarch_call_dummy_location (gdbarch))
+  call_dummy_location =
+#if defined (__linux__)
+    (linux_ptrace_force_use_entry_point_to_call_inferior_functions
+     ? AT_ENTRY_POINT
+     : gdbarch_call_dummy_location (gdbarch));
+#else
+    gdbarch_call_dummy_location (gdbarch);
+#endif
+
+  switch (call_dummy_location)
     {
     case ON_STACK:
       {
@@ -975,7 +1045,7 @@ call_function_by_hand_dummy (struct value *function,
 				    param_type, prototyped, &sp);
 
 	if (param_type != NULL && language_pass_by_reference (param_type))
-	  args[i] = value_addr (args[i]);
+	  args[i] = value_addr (value_force_coerce_to_target (args[i]));
       }
   }
 
@@ -1183,6 +1253,7 @@ call_function_by_hand_dummy (struct value *function,
 
 	    do_cleanups (terminate_bp_cleanup);
 	    gdb_assert (retval != NULL);
+	    set_language(original_lang);
 	    return retval;
 	  }
 
@@ -1191,6 +1262,9 @@ call_function_by_hand_dummy (struct value *function,
 	tp->thread_fsm = saved_sm;
       }
   }
+
+  /* Restore the language before processing the error.  */
+  set_language(original_lang);
 
   /* Rethrow an error if we got one trying to run the inferior.  */
 
@@ -1272,7 +1346,7 @@ When the function is done executing, GDB will silently stop."),
 	       name);
     }
 
-    {
+  {
       /* Make a copy as NAME may be in an objfile freed by dummy_frame_pop.  */
       char *name = xstrdup (get_function_name (funaddr,
 					       name_buf, sizeof (name_buf)));
@@ -1380,6 +1454,18 @@ When the function is done executing, GDB will silently stop."),
 }
 
 
+struct value *
+call_function_by_hand_dummy (struct value *function,
+			     int nargs, struct value **args,
+			     dummy_frame_dtor_ftype *dummy_dtor,
+			     void *dummy_dtor_data)
+{
+  return call_function_by_hand_inner (function, language_unknown,
+				      nargs, args, dummy_dtor,
+				      dummy_dtor_data);
+}
+
+
 /* Provide a prototype to silence -Wmissing-prototypes.  */
 void _initialize_infcall (void);
 
@@ -1426,6 +1512,17 @@ std::terminate call to proceed.\n\
 The default is to unwind the frame."),
 			   NULL,
 			   show_unwind_on_terminating_exception_p,
+			   &setlist, &showlist);
+
+  add_setshow_boolean_cmd ("disable-function-calls", no_class,
+			   &disable_function_calls_p,
+_("Disable function calls "),
+_("Show whether disable-function-calls is enabled"),
+_("When disable-function-calls is enabled and there is a function within \
+ an expression to be evaluated, then an error is reported and the function\
+ call is blocked."),
+			   NULL,
+			   show_disable_function_calls_p,
 			   &setlist, &showlist);
 
 }

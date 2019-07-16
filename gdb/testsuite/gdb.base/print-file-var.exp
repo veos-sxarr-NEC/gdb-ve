@@ -88,5 +88,8 @@ gdb_test "continue" \
 gdb_test "print 'print-file-var-lib1.c'::this_version_id == v1" \
          " = 1"
 
+# Here we have to compare with the value on the file.  Basically V2
+# might differ depending on the linker.
+#
 gdb_test "print 'print-file-var-lib2.c'::this_version_id == v2" \
          " = 1"

@@ -1,5 +1,8 @@
 /* Support routines for manipulating internal types for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support, using pieces from other GDB modules.
@@ -27,6 +30,7 @@
 #include "gdbtypes.h"
 #include "expression.h"
 #include "language.h"
+#include "upc-lang.h"
 #include "target.h"
 #include "value.h"
 #include "demangle.h"
@@ -38,6 +42,8 @@
 #include "bcache.h"
 #include "dwarf2loc.h"
 #include "gdbcore.h"
+#include "upc-thread.h"
+#include "exceptions.h"
 
 /* Initialize BADNESS constants.  */
 
@@ -111,6 +117,8 @@ const struct floatformat *floatformats_ibm_long_double[BFD_ENDIAN_UNKNOWN] = {
   &floatformat_ibm_long_double_big,
   &floatformat_ibm_long_double_little
 };
+
+struct type_quals null_type_quals;
 
 /* Should opaque types be resolved?  */
 
@@ -219,10 +227,15 @@ alloc_type_arch (struct gdbarch *gdbarch)
 struct type *
 alloc_type_copy (const struct type *type)
 {
+  struct type *new_type;
   if (TYPE_OBJFILE_OWNED (type))
-    return alloc_type (TYPE_OWNER (type).objfile);
+    new_type = alloc_type (TYPE_OWNER (type).objfile);
   else
-    return alloc_type_arch (TYPE_OWNER (type).gdbarch);
+    new_type = alloc_type_arch (TYPE_OWNER (type).gdbarch);
+
+  TYPE_PRODUCER (new_type) = TYPE_PRODUCER (type);
+
+  return new_type;
 }
 
 /* If TYPE is gdbarch-associated, return that architecture.
@@ -423,12 +436,32 @@ make_reference_type (struct type *type, struct type **typeptr)
   TYPE_TARGET_TYPE (ntype) = type;
   TYPE_REFERENCE_TYPE (type) = ntype;
 
-  /* FIXME!  Assume the machine has only one representation for
-     references, and that it matches the (only) representation for
-     pointers!  */
+  if (upc_shared_type_p (type))
+    {
+      unsigned len = 0;
+      if (!currently_reading_symtab)
+	{
+	  TRY
+	    {
+	      len = upc_pts_len (type);
+	    }
+	  CATCH (e, RETURN_MASK_ALL)
+	    {
+	    }
+	  END_CATCH
+	}
+      TYPE_LENGTH (ntype) = len;
+    }
+  else
+    {
+       /* FIXME!  Assume the machine has only one representation for
+          references, and that it matches the (only) representation for
+           pointers!  */
 
-  TYPE_LENGTH (ntype) =
-    gdbarch_ptr_bit (get_type_arch (type)) / TARGET_CHAR_BIT;
+       TYPE_LENGTH (ntype) =
+         gdbarch_ptr_bit (get_type_arch (type)) / TARGET_CHAR_BIT;
+    }
+
   TYPE_CODE (ntype) = TYPE_CODE_REF;
 
   if (!TYPE_REFERENCE_TYPE (type))	/* Remember it, if don't have one.  */
@@ -578,19 +611,18 @@ address_space_int_to_name (struct gdbarch *gdbarch, int space_flag)
    STORAGE must be in the same obstack as TYPE.  */
 
 static struct type *
-make_qualified_type (struct type *type, int new_flags,
+make_qualified_type (struct type *type, struct type_quals new_quals,
 		     struct type *storage)
 {
   struct type *ntype;
 
   ntype = type;
-  do
-    {
-      if (TYPE_INSTANCE_FLAGS (ntype) == new_flags)
-	return ntype;
-      ntype = TYPE_CHAIN (ntype);
-    }
-  while (ntype != type);
+
+  do {
+    if (TYPE_QUALS_EQ (TYPE_QUALS (ntype), new_quals))
+      return ntype;
+    ntype = TYPE_CHAIN (ntype);
+  } while (ntype != type);
 
   /* Create a new type instance.  */
   if (storage == NULL)
@@ -617,8 +649,9 @@ make_qualified_type (struct type *type, int new_flags,
   TYPE_CHAIN (ntype) = TYPE_CHAIN (type);
   TYPE_CHAIN (type) = ntype;
 
-  /* Now set the instance flags and return the new type.  */
-  TYPE_INSTANCE_FLAGS (ntype) = new_flags;
+  /* Now set the qualifiers which include the instance
+     flags and the UPC layout specifier.  */
+  TYPE_QUALS (ntype) = new_quals;
 
   /* Set length of new type to that of the original type.  */
   TYPE_LENGTH (ntype) = TYPE_LENGTH (type);
@@ -643,14 +676,34 @@ make_type_with_address_space (struct type *type, int space_flag)
 			| TYPE_INSTANCE_FLAG_DATA_SPACE
 		        | TYPE_INSTANCE_FLAG_ADDRESS_CLASS_ALL))
 		   | space_flag);
-
-  return make_qualified_type (type, new_flags, NULL);
+  struct type_quals new_quals = TYPE_QUALS (type);
+  new_quals.instance_flags = new_flags;
+  return make_qualified_type (type, new_quals, NULL);
 }
 
-/* Make a "c-v" variant of a type -- a type that is identical to the
-   one supplied except that it may have const or volatile attributes
-   CNST is a flag for setting the const attribute
-   VOLTL is a flag for setting the volatile attribute
+/* Merge the type qualifiers Q2 into Q1 and return
+   the result.  Qualifier flags are OR'd together.
+   If the UPC layout factors are not equal, then
+   the layout factor of either Q1 or Q2 must be zero. 
+   The result will have the non-zero layout factor.  */
+struct type_quals 
+merge_type_quals (struct type_quals q1, struct type_quals q2)
+{
+  struct type_quals result;
+  result.instance_flags = q1.instance_flags | q2.instance_flags;
+  gdb_assert (q1.upc_layout == q2.upc_layout 
+              || q1.upc_layout == 0
+              || q2.upc_layout == 0);
+  if (q1.upc_layout != 0) 
+    result.upc_layout = q1.upc_layout;
+  else 
+    result.upc_layout = q2.upc_layout;
+  return result;
+}
+
+/* Make a (typically const/volatile) qualified variant of a type
+   -- a type that is identical to the
+   one supplied except that it may have differing type qualifiers 
    TYPE is the base type whose variant we are creating.
 
    If TYPEPTR and *TYPEPTR are non-zero, then *TYPEPTR points to
@@ -660,27 +713,17 @@ make_type_with_address_space (struct type *type, int space_flag)
    new type we construct.  */
 
 struct type *
-make_cv_type (int cnst, int voltl, 
-	      struct type *type, 
-	      struct type **typeptr)
+make_qual_variant_type (struct type_quals new_quals,
+			struct type *type,
+			struct type **typeptr)
 {
   struct type *ntype;	/* New type */
-
-  int new_flags = (TYPE_INSTANCE_FLAGS (type)
-		   & ~(TYPE_INSTANCE_FLAG_CONST 
-		       | TYPE_INSTANCE_FLAG_VOLATILE));
-
-  if (cnst)
-    new_flags |= TYPE_INSTANCE_FLAG_CONST;
-
-  if (voltl)
-    new_flags |= TYPE_INSTANCE_FLAG_VOLATILE;
 
   if (typeptr && *typeptr != NULL)
     {
       /* TYPE and *TYPEPTR must be in the same objfile.  We can't have
-	 a C-V variant chain that threads across objfiles: if one
-	 objfile gets freed, then the other has a broken C-V chain.
+	 a qualifier chain that threads across objfiles: if one
+	 objfile gets freed, then the other has a broken qualifier chain.
 
 	 This code used to try to copy over the main type from TYPE to
 	 *TYPEPTR if they were in different objfiles, but that's
@@ -693,8 +736,7 @@ make_cv_type (int cnst, int voltl,
       gdb_assert (TYPE_OBJFILE (*typeptr) == TYPE_OBJFILE (type));
     }
   
-  ntype = make_qualified_type (type, new_flags, 
-			       typeptr ? *typeptr : NULL);
+  ntype = make_qualified_type (type, new_quals, typeptr ? *typeptr : NULL);
 
   if (typeptr != NULL)
     *typeptr = ntype;
@@ -702,14 +744,36 @@ make_cv_type (int cnst, int voltl,
   return ntype;
 }
 
+/* Make a const / volatile type */
+struct type *
+make_cv_type (int cnst, int voltl,
+	      struct type *type,
+	      struct type **typeptr)
+{
+  struct type_quals type_quals;
+
+  type_quals = TYPE_QUALS (type);
+  TYPE_QUAL_FLAGS (type_quals) &= ~(TYPE_INSTANCE_FLAG_CONST
+				     | TYPE_INSTANCE_FLAG_VOLATILE);
+
+  if (cnst)
+    TYPE_QUAL_FLAGS (type_quals) |= TYPE_INSTANCE_FLAG_CONST;
+  if (voltl)
+    TYPE_QUAL_FLAGS (type_quals) |= TYPE_INSTANCE_FLAG_VOLATILE;
+  return make_qual_variant_type (type_quals, type, typeptr);
+}
+
 /* Make a 'restrict'-qualified version of TYPE.  */
 
 struct type *
 make_restrict_type (struct type *type)
 {
+  int new_flags = TYPE_INSTANCE_FLAGS (type)
+		 | TYPE_INSTANCE_FLAG_RESTRICT;
+  struct type_quals new_quals = TYPE_QUALS (type);
+  new_quals.instance_flags = new_flags;
   return make_qualified_type (type,
-			      (TYPE_INSTANCE_FLAGS (type)
-			       | TYPE_INSTANCE_FLAG_RESTRICT),
+			      new_quals,
 			      NULL);
 }
 
@@ -718,12 +782,13 @@ make_restrict_type (struct type *type)
 struct type *
 make_unqualified_type (struct type *type)
 {
-  return make_qualified_type (type,
-			      (TYPE_INSTANCE_FLAGS (type)
-			       & ~(TYPE_INSTANCE_FLAG_CONST
-				   | TYPE_INSTANCE_FLAG_VOLATILE
-				   | TYPE_INSTANCE_FLAG_RESTRICT)),
-			      NULL);
+  struct type_quals type_quals;
+
+  type_quals = TYPE_QUALS (type);
+  TYPE_QUAL_FLAGS (type_quals) &= ~(TYPE_INSTANCE_FLAG_CONST
+				    | TYPE_INSTANCE_FLAG_VOLATILE
+				    | TYPE_INSTANCE_FLAG_RESTRICT);
+  return make_qualified_type (type, type_quals, NULL);
 }
 
 /* Make a '_Atomic'-qualified version of TYPE.  */
@@ -731,10 +796,11 @@ make_unqualified_type (struct type *type)
 struct type *
 make_atomic_type (struct type *type)
 {
-  return make_qualified_type (type,
-			      (TYPE_INSTANCE_FLAGS (type)
-			       | TYPE_INSTANCE_FLAG_ATOMIC),
-			      NULL);
+  struct type_quals type_quals;
+
+  type_quals = TYPE_QUALS (type);
+  TYPE_QUAL_FLAGS (type_quals) |= TYPE_INSTANCE_FLAG_ATOMIC;
+  return make_qualified_type (type, type_quals, NULL);
 }
 
 /* Replace the contents of ntype with the type *type.  This changes the
@@ -830,13 +896,13 @@ allocate_stub_method (struct type *type)
   return mtype;
 }
 
-/* Create a range type with a dynamic range from LOW_BOUND to
-   HIGH_BOUND, inclusive.  See create_range_type for further details. */
-
 struct type *
-create_range_type (struct type *result_type, struct type *index_type,
-		   const struct dynamic_prop *low_bound,
-		   const struct dynamic_prop *high_bound)
+create_range_type_pgi (struct type *result_type, struct type *index_type,
+		       const struct dynamic_prop *low_bound,
+		       const struct dynamic_prop *high_bound,
+		       const struct dynamic_prop *lstride,
+		       const struct dynamic_prop *stride,
+		       const struct dynamic_prop *soffset)
 {
   if (result_type == NULL)
     result_type = alloc_type_copy (index_type);
@@ -851,6 +917,14 @@ create_range_type (struct type *result_type, struct type *index_type,
     TYPE_ZALLOC (result_type, sizeof (struct range_bounds));
   TYPE_RANGE_DATA (result_type)->low = *low_bound;
   TYPE_RANGE_DATA (result_type)->high = *high_bound;
+  TYPE_RANGE_DATA (result_type)->lstride = *lstride;
+  TYPE_RANGE_DATA (result_type)->stride = *stride;
+  TYPE_RANGE_DATA (result_type)->soffset = *soffset;
+
+  if (lstride->kind == PROP_UNDEFINED)
+    TYPE_RANGE_DATA (result_type)->lstride.data.const_val = 0;
+  if (soffset->kind == PROP_UNDEFINED)
+    TYPE_RANGE_DATA (result_type)->soffset.data.const_val = 0;
 
   if (low_bound->kind == PROP_CONST && low_bound->data.const_val >= 0)
     TYPE_UNSIGNED (result_type) = 1;
@@ -864,6 +938,7 @@ create_range_type (struct type *result_type, struct type *index_type,
 
   return result_type;
 }
+
 
 /* Create a range type using either a blank type supplied in
    RESULT_TYPE, or creating a new type, inheriting the objfile from
@@ -879,7 +954,8 @@ struct type *
 create_static_range_type (struct type *result_type, struct type *index_type,
 			  LONGEST low_bound, LONGEST high_bound)
 {
-  struct dynamic_prop low, high;
+  struct dynamic_prop low, high, stride;
+  struct dynamic_prop lstride, soffset;
 
   low.kind = PROP_CONST;
   low.data.const_val = low_bound;
@@ -887,7 +963,17 @@ create_static_range_type (struct type *result_type, struct type *index_type,
   high.kind = PROP_CONST;
   high.data.const_val = high_bound;
 
-  result_type = create_range_type (result_type, index_type, &low, &high);
+  stride.kind = PROP_CONST;
+  stride.data.const_val = 0;
+
+  lstride.kind = PROP_UNDEFINED;
+  lstride.data.const_val = 0;
+  soffset.kind = PROP_UNDEFINED;
+  soffset.data.const_val = 0;
+
+  result_type = create_range_type_pgi (result_type, index_type,
+				       &low, &high, &lstride, &stride,
+				       &soffset);
 
   return result_type;
 }
@@ -1084,10 +1170,51 @@ create_array_type_with_stride (struct type *result_type,
       && (!type_not_associated (result_type)
 	  && !type_not_allocated (result_type)))
     {
-      LONGEST low_bound, high_bound;
+      LONGEST low_bound, high_bound, byte_stride, lstride;
 
       if (get_discrete_bounds (range_type, &low_bound, &high_bound) < 0)
 	low_bound = high_bound = 0;
+      element_type = check_typedef (element_type);
+      byte_stride = abs (TYPE_BYTE_STRIDE (range_type));
+      lstride = abs (TYPE_LSTRIDE (range_type));
+
+      /* Be careful when setting the array length.  Ada arrays can be
+	 empty arrays with the high_bound being smaller than the low_bound.
+	 In such cases, the array length should be zero.  */
+      if (high_bound < low_bound)
+	TYPE_LENGTH (result_type) = 0;
+      else if (lstride > 0)
+	{
+	  struct type *final_element_type;
+
+	  for (final_element_type = element_type;
+	       TYPE_CODE (final_element_type) == TYPE_CODE_ARRAY;
+	       final_element_type = TYPE_TARGET_TYPE (final_element_type))
+	    /* Nothing.  */;
+
+	  final_element_type = check_typedef (final_element_type);
+
+	  TYPE_LENGTH (result_type) =
+	    TYPE_LENGTH (final_element_type) * lstride * (high_bound - low_bound + 1);
+	}
+      else if (byte_stride > 0)
+	TYPE_LENGTH (result_type) = byte_stride * (high_bound - low_bound + 1);
+      else if (bit_stride > 0)
+	TYPE_LENGTH (result_type) =
+	  (bit_stride * (high_bound - low_bound + 1) + 7) / 8;
+      else
+	TYPE_LENGTH (result_type) =
+	  TYPE_LENGTH (element_type) * (high_bound - low_bound + 1);
+    }
+  else if (!TYPE_LOW_BOUND_UNDEFINED (range_type)
+	   && TYPE_HIGH_BOUND_UNDEFINED (range_type))
+    {
+      LONGEST low_bound, high_bound;
+
+      gdb_assert (TYPE_CODE (range_type) == TYPE_CODE_RANGE);
+      if (get_discrete_bounds (range_type, &low_bound, &high_bound) < 0)
+	low_bound = high_bound = 0;
+      high_bound = low_bound + 1;
       element_type = check_typedef (element_type);
       /* Be careful when setting the array length.  Ada arrays can be
 	 empty arrays with the high_bound being smaller than the low_bound.
@@ -1102,15 +1229,7 @@ create_array_type_with_stride (struct type *result_type,
 	  TYPE_LENGTH (element_type) * (high_bound - low_bound + 1);
     }
   else
-    {
-      /* This type is dynamic and its length needs to be computed
-         on demand.  In the meantime, avoid leaving the TYPE_LENGTH
-         undefined by setting it to zero.  Although we are not expected
-         to trust TYPE_LENGTH in this case, setting the size to zero
-         allows us to avoid allocating objects of random sizes in case
-         we accidently do.  */
-      TYPE_LENGTH (result_type) = 0;
-    }
+    TYPE_LENGTH (result_type) = 0;
 
   TYPE_NFIELDS (result_type) = 1;
   TYPE_FIELDS (result_type) =
@@ -1232,8 +1351,10 @@ make_vector_type (struct type *array_type)
   elt_type = TYPE_TARGET_TYPE (inner_array);
   if (TYPE_CODE (elt_type) == TYPE_CODE_INT)
     {
+      struct type_quals quals = TYPE_QUALS (elt_type);
       flags = TYPE_INSTANCE_FLAGS (elt_type) | TYPE_INSTANCE_FLAG_NOTTEXT;
-      elt_type = make_qualified_type (elt_type, flags, NULL);
+      quals.instance_flags |= flags;
+      elt_type = make_qualified_type (elt_type, quals, NULL);
       TYPE_TARGET_TYPE (inner_array) = elt_type;
     }
 
@@ -1757,6 +1878,12 @@ get_vptr_fieldno (struct type *type, struct type **basetypep)
     {
       int i;
 
+      if (TYPE_CPLUS_SPECIFIC (type) == NULL)
+	{
+	  complaint (&symfile_complaints, "TYPE_CPLUS_SPECIFIC is NULL");
+	  return -1;
+	}
+
       /* We must start at zero in case the first (and only) baseclass
          is virtual (and hence we cannot share the table pointer).  */
       for (i = 0; i < TYPE_N_BASECLASSES (type); i++)
@@ -1821,7 +1948,11 @@ is_dynamic_type_internal (struct type *type, int top_level)
     return 1;
 
   if (TYPE_ASSOCIATED_PROP (type))
-    return 1;
+    {
+      if (0 == top_level && TYPE_CODE (type) == TYPE_CODE_PTR)
+	return 0;
+      return 1;
+    }
 
   if (TYPE_ALLOCATED_PROP (type))
     return 1;
@@ -1839,8 +1970,14 @@ is_dynamic_type_internal (struct type *type, int top_level)
 		|| is_dynamic_type_internal (TYPE_TARGET_TYPE (type), 0));
       }
 
+    case TYPE_CODE_STRING:
     case TYPE_CODE_ARRAY:
       {
+        /* If the producer is the pgi fortran compiler and the array has 2
+           fields then this is a dynamic array.*/
+        if (is_producer_pgif(type) && TYPE_NFIELDS (type) == 2)
+	  return 1;
+
 	gdb_assert (TYPE_NFIELDS (type) == 1);
 
 	/* The array is dynamic if either the bounds are dynamic,
@@ -1861,6 +1998,15 @@ is_dynamic_type_internal (struct type *type, int top_level)
 	    return 1;
       }
       break;
+    case TYPE_CODE_PTR:
+      {
+        if (TYPE_TARGET_TYPE (type)
+            && TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRING)
+          return is_dynamic_type (check_typedef (TYPE_TARGET_TYPE (type)));
+
+        return 0;
+        break;
+      }
     }
 
   return 0;
@@ -1877,6 +2023,29 @@ is_dynamic_type (struct type *type)
 static struct type *resolve_dynamic_type_internal
   (struct type *type, struct property_addr_info *addr_stack, int top_level);
 
+static void
+resolve_dyn_properties (struct type *type, struct property_addr_info *addr_stack)
+{
+  CORE_ADDR value;
+  struct dynamic_prop *prop;
+
+  /* Resolve data_location attribute.  */
+  prop = TYPE_DATA_LOCATION (type);
+  if (prop != NULL && dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+    {
+      TYPE_DYN_PROP_ADDR (prop) = value;
+      TYPE_DYN_PROP_KIND (prop) = PROP_CONST;
+    }
+
+  /* Resolve data_location attribute.  */
+  prop = TYPE_LBASE (type);
+  if (prop != NULL && dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+    {
+      TYPE_DYN_PROP_ADDR (prop) = value;
+      TYPE_DYN_PROP_KIND (prop) = PROP_CONST;
+    }
+}
+
 /* Given a dynamic range type (dyn_range_type) and a stack of
    struct property_addr_info elements, return a static version
    of that type.  */
@@ -1888,7 +2057,8 @@ resolve_dynamic_range (struct type *dyn_range_type,
   CORE_ADDR value;
   struct type *static_range_type, *static_target_type;
   const struct dynamic_prop *prop;
-  struct dynamic_prop low_bound, high_bound;
+  struct dynamic_prop low_bound, high_bound, stride;
+  struct dynamic_prop lstride, soffset;
 
   gdb_assert (TYPE_CODE (dyn_range_type) == TYPE_CODE_RANGE);
 
@@ -1920,13 +2090,52 @@ resolve_dynamic_range (struct type *dyn_range_type,
       high_bound.data.const_val = 0;
     }
 
+  prop = &TYPE_RANGE_DATA (dyn_range_type)->stride;
+  if (dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+    {
+      stride.kind = PROP_CONST;
+      stride.data.const_val = value;
+    }
+  else
+    {
+      stride.kind = PROP_UNDEFINED;
+      stride.data.const_val = 0;
+    }
+
+  prop = &TYPE_RANGE_DATA (dyn_range_type)->lstride;
+  if (dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+    {
+      lstride.kind = PROP_CONST;
+      lstride.data.const_val = value;
+    }
+  else
+    {
+      lstride.kind = PROP_UNDEFINED;
+      lstride.data.const_val = 0;
+    }
+
+  prop = &TYPE_RANGE_DATA (dyn_range_type)->soffset;
+  if (dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+    {
+      soffset.kind = PROP_CONST;
+      soffset.data.const_val = value;
+    }
+  else
+    {
+      soffset.kind = PROP_UNDEFINED;
+      soffset.data.const_val = 0;
+    }
+
   static_target_type
     = resolve_dynamic_type_internal (TYPE_TARGET_TYPE (dyn_range_type),
 				     addr_stack, 0);
-  static_range_type = create_range_type (copy_type (dyn_range_type),
-					 static_target_type,
-					 &low_bound, &high_bound);
+  static_range_type = create_range_type_pgi (copy_type (dyn_range_type),
+					     static_target_type,
+					     &low_bound, &high_bound,
+					     &lstride, &stride, &soffset);
+
   TYPE_RANGE_DATA (static_range_type)->flag_bound_evaluated = 1;
+  resolve_dyn_properties (static_range_type, addr_stack);
   return static_range_type;
 }
 
@@ -1943,8 +2152,10 @@ resolve_dynamic_array (struct type *type,
   struct type *range_type;
   struct type *ary_dim;
   struct dynamic_prop *prop;
+  struct type *return_type;
 
-  gdb_assert (TYPE_CODE (type) == TYPE_CODE_ARRAY);
+  gdb_assert (TYPE_CODE (type) == TYPE_CODE_ARRAY
+	      || TYPE_CODE (type) == TYPE_CODE_STRING);
 
   type = copy_type (type);
 
@@ -1969,13 +2180,19 @@ resolve_dynamic_array (struct type *type,
 
   ary_dim = check_typedef (TYPE_TARGET_TYPE (elt_type));
 
-  if (ary_dim != NULL && TYPE_CODE (ary_dim) == TYPE_CODE_ARRAY)
+  if (ary_dim != NULL && (TYPE_CODE (ary_dim) == TYPE_CODE_ARRAY
+			  || TYPE_CODE (ary_dim) == TYPE_CODE_STRING))
     elt_type = resolve_dynamic_array (ary_dim, addr_stack);
   else
     elt_type = TYPE_TARGET_TYPE (type);
 
-  return create_array_type_with_stride (type, elt_type, range_type,
-                                        TYPE_FIELD_BITSIZE (type, 0));
+  if (TYPE_CODE (type) == TYPE_CODE_STRING)
+    return_type = create_string_type (type, elt_type, range_type);
+  else
+    return_type = create_array_type_with_stride (type, elt_type, range_type,
+						 TYPE_FIELD_BITSIZE (type, 0));
+  resolve_dyn_properties (return_type, addr_stack);
+  return return_type;
 }
 
 /* Resolve dynamic bounds of members of the union TYPE to static
@@ -2015,6 +2232,7 @@ resolve_dynamic_union (struct type *type,
     }
 
   TYPE_LENGTH (resolved_type) = max_len;
+  resolve_dyn_properties (resolved_type, addr_stack);
   return resolved_type;
 }
 
@@ -2041,6 +2259,9 @@ resolve_dynamic_struct (struct type *type,
   memcpy (TYPE_FIELDS (resolved_type),
 	  TYPE_FIELDS (type),
 	  TYPE_NFIELDS (resolved_type) * sizeof (struct field));
+
+  resolve_dyn_properties (resolved_type, addr_stack);
+
   for (i = 0; i < TYPE_NFIELDS (resolved_type); ++i)
     {
       unsigned new_bit_length;
@@ -2062,9 +2283,11 @@ resolve_dynamic_struct (struct type *type,
 
       pinfo.type = check_typedef (TYPE_FIELD_TYPE (type, i));
       pinfo.valaddr = addr_stack->valaddr;
-      pinfo.addr
-	= (addr_stack->addr
-	   + (TYPE_FIELD_BITPOS (resolved_type, i) / TARGET_CHAR_BIT));
+      if (TYPE_CODE (TYPE_FIELD_TYPE (resolved_type, i)) != TYPE_CODE_RANGE)
+        pinfo.addr = addr_stack->addr
+                + (TYPE_FIELD_BITPOS (resolved_type, i) / 8);
+      else
+        pinfo.addr = addr_stack->addr;
       pinfo.next = addr_stack;
 
       TYPE_FIELD_TYPE (resolved_type, i)
@@ -2105,6 +2328,69 @@ resolve_dynamic_struct (struct type *type,
   return resolved_type;
 }
 
+/* Returns 1 when compiled with an Intel compiler.  */
+
+int
+is_producer_intel (const struct type * const type)
+{
+  return is_producer (type, "Intel");
+}
+
+/* Returns 1 when compiled with a PGI Fortran compiler.  */
+
+int
+is_producer_pgif (const struct type * const type)
+{
+  return is_producer (type, "PGF");
+}
+
+/* Matches against the producer of the compilation unit declaring type.  */
+
+int
+is_producer (const struct type * const type, const char * match)
+{
+  if (TYPE_PRODUCER (type))
+    return !strncasecmp (TYPE_PRODUCER (type), match, strlen (match));
+
+  return 0;
+}
+
+/* Worker for pointer types.  */
+
+static struct type *
+resolve_dynamic_pointer (struct type *type,
+			 struct property_addr_info *addr_stack)
+{
+  int is_intel_produced = 0;
+  is_intel_produced = is_producer_intel (type);
+
+  type = copy_type (type);
+  if (!is_intel_produced
+      && TYPE_CODE_STRING == TYPE_CODE (TYPE_TARGET_TYPE(type)))
+    TYPE_TARGET_TYPE (type)
+      = resolve_dynamic_type_internal (TYPE_TARGET_TYPE (type), addr_stack, 0);
+  else
+    {
+      CORE_ADDR value;
+      struct dynamic_prop * prop;
+
+      prop = TYPE_ASSOCIATED_PROP (type);
+      if (prop != NULL
+	  && dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+	{
+	  TYPE_DYN_PROP_ADDR (prop) = value;
+	  TYPE_DYN_PROP_KIND (prop) = PROP_CONST;
+	}
+
+      if (!type_not_associated(type))
+	TYPE_TARGET_TYPE (type) =
+	  resolve_dynamic_type_internal (TYPE_TARGET_TYPE (type), addr_stack, 0);
+    }
+
+  return type;
+}
+
+
 /* Worker for resolved_dynamic_type.  */
 
 static struct type *
@@ -2115,7 +2401,6 @@ resolve_dynamic_type_internal (struct type *type,
   struct type *real_type = check_typedef (type);
   struct type *resolved_type = type;
   struct dynamic_prop *prop;
-  CORE_ADDR value;
 
   if (!is_dynamic_type_internal (real_type, top_level))
     return type;
@@ -2153,7 +2438,12 @@ resolve_dynamic_type_internal (struct type *type,
 	    break;
 	  }
 
+	case TYPE_CODE_PTR:
+	  resolved_type = resolve_dynamic_pointer (type, addr_stack);
+	  break;
+
 	case TYPE_CODE_ARRAY:
+	case TYPE_CODE_STRING:
 	  resolved_type = resolve_dynamic_array (type, addr_stack);
 	  break;
 
@@ -2172,12 +2462,22 @@ resolve_dynamic_type_internal (struct type *type,
     }
 
   /* Resolve data_location attribute.  */
-  prop = TYPE_DATA_LOCATION (resolved_type);
-  if (prop != NULL
-      && dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
+  resolve_dyn_properties (resolved_type, addr_stack);
+  /* Check all the required data exists to compute the bytes stride */
+  if (TYPE_DATA_LOCATION (resolved_type) != NULL
+      && TYPE_DATA_LOCATION_KIND (resolved_type) == PROP_CONST
+      && TYPE_MAIN_TYPE(resolved_type) != NULL
+      && TYPE_MAIN_TYPE(resolved_type)->flds_bnds.fields != NULL)
     {
-      TYPE_DYN_PROP_ADDR (prop) = value;
-      TYPE_DYN_PROP_KIND (prop) = PROP_CONST;
+      struct type *range_type = TYPE_INDEX_TYPE (resolved_type);
+
+      /* Adjust the data location with the value of byte stride if set, which
+         can describe the separation between successive elements along the
+         dimension.  */
+      if (TYPE_BYTE_STRIDE (range_type) < 0)
+        TYPE_DATA_LOCATION_ADDR (resolved_type)
+	  += ((TYPE_HIGH_BOUND (range_type) - TYPE_LOW_BOUND (range_type))
+	      * TYPE_BYTE_STRIDE (range_type));
     }
 
   return resolved_type;
@@ -2292,10 +2592,11 @@ remove_dyn_prop (enum dynamic_prop_node_kind prop_kind,
 struct type *
 check_typedef (struct type *type)
 {
+  struct type *range_type;
   struct type *orig_type = type;
   /* While we're removing typedefs, we don't want to lose qualifiers.
      E.g., const/volatile.  */
-  int instance_flags = TYPE_INSTANCE_FLAGS (type);
+  struct type_quals type_quals = TYPE_QUALS (type);
 
   gdb_assert (type);
 
@@ -2309,7 +2610,7 @@ check_typedef (struct type *type)
 	  /* It is dangerous to call lookup_symbol if we are currently
 	     reading a symtab.  Infinite recursion is one danger.  */
 	  if (currently_reading_symtab)
-	    return make_qualified_type (type, instance_flags, NULL);
+	    return make_qualified_type (type, type_quals, NULL);
 
 	  name = type_name_no_tag (type);
 	  /* FIXME: shouldn't we separately check the TYPE_NAME and
@@ -2319,7 +2620,7 @@ check_typedef (struct type *type)
 	  if (name == NULL)
 	    {
 	      stub_noname_complaint ();
-	      return make_qualified_type (type, instance_flags, NULL);
+	      return make_qualified_type (type, type_quals, NULL);
 	    }
 	  sym = lookup_symbol (name, 0, STRUCT_DOMAIN, 0).symbol;
 	  if (sym)
@@ -2347,12 +2648,12 @@ check_typedef (struct type *type)
 	int new_instance_flags = TYPE_INSTANCE_FLAGS (type);
 
 	/* Treat code vs data spaces and address classes separately.  */
-	if ((instance_flags & ALL_SPACES) != 0)
+	if ((type_quals.instance_flags & ALL_SPACES) != 0)
 	  new_instance_flags &= ~ALL_SPACES;
-	if ((instance_flags & ALL_CLASSES) != 0)
+	if ((type_quals.instance_flags & ALL_CLASSES) != 0)
 	  new_instance_flags &= ~ALL_CLASSES;
 
-	instance_flags |= new_instance_flags;
+	type_quals.instance_flags |= new_instance_flags;
       }
     }
 
@@ -2372,7 +2673,7 @@ check_typedef (struct type *type)
       if (name == NULL)
 	{
 	  stub_noname_complaint ();
-	  return make_qualified_type (type, instance_flags, NULL);
+	  return make_qualified_type (type, type_quals, NULL);
 	}
       newtype = lookup_transparent_type (name);
 
@@ -2389,11 +2690,13 @@ check_typedef (struct type *type)
 	     move over any other types NEWTYPE refers to, which could
 	     be an unbounded amount of stuff.  */
 	  if (TYPE_OBJFILE (newtype) == TYPE_OBJFILE (type))
-	    type = make_qualified_type (newtype,
-					TYPE_INSTANCE_FLAGS (type),
-					type);
+	    make_qual_variant_type (type_quals, newtype, &type);
 	  else
 	    type = newtype;
+	}
+      else
+	{
+	  complaint (&symfile_complaints, _("unable to resolve opaque type `%s'"), name);
 	}
     }
   /* Otherwise, rely on the stub flag being set for opaque/stubbed
@@ -2410,7 +2713,7 @@ check_typedef (struct type *type)
       if (name == NULL)
 	{
 	  stub_noname_complaint ();
-	  return make_qualified_type (type, instance_flags, NULL);
+	  return make_qualified_type (type, type_quals, NULL);
 	}
       sym = lookup_symbol (name, 0, STRUCT_DOMAIN, 0).symbol;
       if (sym)
@@ -2419,12 +2722,32 @@ check_typedef (struct type *type)
              with the complete type only if they are in the same
              objfile.  */
 	  if (TYPE_OBJFILE (SYMBOL_TYPE(sym)) == TYPE_OBJFILE (type))
-            type = make_qualified_type (SYMBOL_TYPE (sym),
-					TYPE_INSTANCE_FLAGS (type),
-					type);
+	    make_qual_variant_type (type_quals, SYMBOL_TYPE (sym), &type);
 	  else
 	    type = SYMBOL_TYPE (sym);
         }
+      else
+        {
+	  complaint (&symfile_complaints, _("unable to resolve stub type `%s'"), name);
+	}
+    }
+    
+  if (TYPE_CODE (type) == TYPE_CODE_PTR
+      && TYPE_LENGTH (type) == 0
+      && !currently_reading_symtab)
+    {
+      struct type *elttype = check_typedef (TYPE_TARGET_TYPE (type));
+      if (upc_shared_type_p (elttype))
+	{
+	  TRY
+	    {
+	      TYPE_LENGTH (type) = upc_pts_len (elttype);
+	    }
+	  CATCH (e, RETURN_MASK_ALL)
+	    {
+	    }
+	  END_CATCH
+	}
     }
 
   if (TYPE_TARGET_STUB (type))
@@ -2442,7 +2765,49 @@ check_typedef (struct type *type)
 	}
     }
 
-  type = make_qualified_type (type, instance_flags, NULL);
+  if (TYPE_CODE (type) == TYPE_CODE_ARRAY
+      && TYPE_NFIELDS (type) == 1
+      && (TYPE_CODE (range_type = TYPE_INDEX_TYPE (type))
+	  == TYPE_CODE_RANGE)
+      && !currently_reading_symtab)
+    {
+      struct type *target_type = check_typedef (TYPE_TARGET_TYPE (type));
+      if (TYPE_STUB (target_type))
+	{
+	  /* Empty.  */
+	}
+      else if (upc_shared_type_p (target_type))
+	{
+	  LONGEST low_bound, high_bound;
+	  ULONGEST len;
+
+	  upc_expand_threads_factor (range_type);
+
+	  low_bound = TYPE_LOW_BOUND (range_type);
+	  high_bound = TYPE_HIGH_BOUND (range_type);
+
+	  if (high_bound < low_bound)
+	    len = 0;
+	  else
+	    {
+	      ULONGEST ulow = low_bound, uhigh = high_bound;
+	      ULONGEST tlen = TYPE_LENGTH (target_type);
+
+	      len = tlen * (uhigh - ulow + 1);
+	      if (tlen == 0 || (len / tlen - 1 + ulow) != uhigh 
+	         || len > UINT_MAX)
+	        len = 0;
+	    }
+	  TYPE_LENGTH (type) = len;
+	}
+    }
+
+  type = make_qualified_type (type, type_quals, NULL);
+
+  /* Ignore codimensions.  */
+  while (TYPE_CODE (type) == TYPE_CODE_ARRAY &&
+         range_is_co_shape_p (type))
+    type = TYPE_TARGET_TYPE (type);
 
   /* Cache TYPE_LENGTH for future use.  */
   TYPE_LENGTH (orig_type) = TYPE_LENGTH (type);
@@ -2746,6 +3111,16 @@ init_type (enum type_code code, int length, int flags,
     }
   return type;
 }
+
+struct type *
+init_type_with_producer (enum type_code code, int length, int flags,
+	   const char *name, const char *producer, struct objfile *objfile)
+{
+  struct type *type;
+  type = init_type (code, length, flags, name, objfile);
+  TYPE_PRODUCER (type) = producer;
+  return type;
+}
 
 /* Queries on types.  */
 
@@ -2789,6 +3164,7 @@ is_scalar_type (struct type *type)
     case TYPE_CODE_UNION:
     case TYPE_CODE_SET:
     case TYPE_CODE_STRING:
+    case TYPE_CODE_PTR:
       return 0;
     default:
       return 1;
@@ -4168,6 +4544,14 @@ recursive_dump_type (struct type *type, int spaces)
       printf_filtered ("(UNKNOWN TYPE CODE)");
       break;
     }
+  if (TYPE_IS_CO_SHAPE (type))
+    {
+      puts_filtered (" TYPE_INSTANCE_FLAG_IS_CO_SHAPE");
+    }    
+  if (TYPE_ALLOCATABLE (type))
+    {
+      puts_filtered (" TYPE_INSTANCE_FLAG_ALLOCATABLE");
+    }
   puts_filtered ("\n");
   printfi_filtered (spaces, "length %d\n", TYPE_LENGTH (type));
   if (TYPE_OBJFILE_OWNED (type))
@@ -4607,17 +4991,18 @@ copy_type (const struct type *type)
 {
   struct type *new_type;
 
-  gdb_assert (TYPE_OBJFILE_OWNED (type));
-
   new_type = alloc_type_copy (type);
   TYPE_INSTANCE_FLAGS (new_type) = TYPE_INSTANCE_FLAGS (type);
   TYPE_LENGTH (new_type) = TYPE_LENGTH (type);
   memcpy (TYPE_MAIN_TYPE (new_type), TYPE_MAIN_TYPE (type),
 	  sizeof (struct main_type));
   if (TYPE_DYN_PROP_LIST (type) != NULL)
-    TYPE_DYN_PROP_LIST (new_type)
-      = copy_dynamic_prop_list (&TYPE_OBJFILE (type) -> objfile_obstack,
-				TYPE_DYN_PROP_LIST (type));
+    {
+      gdb_assert (TYPE_OBJFILE_OWNED (type));
+      TYPE_DYN_PROP_LIST (new_type)
+	= copy_dynamic_prop_list (&TYPE_OBJFILE (type) -> objfile_obstack,
+				  TYPE_DYN_PROP_LIST (type));
+    }
 
   return new_type;
 }
@@ -4886,6 +5271,22 @@ append_composite_type_field (struct type *t, const char *name,
 			     struct type *field)
 {
   append_composite_type_field_aligned (t, name, field, 0);
+}
+
+int
+range_is_co_shape_p (struct type *type)
+{
+  if (TYPE_CODE (type) == TYPE_CODE_ARRAY)
+    {
+      if (TYPE_NFIELDS (type) && TYPE_FIELDS (type))
+	{
+	  struct type *subrange_type = TYPE_FIELDS (type)->type;
+	  if (subrange_type
+	      && TYPE_IS_CO_SHAPE (subrange_type))
+	    return 1;
+	}  
+    }
+  return 0;
 }
 
 static struct gdbarch_data *gdbtypes_data;

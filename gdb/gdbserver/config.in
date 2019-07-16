@@ -349,6 +349,9 @@
 /* The size of `long long', as computed by sizeof. */
 #undef SIZEOF_LONG_LONG
 
+/* Python Home for gdb */
+#undef PYTHONHOME_URL
+
 /* If using the C implementation of alloca, define if you know the
    direction of stack growth for your system; otherwise it will be
    automatically deduced at runtime.
@@ -401,6 +404,9 @@
 
 /* Define for large files, on AIX-style hosts. */
 #undef _LARGE_FILES
+
+/* Define if Myo-Dbl debugging is available.  */
+#undef USE_MYO_DBL
 
 /* Define to 1 if on MINIX. */
 #undef _MINIX

@@ -1,5 +1,8 @@
 /* Parse expressions for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    Modified from expread.y by the Department of Computer Science at the
@@ -45,6 +48,7 @@
 #include "symfile.h"		/* for overlay functions */
 #include "inferior.h"
 #include "doublest.h"
+#include "gdbtypes.h"
 #include "block.h"
 #include "source.h"
 #include "objfiles.h"
@@ -898,6 +902,14 @@ operator_length_standard (const struct expression *expr, int endpos,
       args = 2;
       break;
 
+    case OP_ASSOCIATED:
+    case OP_SIZE:
+    case OP_LBOUND:
+    case OP_UBOUND:
+      oplen = 3;
+      args = longest_to_int (expr->elts[endpos - 2].longconst);
+      break;
+
     case OP_FUNCALL:
     case OP_F77_UNDETERMINED_ARGLIST:
       oplen = 3;
@@ -1009,19 +1021,14 @@ operator_length_standard (const struct expression *expr, int endpos,
       range_type = (enum range_type)
 	longest_to_int (expr->elts[endpos - 2].longconst);
 
-      switch (range_type)
-	{
-	case LOW_BOUND_DEFAULT:
-	case HIGH_BOUND_DEFAULT:
-	  args = 1;
-	  break;
-	case BOTH_BOUND_DEFAULT:
-	  args = 0;
-	  break;
-	case NONE_BOUND_DEFAULT:
-	  args = 2;
-	  break;
-	}
+      if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
+	args++;
+
+      if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+	args++;
+
+      if ((range_type & SUBARRAY_STRIDE) == SUBARRAY_STRIDE)
+	args++;
 
       break;
 
@@ -1645,8 +1652,7 @@ struct type *
 follow_types (struct type *follow_type)
 {
   int done = 0;
-  int make_const = 0;
-  int make_volatile = 0;
+  struct type_quals make_quals = null_type_quals;
   int make_addr_space = 0;
   int array_size;
 
@@ -1655,59 +1661,50 @@ follow_types (struct type *follow_type)
       {
       case tp_end:
 	done = 1;
-	if (make_const)
-	  follow_type = make_cv_type (make_const, 
-				      TYPE_VOLATILE (follow_type), 
-				      follow_type, 0);
-	if (make_volatile)
-	  follow_type = make_cv_type (TYPE_CONST (follow_type), 
-				      make_volatile, 
-				      follow_type, 0);
+	if (!TYPE_QUALS_EQ (make_quals, null_type_quals))
+	  follow_type = make_qual_variant_type (make_quals, follow_type, 0);
 	if (make_addr_space)
 	  follow_type = make_type_with_address_space (follow_type, 
 						      make_addr_space);
-	make_const = make_volatile = 0;
+	make_quals = null_type_quals;
 	make_addr_space = 0;
 	break;
       case tp_const:
-	make_const = 1;
+	TYPE_QUAL_FLAGS (make_quals) |= TYPE_INSTANCE_FLAG_CONST;
 	break;
       case tp_volatile:
-	make_volatile = 1;
+	TYPE_QUAL_FLAGS (make_quals) |= TYPE_INSTANCE_FLAG_VOLATILE;
+	break;
+      case tp_shared:
+	TYPE_QUAL_FLAGS (make_quals) |= TYPE_INSTANCE_FLAG_UPC_SHARED;
+	break;
+      case tp_strict:
+	TYPE_QUAL_FLAGS (make_quals) |= TYPE_INSTANCE_FLAG_UPC_STRICT;
+	break;
+      case tp_relaxed:
+	TYPE_QUAL_FLAGS (make_quals) |= TYPE_INSTANCE_FLAG_UPC_RELAXED;
 	break;
       case tp_space_identifier:
 	make_addr_space = pop_type_int ();
 	break;
       case tp_pointer:
 	follow_type = lookup_pointer_type (follow_type);
-	if (make_const)
-	  follow_type = make_cv_type (make_const, 
-				      TYPE_VOLATILE (follow_type), 
-				      follow_type, 0);
-	if (make_volatile)
-	  follow_type = make_cv_type (TYPE_CONST (follow_type), 
-				      make_volatile, 
-				      follow_type, 0);
+	if (!TYPE_QUALS_EQ (make_quals, null_type_quals))
+	  follow_type = make_qual_variant_type (make_quals, follow_type, 0);
 	if (make_addr_space)
 	  follow_type = make_type_with_address_space (follow_type, 
 						      make_addr_space);
-	make_const = make_volatile = 0;
+	make_quals = null_type_quals;
 	make_addr_space = 0;
 	break;
       case tp_reference:
 	follow_type = lookup_reference_type (follow_type);
-	if (make_const)
-	  follow_type = make_cv_type (make_const, 
-				      TYPE_VOLATILE (follow_type), 
-				      follow_type, 0);
-	if (make_volatile)
-	  follow_type = make_cv_type (TYPE_CONST (follow_type), 
-				      make_volatile, 
-				      follow_type, 0);
+	if (!TYPE_QUALS_EQ (make_quals, null_type_quals))
+	  follow_type = make_qual_variant_type (make_quals, follow_type, 0);
 	if (make_addr_space)
 	  follow_type = make_type_with_address_space (follow_type, 
 						      make_addr_space);
-	make_const = make_volatile = 0;
+	make_quals = null_type_quals;
 	make_addr_space = 0;
 	break;
       case tp_array:

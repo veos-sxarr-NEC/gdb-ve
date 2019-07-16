@@ -1,5 +1,8 @@
 /* Print in infix form a struct expression.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -178,6 +181,51 @@ print_subexp_standard (struct expression *exp, int *pos,
       for (tem = 0; tem < nargs; tem++)
 	{
 	  if (tem != 0)
+	    fputs_filtered (", ", stream);
+	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
+	}
+      fputs_filtered (")", stream);
+      return;
+
+    case OP_SIZE:
+      fputs_filtered ("SIZE(", stream);
+
+      (*pos) += 2;
+      nargs = longest_to_int (exp->elts[pc + 1].longconst);
+      for (tem = 0; tem < nargs; tem++)
+	{
+	  if (tem != 0)
+
+	    fputs_filtered (", ", stream);
+	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
+	}
+      fputs_filtered (")", stream);
+      return;
+
+    case OP_LBOUND:
+      fputs_filtered ("LBOUND(", stream);
+
+      (*pos) += 2;
+      nargs = longest_to_int (exp->elts[pc + 1].longconst);
+      for (tem = 0; tem < nargs; tem++)
+	{
+	  if (tem != 0)
+
+	    fputs_filtered (", ", stream);
+	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
+	}
+      fputs_filtered (")", stream);
+      return;
+
+    case OP_UBOUND:
+      fputs_filtered ("UBOUND(", stream);
+
+      (*pos) += 2;
+      nargs = longest_to_int (exp->elts[pc + 1].longconst);
+      for (tem = 0; tem < nargs; tem++)
+	{
+	  if (tem != 0)
+
 	    fputs_filtered (", ", stream);
 	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	}
@@ -568,12 +616,10 @@ print_subexp_standard (struct expression *exp, int *pos,
 	*pos += 2;
 
 	fputs_filtered ("RANGE(", stream);
-	if (range_type == HIGH_BOUND_DEFAULT
-	    || range_type == NONE_BOUND_DEFAULT)
+	if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
 	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	fputs_filtered ("..", stream);
-	if (range_type == LOW_BOUND_DEFAULT
-	    || range_type == NONE_BOUND_DEFAULT)
+	if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
 	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	fputs_filtered (")", stream);
 	return;
@@ -823,6 +869,8 @@ dump_subexp_body_standard (struct expression *exp,
     case BINOP_END:
     case STRUCTOP_MEMBER:
     case STRUCTOP_MPTR:
+    case BINOP_FMOD:
+    case BINOP_CMPLX:
       elt = dump_subexp (exp, stream, elt);
       /* FALL THROUGH */
     case UNOP_NEG:
@@ -846,6 +894,17 @@ dump_subexp_body_standard (struct expression *exp,
     case UNOP_MIN:
     case UNOP_ODD:
     case UNOP_TRUNC:
+    case UNOP_ISNAN:
+    case UNOP_ISINF:
+    case UNOP_CREAL:
+    case UNOP_CIMAG:
+    case UNOP_FABS:
+    case UNOP_CEIL:
+    case UNOP_FLOOR:
+    case UNOP_IEEE_IS_NAN:
+    case UNOP_IEEE_IS_INF:
+    case UNOP_IEEE_IS_FINITE:
+    case UNOP_IEEE_IS_NORMAL:      
       elt = dump_subexp (exp, stream, elt);
       break;
     case OP_LONG:
@@ -909,6 +968,22 @@ dump_subexp_body_standard (struct expression *exp,
 	elt += 2;
 
 	for (i = 1; i <= nargs + 1; i++)
+	  elt = dump_subexp (exp, stream, elt);
+      }
+      break;
+    case OP_SIZE:
+    case OP_LBOUND:
+    case OP_ASSOCIATED:
+    case OP_UBOUND:
+      {
+	int i, nargs;
+
+	nargs = longest_to_int (exp->elts[elt].longconst);
+
+	fprintf_filtered (stream, "Number of args: %d", nargs);
+	elt += 2;
+
+	for (i = 1; i <= nargs; i++)
 	  elt = dump_subexp (exp, stream, elt);
       }
       break;
@@ -1053,30 +1128,22 @@ dump_subexp_body_standard (struct expression *exp,
 	  longest_to_int (exp->elts[elt].longconst);
 	elt += 2;
 
-	switch (range_type)
-	  {
-	  case BOTH_BOUND_DEFAULT:
-	    fputs_filtered ("Range '..'", stream);
-	    break;
-	  case LOW_BOUND_DEFAULT:
-	    fputs_filtered ("Range '..EXP'", stream);
-	    break;
-	  case HIGH_BOUND_DEFAULT:
-	    fputs_filtered ("Range 'EXP..'", stream);
-	    break;
-	  case NONE_BOUND_DEFAULT:
-	    fputs_filtered ("Range 'EXP..EXP'", stream);
-	    break;
-	  default:
-	    fputs_filtered ("Invalid Range!", stream);
-	    break;
-	  }
+	fputs_filtered ("Range '", stream);
+	if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
+	  fputs_filtered ("EXP", stream);
+	fputs_filtered ("..", stream);
+	if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+	  fputs_filtered ("EXP", stream);
+	fputs_filtered ("'", stream);
 
-	if (range_type == HIGH_BOUND_DEFAULT
-	    || range_type == NONE_BOUND_DEFAULT)
+	if ((range_type & SUBARRAY_STRIDE) == SUBARRAY_STRIDE)
+	  fputs_filtered (" Stride (EXP)", stream);
+
+	if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
 	  elt = dump_subexp (exp, stream, elt);
-	if (range_type == LOW_BOUND_DEFAULT
-	    || range_type == NONE_BOUND_DEFAULT)
+	if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+	  elt = dump_subexp (exp, stream, elt);
+	if ((range_type & SUBARRAY_STRIDE) == SUBARRAY_STRIDE)
 	  elt = dump_subexp (exp, stream, elt);
       }
       break;

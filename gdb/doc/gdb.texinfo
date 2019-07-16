@@ -1,4 +1,7 @@
 \input texinfo      @c -*-texinfo-*-
+@c Modified by Arm.
+
+@c Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 @c Copyright (C) 1988-2017 Free Software Foundation, Inc.
 @c
 @c %**start of header
@@ -62,6 +65,11 @@ and with the Back-Cover Texts as in (a) below.
 (a) The FSF's Back-Cover Text is: ``You are free to copy and modify
 this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom.''
+
+@sp 1
+Copyright @copyright{} 2016, Intel Corporation.
+Intel's modifications are provided pursuant to the GNU Free
+Documentation license.
 @c man end
 @end copying
 
@@ -87,11 +95,19 @@ Version @value{GDBVN}.
 @sp 1
 @subtitle @value{VERSION_PACKAGE}
 @end ifset
+@sp 1
+@c!!add Intel's doc version number; updated by Intel
+@subtitle Intel documentation version number 1.0.0
+@sp 1
+@subtitle Documentation extensions by Intel Corporation
 @author Richard Stallman, Roland Pesch, Stan Shebs, et al.
+@c!! Insert new page with link to Intel's Debug User Forum
 @page
 @tex
 {\parskip=0pt
-\hfill (Send bugs and comments on @value{GDBN} to @value{BUGURL}.)\par
+\hfill (Send bugs and comments on @value{GDBN} to Intel's @uref{http://software.intel.com/forums/debug-solutions, Debug Solutions User Forum}.)\par
+\hfill {@xref{GDB Bugs, How to report Bugs}, for details on how to report bugs.}\par
+@sp 1
 \hfill {\it Debugging with @value{GDBN}}\par
 \hfill \TeX{}info \texinfoversion\par
 }
@@ -104,6 +120,36 @@ Boston, MA 02110-1301, USA@*
 ISBN 978-0-9831592-3-0 @*
 
 @insertcopying
+
+For more information, @pxref{GNU Free Documentation License,,GNU Free
+Documentation License}.
+@page
+List of extended features for @value{GDBN} version @value{GDBVN}:
+@itemize @bullet
+@item
+Debugging Data Race Conditions:@*
+@ref{Data Race Detection, Debugging Data Race Conditions}.
+@item
+Decoding Abort Reasons of a Speculative Execution:@*
+@ref{Decoding Abort Reasons, Decoding Abort Reasons of a Speculative Execution}
+@item
+Detecting Boundary Violations in code:@*
+@ref{Pointer Checker, Detecting Boundary Violations in Code}
+@item
+Serializing the execution of parallel applications with Intel@registeredsymbol{} Cilk(TM) Plus:@*
+@ref{Serializing Parallel Execution, Serializing the Execution of Parallel Applications}.
+@item
+Debugging OpenMP*:@*
+@ref{OpenMP* Debugging, Debugging Open Multi-Processing (OpenMP*)}.
+@end itemize
+
+@table @samp
+@item gdb-ia
+For debugging IA-32/Intel@registeredsymbol{} 64 Applications, the command to invoke @value{GDBN} is gdb-ia.
+@item gdb-mic
+For debugging Intel@registeredsymbol{} Many Integrated Core (MIC) Architecture Applications (if supported), the command to invoke @value{GDBN} is gdb-mic.
+
+@end table
 @end titlepage
 @page
 
@@ -120,6 +166,9 @@ This is the @value{EDITION} Edition, for @value{GDBN}
 @end ifset
 Version @value{GDBVN}.
 
+Modified by Arm.
+
+Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 Copyright (C) 1988-2017 Free Software Foundation, Inc.
 
 This edition of the GDB manual is dedicated to the memory of Fred
@@ -140,6 +189,7 @@ software in general.  We will miss him.
 * Source::                      Examining source files
 * Data::                        Examining data
 * Optimized Code::              Debugging optimized code
+* Intel Architecture::          Debugging on Intel(R) Architecture
 * Macros::                      Preprocessor Macros
 * Tracepoints::                 Debugging remote targets non-intrusively
 * Overlays::                    Debugging programs that use overlays
@@ -12158,6 +12208,561 @@ tail calls.  Such tail calls would modify thue @code{i} variable, therefore
 @value{GDBN} cannot be sure the value it knows would be right - @value{GDBN}
 prints @code{<optimized out>} instead.
 
+@node Intel Architecture
+@chapter Debugging on Intel(R) Architecture
+
+@menu
+* Data Race Detection::      Debugging Data Race Conditions
+* Decoding Abort Reasons::      Decoding speculative execution abort reasons
+* Pointer Checker:: how to detect boundary violations in code
+* Serializing Parallel Execution::            How to serialize the execution of parallel applications with Intel@registeredsymbol{} Cilk(TM) Plus
+* OpenMP* Debugging::      Debugging Open Multi-Processing (OpenMP*)
+@end menu
+
+@node Data Race Detection
+@section Debugging Data Race Conditions
+
+A data race occurs when multiple threads access overlapping memory
+without synchronization.  Although data races may be harmless or even
+part of the design in some cases, a data race typically indicates a
+bug.
+
+@value{GDBN} may be used as a front-end for the Intel@registeredsymbol{} Parallel Debugger Extension (PDBX) data race detector that is part of the Intel@registeredsymbol{} Compiler. The PDBX data race detector consists of compiler
+instrumentation and run-time support library. Both are provided by
+the Intel@registeredsymbol{} Compiler. The PDBX run-time library provides a debugger interface for communicating detected data races as well as for configuring the analysis.
+
+The PDBX data race detector is enabled with the @option{-debug
+parallel} compiler option.  This option is available with the Intel@registeredsymbol{} Compiler (C/C++ and Fortran) starting from version 12.1 supporting
+@sc{gnu}/Linux on IA-32 and Intel@registeredsymbol{} 64 Architectures, as well as on Intel@registeredsymbol{} Xeon(TM) Phi.  The data race detector can handle pthread and OpenMP* synchronization primitives.
+
+When debugging remotely, make sure that @value{GDBN} finds the correct
+version of libpdbx that is used on the target.  When using OpenMP*, the
+following variables must be defined in the debuggee's environment:
+
+@itemize @bullet
+@item INTEL_LIBITTNOTIFY32=""
+@item INTEL_LIBITTNOTIFY64=""
+@item INTEL_ITTNOTIFY_GROUPS=sync
+@end itemize
+
+@subsection Enable, Disable, and Reset
+
+The PDBX data race detector logs all memory accesses and
+synchronization for all threads.  It checks for data races on each
+memory access.  As can be expected, this is very expensive, both in
+terms of performance and memory consumption.  To mitigate this, you
+can fine-tune the data race analysis.
+
+While you can't control logging of synchronization events, you can
+control logging of memory accesses.  Memory accesses are logged so
+long as the data race detector is enabled, and because the data race
+detector always logs synchronization, it may be disabled and
+re-enabled at any time.  Of course, the detector is only able to
+detect data races on known memory accesses.
+
+In addition to selective enabling, you can get the data race detector
+to discard the memory logs it has collected.  This may be useful when
+debugging data races in separate parts of the program under memory
+constraints.
+
+The following commands enable, disable, and reset the data race
+analysis:
+
+@table @code
+@item pdbx
+
+Prints the data race detector status.  It shows whether the data race
+detector is enabled, whether the run-time library was loaded, and the
+version being used.
+
+@item pdbx enable
+Enables memory access logging and data race detection.  The data race
+detector logs memory accesses and reports detected data races to
+@value{GDBN}.
+
+@item pdbx disable
+Disables memory access logging and data race detection.  The data race
+detector stops logging memory accesses.  Data races that are about
+to be reported are discarded.
+
+@item pdbx reset
+Discards memory access logs.  Data races are only detected for new
+memory accesses.  This reduces the memory consumption of the data race
+detector and may also improve performance.
+@end table
+
+@subsection Filters
+
+You can configure the data race detector to ignore parts of the
+application that may be useful under a variety of different use cases,
+such as to:
+
+@itemize @bullet
+@item Ignore false positives
+
+The data race detector may incorrectly report correctly synchronized
+accesses as data races.  This is typically caused by a synchronization
+construct that is not known to the data race detector.  It may also be
+caused by partially instrumented applications.
+
+@item Ignore intended or harmless data races
+
+In some cases, data races may be harmless or even intended.  Examples
+are data races where all threads are guaranteed to write either the
+same or an equivalent value.  Accepting such a harmless data race is
+typically cheaper than synchronizing the threads.
+
+@item Ignore currently irrelevant data races
+
+The data race detector may correctly report data races that are not
+related to the bug currently under observation.  Such distracting data
+races may be ignored until a later time.
+
+@item Improve data race analysis performance
+
+Ignoring parts of your program may have a significant impact on the
+analysis performance overhead.  It is typically cheaper to repeatedly
+analyze a small portion of your program than it is to analyze the
+whole program.
+
+@item Improve data race analysis memory consumption
+
+Ignoring parts of your program may have a significant impact on the
+analysis memory consumption.  This allows data race detection to be
+used in scenarios where a whole program analysis would not be feasible.
+
+@end itemize
+
+@value{GDBN} uses filters expressed in source language terms to
+describe parts of the program that should be ignored/focused upon.
+Filters can be defined using the following commands:
+
+@table @code
+@item pdbx filter code @var{addr}
+@item pdbx filter code @var{start} - @var{end}
+This filter specifies either a single code address or a range of code
+addresses from @var{start} (inclusive) to @var{end} (exclusive).
+
+@item pdbx filter data @var{addr}
+@item pdbx filter data @var{start} - @var{end}
+This filter specifies either a single data address or a range of data
+addresses from @var{start} (inclusive) to @var{end} (exclusive).
+
+@item pdbx filter line @var{expr}
+This filter specifies the code generated for a single source line.
+The @var{expr} argument must be of a form accepted by @code{info line}
+and is interpreted in the current context.
+
+@item pdbx filter variable @var{expr}
+This filter specifies the data object corresponding to the source
+expression @var{expr} evaluated in the current context.
+
+@item pdbx filter reads
+This filter specifies all read accesses in the program.
+@end table
+
+It is important to note that filters on stack objects are not
+automatically removed or disabled when the object is destroyed.
+
+@subsection Filter Sets
+
+Filters are organized in sets.  A filter set defines the semantics of
+the filters it contains and can be set to either the @option{suppress}
+or @option{focus} type.  The following commands alter the type of the
+current filter set:
+
+@table @code
+@item pdbx fset suppress
+Set the type of the current filter set to suppress.  The filters in
+this filter set specify the parts of the program that should be
+ignored by the data race detector.  Memory accesses made from or to
+filtered areas are not logged and do not participate in the data
+race analysis.
+
+@item pdbx fset focus
+Set the type of the current filter set to focus.  The filters in this
+filter set specify the parts of the program that should be analyzed
+for data races.  Memory accesses that are not made from or to filtered
+areas are not logged and do not participate in the data race analysis.
+
+Beware that an empty focus filter set ignores the entire program.
+@end table
+
+When debugging data races, it may be useful to define different filter
+sets and switch between them during the course of the debug
+session.  @value{GDBN} provides the following commands manage filter
+sets:
+
+@table @code
+@item pdbx fset new @var{name}
+Create a new filter set with the given @var{name}.  The @var{name} must
+start with a letter.  If a filter set with that @var{name} already
+exists, it results in an error and no filter set is created.  The
+current filter set is not changed in that case.
+
+The filter set is initially empty and of type suppress.  The new filter
+set will automatically be selected.  Use filter commands or @code{pdbx
+fset import} to populate the filter set.
+
+@item pdbx fset delete @var{name}
+Delete a filter set with the given @var{name}.  If no filter set with
+that @var{name} exists, it results in an error.  The current filter set
+can not be deleted.
+
+@item pdbx fset select @var{name}
+Select the filter set with the given @var{name}.  If no filter set with
+that @var{name} exists, it results in an error.  The current filter
+set is not changed in that case.
+
+@item pdbx fset list
+List all filter sets.  For each filter set, the type, name, and the
+number of filters it contains is printed.
+@end table
+
+When new filters are created, they are automatically added to the
+current filter set.  In addition to this, @value{GDBN} provides the
+following commands to deal with filters within filter sets.
+
+Each of these commands accepts an optional filter set name and an
+optional range argument.  If both arguments are present, the name
+precedes the range and they are separated by a colon @code{:}.  The
+range argument may be a single integer or two integers separated by a
+dash @code{-}.  Examples are:
+
+@table @code
+@item pdbx fset @var{cmd}
+Target all filters in the current filter set.
+
+@item pdbx fset @var{cmd} @var{num}
+Target filter @var{num} in the current filter set.
+
+@item pdbx fset @var{cmd} @var{start} - @var{end}
+Target filters @var{start} (inclusive) through @var{end} (inclusive)
+in the current filter set.
+
+@item pdbx fset @var{cmd} @var{name}
+Target all filters in filter set @var{name}.
+
+@item pdbx fset @var{cmd} @var{name}: @var{num}
+Target filter @var{num} in filter set @var{name}.
+
+@item pdbx fset @var{cmd} @var{name}: @var{start} - @var{end}
+Target filters @var{start} (inclusive) through @var{end} (inclusive)
+in filter set @var{name}.
+@end table
+
+If a @var{name} argument is given but no filter set with that name
+exists, the command terminates with an error message.
+
+If a range argument is given and some of the filter numbers are out of
+bounds, the command gives an error message and operates on the filter
+numbers that are inside the bounds of the filter set.
+
+The following commands are provided to manage filters within filter
+sets:
+
+@table @code
+@item pdbx fset show
+List filters in a filter set.  By default, filters are printed as
+specified by the @code{pdbx filter} command.  With the @code{/r}
+modifier, the addresses that are used for that filter are printed,
+instead.
+
+@item pdbx fset remove
+Remove filters from a filter set.
+
+@item pdbx fset enable
+Enable filters in a filter set.  Filters that have already been
+enabled are not modified.  Filters that have been disabled are enabled
+and evaluated in the current context.  If evaluation fails, the
+respective filter is marked pending and will not contribute to the
+data race detector configuration.
+
+@item pdbx fset disable
+Disable filters in a filter set.  Disabled filters do not contribute
+to the data race detector configuration.
+
+@item pdbx fset evaluate
+Evaluate filters in a filter set.  Filters are evaluated in the
+current context.  If evaluation fails, the respective filter is marked
+pending and does not contribute to the data race detector configuration.
+
+@item pdbx fset import
+Import filters into the current filter set.  Imported filters are
+added to the end of the current filter set.  They keep their state and
+are not re-evaluated.  The same filter may be imported multiple
+times.  Filters can not be imported from the current filter set.
+@end table
+
+@subsection Race Detection History
+
+@value{GDBN} keeps a history of data races reported by the PDBX data
+race detector.  This list may be used for setting filters on a
+subsequent run.  Except for @code{pdbx history}, all history commands
+accept an optional range argument.  The range argument may be a single
+integer or two integers separated by a dash @code{-}.  The range
+argument specifies the reports that the command operates upon.  The
+@code{pdbx history} command does not take any arguments.  The
+following commands operate on the data race history:
+
+@table @code
+@item pdbx history
+Prints a brief summary of the data race history showing the number of
+reported data races, the number of threads involved, and the number of
+read, write, and update accesses in that order.
+
+@item pdbx history remove
+Removes data race reports from the history.
+
+@item pdbx history list
+Prints a brief summary of data race reports in the history in the form
+of a list.  The list includes the number of different threads involved
+in the data race, as well as the number of read, write and update
+accesses, one report per line.
+
+@item pdbx history show
+Print a detailed description of data race reports in the history.  The
+detailed description prints each memory access involved in the data
+race, one access per line.
+
+By default, @value{GDBN} tries to map data addresses back to variables
+and code addresses back to source lines.  With the @code{/r} modifier,
+raw addresses are printed, instead.
+@end table
+
+@node Decoding Abort Reasons
+@section Decoding Abort Reasons of a Speculative Execution
+
+
+Intel@registeredsymbol{} Transactional Synchronization Extensions (Intel@registeredsymbol{} TSX) feature for @value{GDBN}
+adds to the concept of speculative execution. When a speculative execution is
+aborted, the abort reason is encoded in the x86 @code{EAX} general register,
+which can also be stored in some user-created variable. However, this
+abort reason is not in a human readable format. The Intel TSX feature
+extension consists of a command that helps you to decode the abort
+reason into human readable language.
+
+Consider the following speculative execution example:
+@smallexample
+8  abort_var = _xbegin ();
+9  if (abort_var == -1)@{
+10   foo ();
+11   _xend();
+12 @} else @{
+13   foo (); /* BP location*/
+14 @}
+@end smallexample
+To verify the abort reason for the above code, you can add a break
+point on the abort handler, as exemplified on line 13, and issue the
+command, @code{info tsx-abort-reason} @var{EXPR}, where @var{EXPR} is any
+expression that you can evaluate.
+
+If you use a variable for @var{EXPR}, then the full command to be
+issued is @code{info tsx-abort-reason} @var{abort_var}. Of course, at
+the first instruction of the abort handler you could also issue the
+following command, @code{info tsx-abort-reason} @var{$eax}.
+
+@subsection Command Description
+@table @code
+@item info tsx-abort-reason @var{EXPR}
+For an aborted speculative execution, this command evaluates/decodes
+the abort reason into human readable format.
+@table @code
+@item EXPR
+is any expression, including variables or a general purpose register
+such as @samp{$EAX}.
+@end table
+@end table 
+
+@node Pointer Checker
+@section Detecting Boundary Violations in Code
+@cindex software bounds, detecting
+@cindex detecting boundary violations
+
+This feature is only available for debugging applications on IA-32/Intel@registeredsymbol{} 64 Architecture.
+The software bounds feature displays boundary
+violations in your code and takes you to the location in your code
+where such a violation has occurred. In order to obtain this display
+you must previously enable the pointer checker by using the
+Intel@registeredsymbol{} C++ Compiler option @option{-check-pointers} while compiling your code.
+
+Using the @code{info sbounds} command, you can investigate bounds of a
+particular pointer in a specified execution time, and when a boundary
+violation occurs, a summary of the violation is displayed in the
+support terminal. The cursor moves back to the code where the
+violation occurred. The summary of the violation displays as follows:
+@smallexample
+Upper/Lower bound violation detected.
+With bounds @{0x0001020, 0x0001060@} accessing at: 0x0001070
+@end smallexample
+
+You can also use the @code{info sbounds} @var{var} command to determine if a
+particular region of the code is within bounds and if exception
+handling is in place for that region.
+
+@subsection Command Description
+
+@table @code
+@anchor{info sbounds var}
+@kindex info sbounds
+@item info sbounds @var{var}
+Displays the boundaries of the region of code indicated by @var{var}.
+         @table @code
+         @item @var{var}
+         A pointer or an array.
+         @end table
+@end table
+
+This command generates output similar to what is shown
+below:
+@smallexample
+@{lbound = 0x0001020, ubound = 0x0001060@}: ptr. value = 0x0001050, size = 40
+@end smallexample
+
+
+@node Serializing Parallel Execution
+@section Serializing the Execution of Parallel Applications
+@cindex parallel applications, serializing execution
+@cindex Intel(R) Cilk(TM) Plus
+
+With Intel@registeredsymbol{} Cilk(TM) Plus, it is possible to serialize the execution of parallel applications. You can change the serialization state during run-time.
+
+@subsection Command Description
+@table @code
+@item set cilk-serialization on
+This command enables the serialization.
+@item set cilk-serialization off
+This command disables the serialization.
+@item show cilk-serialization
+This command displays the status of the serialization. Possible states are:
+@table @code
+@item On
+Serialization is turned on.
+@item Off
+Serialization is turned off.
+@end table
+@end table
+
+@node OpenMP* Debugging
+@section Debugging Open Multi-Processing (OpenMP*)
+
+@subsection Displaying OpenMP* Teams
+An OpenMP* team is a set of one or more threads that executes a parallel region.
+
+@table @code
+@item info openmp-team @var{team_id}
+This command displays the following information for any existing OpenMP* teams, which you specify with @var{team_id}, in an OpenMP* application:
+@itemize
+@item the parent team
+@item the number of threads in a team
+@item the team's location
+@end itemize
+@end table
+
+
+If you do not specify @var{team_id}, this command shows all existing teams in the OpenMP* application.
+
+@subsection Displaying OpenMP* Barriers
+An OpenMP* barrier defines a point in an application that every thread of a particular set has to reach before thread execution continues.
+@table @code
+@item info openmp-barrier @var{barrier_id}
+This command displays the following information for any existing OpenMP* barriers, which you specify with @var{barrier_id}, in an OpenMP* application:
+@itemize
+@item state
+@item the threads that reached the barrier
+@item the barrier's location
+@item a list of tasks the barrier is waiting for
+@item the source code that created the current barrier
+@end itemize
+@end table
+If you do not specify @var{barrier_id}, this command shows all existing barriers in the OpenMP* application.
+
+
+@subsection Displaying OpenMP* Locks
+The OpenMP* runtime library contains various lock routines that you can use for synchronization.
+@table @code
+@item info openmp-locks @var{lock_id}
+This command displays the following information for any existing OpenMP* barriers, which you specify with @var{lock_id}, in an OpenMP* application:
+@itemize
+@item state
+@item type
+@item the tasks or threads holding references to the lock
+@item the tasks or threads that are waiting for the lock
+@item the lock's location
+@item the source code that created the current lock
+@end itemize
+@end table
+If you do not specify @var{lock_id}, this command shows all existing locks in the OpenMP* application.
+
+
+@subsection Displaying OpenMP* Tasks
+@table @code
+@item info openmp-tasks @var{task_id}
+This command displays the following information for any existing OpenMP* tasks, which you specify with @var{task_id}, in an OpenMP* application:
+@itemize
+@item state
+@item type
+@item the thread executing the task
+@item the parent task
+@item the spawned tasks
+@item a task's location
+@end itemize
+@end table
+If you do not specify @var{task_id}, this command shows all existing tasks in the OpenMP* application.
+
+@subsection Displaying OpenMP* Taskwaits
+An OpenMP* taskwait is a task-specific barrier. It defines a point in an application that all tasks generated by the current task or thread have to reach before thread execution continues.
+@table @code
+@item info openmp-taskwait @var{taskwait_id}
+This command displays the following information for any existing OpenMP* taskait, which you specify with @var{taskwait_id}, in an OpenMP* application:
+@itemize
+@item the binding task
+@item state
+@item the thread that reaches the taskwait
+@item the tasks the taskwait is waiting for
+@item the spawned tasks
+@item a taskwait's location
+@end itemize
+@end table
+If you do not specify @var{taskwait_id}, this command shows all existing taskwaits in the OpenMP* application.
+
+@subsection Displaying OpenMP* Task dependencies
+Some OpebnMP* tasks are dependent on other tasks and can only complete when those are executed. To display these dependencies, use the following command:
+@code{info openmp-dependency}
+For example:
+@smallexample
+int
+main (int argc, char **argv)
+@{
+  int x = 1;
+
+  omp_set_num_threads (3);
+
+  #pragma omp parallel
+  #pragma omp single
+    @{
+          #pragma omp task shared (x) depend (in:x) 
+          x = 1; /*  Task 1.  */
+          #pragma omp task shared (x) depend (out:x)
+          x = 2; /*  Task 2.  */
+          #pragma omp task shared (x) depend (out:x)
+          x = 3; /*  Task 3.  */
+   @}
+  return 0; 
+@}
+@end smallexample
+This shows a very simple case where task 3 depends on task 2, and task 2 depends on task 1.
+
+Using the command @code{info omp-dependency} while stopped at the line of \93Task 1\94 will display:
+@smallexample
+Task id.             Successor tasks (ordered)
+19                     [0]        0x400ff5 L_main_33__par_region0_2_4 c_taskdep.c:36
+                       [1]        0x40105d L_main_33__par_region0_2_4 c_taskdep.c:38
+                       [1]        0x4010c5 L_main_33__par_region0_2_4 c_taskdep.c:40
+@end smallexample
+
+
+
 @node Macros
 @chapter C Preprocessor Macros
 
@@ -22423,7 +23028,7 @@ from functions.
 @subsubsection Intel @dfn{Memory Protection Extensions} (MPX).
 @cindex Intel Memory Protection Extensions (MPX).
 
-Memory Protection Extension (MPX) adds the bound registers @samp{BND0}
+Intel(R) Memory Protection Extensions (Intel(R) MPX) add the bound registers @samp{BND0}
 @footnote{The register named with capital letters represent the architecture
 registers.} through @samp{BND3}.  Bound registers store a pair of 64-bit values
 which are the lower bound and upper bound.  Bounds are effective addresses or
@@ -22470,6 +23075,23 @@ Set the bounds of a pointer in the bound table.
 This command takes three parameters: @var{pointer} is the pointers
 whose bounds are to be changed, @var{lbound} and @var{ubound} are new values
 for lower and upper bounds respectively.
+@end table
+
+While calling functions of an MPX enabled program boundary registers have
+to be initialized before performing the call. Intended to avoid unexpected
+side effects, as receiving a bound violation signal while performing
+the operation.  Nevertheless is possible to change the boundary values if
+desired in placing a breakpoint at the end of the prologue and setting
+bound registers as wished.
+After the call is performed bound register might be keept or not for
+further investigations.  The behaviour of initializing bounds on returning
+from a program function calls can be controlled and vizualized via the commands
+@table @code
+@kindex set mpx-bnd-init-on-return
+When set to 1 bound registers will be initialized when returning from a
+calling a program function
+@kindex show mpx-bnd-init-on-return
+Show the state of mpx-bnd-init-on-return.
 @end table
 
 @node Alpha
@@ -41062,6 +41684,10 @@ describe the additional @sc{zmm} registers:
 @item
 @samp{zmm16h} through @samp{zmm31h}, only valid for amd64.
 @end itemize
+
+The @samp{org.gnu.gdb.i386.pkeys} feature is optional.  It should
+describe a single register, @samp{pkru}.  It is a 32bit register
+only valid for amd64.
 
 @node MicroBlaze Features
 @subsection MicroBlaze Features

@@ -1,4 +1,7 @@
 dnl Autoconf configure script for GDB server.
+dnl Modified by Arm.
+
+dnl Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 dnl Copyright (C) 2000-2017 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
@@ -375,6 +378,15 @@ if test "$srv_linux_thread_db" = "yes"; then
   fi
 fi
 
+if test "$srv_myo_dbl" = "yes"; then
+  if test "$ac_cv_lib_dl_dlopen" = "yes"; then
+    srv_libs="-ldl"
+  fi
+  AC_DEFINE(USE_MYO_DBL, 1,
+           [Define to enable myo debugging support])
+  srv_myo_dbl_depfiles="myo.o common-myo.o"
+fi
+
 AC_ARG_WITH(libthread-db,
 AS_HELP_STRING([--with-libthread-db=PATH], [use given libthread_db directly]),
 [srv_libthread_db_path="${withval}"
@@ -396,7 +408,7 @@ if test "$srv_xmlfiles" != ""; then
   done
 fi
 
-GDBSERVER_DEPFILES="$srv_regobj $srv_tgtobj $srv_hostio_err_objs $srv_thread_depfiles $srv_host_obs"
+GDBSERVER_DEPFILES="$srv_regobj $srv_tgtobj $srv_hostio_err_objs $srv_thread_depfiles $srv_host_obs $srv_myo_dbl_depfiles"
 GDBSERVER_LIBS="$srv_libs"
 
 dnl Check whether the target supports __sync_*_compare_and_swap.
@@ -478,6 +490,7 @@ AC_SUBST(srv_xmlbuiltin)
 AC_SUBST(srv_xmlfiles)
 AC_SUBST(IPA_DEPFILES)
 AC_SUBST(extra_libraries)
+AC_SUBST(USE_MYO)
 
 GNULIB=build-gnulib-gdbserver/import
 

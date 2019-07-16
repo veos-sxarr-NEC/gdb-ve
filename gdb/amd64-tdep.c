@@ -1,5 +1,8 @@
 /* Target-dependent code for AMD64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    Contributed by Jiri Smid, SuSE Labs.
@@ -40,6 +43,8 @@
 #include "amd64-tdep.h"
 #include "i387-tdep.h"
 #include "x86-xstate.h"
+#include "ui-file.h"
+#include "disasm.h"
 
 #include "features/i386/amd64.c"
 #include "features/i386/amd64-avx.c"
@@ -155,6 +160,10 @@ static const char *amd64_xmm_avx512_names[] = {
     "xmm28",  "xmm29",  "xmm30",  "xmm31"
 };
 
+static const char *amd64_pkeys_names[] = {
+    "pkru"
+};
+
 /* DWARF Register Number Mapping as defined in the System V psABI,
    section 3.6.  */
 
@@ -234,7 +243,17 @@ static int amd64_dwarf_regmap[] =
   /* Floating Point Control Registers.  */
   AMD64_MXCSR_REGNUM,
   AMD64_FCTRL_REGNUM,
-  AMD64_FSTAT_REGNUM
+  AMD64_FSTAT_REGNUM,
+  -1, -1, -1, -1,				/* 67 ... 70.  */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,	/* 70 ... 80.  */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,	/* 80 ... 90.  */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,	/* 90 ... 100.  */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,	/* 100 ... 110.  */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,	/* 110 ... 120.  */
+  -1, -1, -1, -1, -1,				/*120  ... 125.  */
+
+  AMD64_BND0R_REGNUM, AMD64_BND0R_REGNUM + 1,
+  AMD64_BND0R_REGNUM + 2, AMD64_BND0R_REGNUM + 3
 };
 
 static const int amd64_dwarf_regmap_len =
@@ -491,6 +510,7 @@ amd64_ax_pseudo_register_collect (struct gdbarch *gdbarch,
 
 enum amd64_reg_class
 {
+  AMD64_POINTER,
   AMD64_INTEGER,
   AMD64_SSE,
   AMD64_SSEUP,
@@ -522,18 +542,22 @@ amd64_merge_classes (enum amd64_reg_class class1, enum amd64_reg_class class2)
   if (class1 == AMD64_MEMORY || class2 == AMD64_MEMORY)
     return AMD64_MEMORY;
 
-  /* Rule (d): If one of the classes is INTEGER, the result is INTEGER.  */
+  /* Rule (d): If one of the classes is POINTER, the result is POINTER.  */
+  if (class1 == AMD64_POINTER || class2 == AMD64_POINTER)
+    return AMD64_POINTER;
+
+  /* Rule (e): If one of the classes is INTEGER, the result is INTEGER.  */
   if (class1 == AMD64_INTEGER || class2 == AMD64_INTEGER)
     return AMD64_INTEGER;
 
-  /* Rule (e): If one of the classes is X87, X87UP, COMPLEX_X87 class,
+  /* Rule (f): If one of the classes is X87, X87UP, COMPLEX_X87 class,
      MEMORY is used as class.  */
   if (class1 == AMD64_X87 || class1 == AMD64_X87UP
       || class1 == AMD64_COMPLEX_X87 || class2 == AMD64_X87
       || class2 == AMD64_X87UP || class2 == AMD64_COMPLEX_X87)
     return AMD64_MEMORY;
 
-  /* Rule (f): Otherwise class SSE is used.  */
+  /* Rule (g): Otherwise class SSE is used.  */
   return AMD64_SSE;
 }
 
@@ -666,14 +690,17 @@ amd64_classify (struct type *type, enum amd64_reg_class theclass[2])
 
   theclass[0] = theclass[1] = AMD64_NO_CLASS;
 
+  /* Arguments of types (pointer and reference) are of the class pointer.  */
+  if (code == TYPE_CODE_PTR || code == TYPE_CODE_REF)
+    theclass[0] = AMD64_POINTER;
+
   /* Arguments of types (signed and unsigned) _Bool, char, short, int,
      long, long long, and pointers are in the INTEGER class.  Similarly,
      range types, used by languages such as Ada, are also in the INTEGER
      class.  */
-  if ((code == TYPE_CODE_INT || code == TYPE_CODE_ENUM
+  else if ((code == TYPE_CODE_INT || code == TYPE_CODE_ENUM
        || code == TYPE_CODE_BOOL || code == TYPE_CODE_RANGE
-       || code == TYPE_CODE_CHAR
-       || code == TYPE_CODE_PTR || code == TYPE_CODE_REF)
+       || code == TYPE_CODE_CHAR)
       && (len == 1 || len == 2 || len == 4 || len == 8))
     theclass[0] = AMD64_INTEGER;
 
@@ -723,15 +750,20 @@ amd64_classify (struct type *type, enum amd64_reg_class theclass[2])
     amd64_classify_aggregate (type, theclass);
 }
 
+static int mpx_bnd_init_on_return = 1;
+
 static enum return_value_convention
 amd64_return_value (struct gdbarch *gdbarch, struct value *function,
 		    struct type *type, struct regcache *regcache,
 		    gdb_byte *readbuf, const gdb_byte *writebuf)
 {
   enum amd64_reg_class theclass[2];
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
   int len = TYPE_LENGTH (type);
   static int integer_regnum[] = { AMD64_RAX_REGNUM, AMD64_RDX_REGNUM };
   static int sse_regnum[] = { AMD64_XMM0_REGNUM, AMD64_XMM1_REGNUM };
+  static int bnd_regnum[] = { AMD64_BND0R_REGNUM, AMD64_BND0R_REGNUM,
+      AMD64_BND2R_REGNUM, AMD64_BND3R_REGNUM };
   int integer_reg = 0;
   int sse_reg = 0;
   int i;
@@ -760,6 +792,20 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
 
 	  regcache_raw_read_unsigned (regcache, AMD64_RAX_REGNUM, &addr);
 	  read_memory (addr, readbuf, TYPE_LENGTH (type));
+
+	  /*  If the class is memory, Boundary has to be stored in the bnd0 in
+	      the case the application is MPX enabled.
+	      In order to be return a boundary value mpx_bnd_init_on_return
+	      has to be 0.  Otherwise the actual value present in the register
+	      will be returned.  */
+
+	  if (writebuf && mpx_bnd_init_on_return && AMD64_BND0R_REGNUM > 0)
+	    {
+	      gdb_byte bnd_buf[16];
+
+	      memset (bnd_buf, 0, 16);
+	      regcache_raw_write (regcache, AMD64_BND0R_REGNUM, bnd_buf);
+	    }
 	}
 
       return RETURN_VALUE_ABI_RETURNS_ADDRESS;
@@ -802,6 +848,11 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
 	case AMD64_INTEGER:
 	  /* 3. If the class is INTEGER, the next available register
 	     of the sequence %rax, %rdx is used.  */
+	  regnum = integer_regnum[integer_reg++];
+	  break;
+
+	case AMD64_POINTER:
+	  /* 3. If the class is POINTER, same rules of integer applies.  */
 	  regnum = integer_regnum[integer_reg++];
 	  break;
 
@@ -851,6 +902,17 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
       if (writebuf)
 	regcache_raw_write_part (regcache, regnum, offset, min (len, 8),
 				 writebuf + i * 8);
+    }
+
+  if (I387_BND0R_REGNUM (tdep) > 0)
+    {
+      gdb_byte bnd_buf[16];
+      int i, init_bnd;
+
+      memset (bnd_buf, 0, 16);
+      if (writebuf && mpx_bnd_init_on_return)
+	for (i = 0; i < I387_NUM_BND_REGS; i++)
+	  regcache_raw_write (regcache, AMD64_BND0R_REGNUM + i, bnd_buf);
     }
 
   return RETURN_VALUE_REGISTER_CONVENTION;
@@ -906,7 +968,7 @@ amd64_push_arguments (struct regcache *regcache, int nargs,
          this argument.  */
       for (j = 0; j < 2; j++)
 	{
-	  if (theclass[j] == AMD64_INTEGER)
+	  if (theclass[j] == AMD64_INTEGER || theclass[j] == AMD64_POINTER)
 	    needed_integer_regs++;
 	  else if (theclass[j] == AMD64_SSE)
 	    needed_sse_regs++;
@@ -937,6 +999,7 @@ amd64_push_arguments (struct regcache *regcache, int nargs,
 
 	      switch (theclass[j])
 		{
+		case AMD64_POINTER:
 		case AMD64_INTEGER:
 		  regnum = integer_regnum[integer_reg++];
 		  break;
@@ -996,7 +1059,22 @@ amd64_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		       int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
   gdb_byte buf[8];
+
+  /* When MPX is enabled all bnd registers have to be Initialized before the
+     call.  This avoids undesired bound violations while executing the call.
+     At this point in time we don need to worry about the   */
+
+  if (I387_BND0R_REGNUM (tdep) > 0)
+    {
+      gdb_byte bnd_buf[16];
+      int i;
+
+      memset (bnd_buf, 0, 16);
+      for (i = 0; i < I387_NUM_BND_REGS; i++)
+	regcache_raw_write (regcache, AMD64_BND0R_REGNUM + i, bnd_buf);
+    }
 
   /* Pass arguments.  */
   sp = amd64_push_arguments (regcache, nargs, args, sp, struct_return);
@@ -1032,8 +1110,9 @@ struct amd64_insn
 {
   /* The number of opcode bytes.  */
   int opcode_len;
-  /* The offset of the rex prefix or -1 if not present.  */
-  int rex_offset;
+  /* The offset of the REX/VEX instruction encoding prefix or -1 if
+     not present.  */
+  int enc_prefix_offset;
   /* The offset to the first opcode byte.  */
   int opcode_offset;
   /* The offset to the modrm byte or -1 if not present.  */
@@ -1117,6 +1196,22 @@ static int
 rex_prefix_p (gdb_byte pfx)
 {
   return REX_PREFIX_P (pfx);
+}
+
+/* True if PFX is the start of the 2-byte VEX prefix.  */
+
+static bool
+vex2_prefix_p (gdb_byte pfx)
+{
+  return pfx == 0xc5;
+}
+
+/* True if PFX is the start of the 3-byte VEX prefix.  */
+
+static bool
+vex3_prefix_p (gdb_byte pfx)
+{
+  return pfx == 0xc4;
 }
 
 /* Skip the legacy instruction prefixes in INSN.
@@ -1237,18 +1332,29 @@ amd64_get_insn_details (gdb_byte *insn, struct amd64_insn *details)
   details->raw_insn = insn;
 
   details->opcode_len = -1;
-  details->rex_offset = -1;
+  details->enc_prefix_offset = -1;
   details->opcode_offset = -1;
   details->modrm_offset = -1;
 
   /* Skip legacy instruction prefixes.  */
   insn = amd64_skip_prefixes (insn);
 
-  /* Skip REX instruction prefix.  */
+  /* Skip REX/VEX instruction encoding prefixes.  */
   if (rex_prefix_p (*insn))
     {
-      details->rex_offset = insn - start;
+      details->enc_prefix_offset = insn - start;
       ++insn;
+    }
+  else if (vex2_prefix_p (*insn))
+    {
+      /* Don't record the offset in this case because this prefix has
+	 no REX.B equivalent.  */
+      insn += 2;
+    }
+  else if (vex3_prefix_p (*insn))
+    {
+      details->enc_prefix_offset = insn - start;
+      insn += 3;
     }
 
   details->opcode_offset = insn - start;
@@ -1324,10 +1430,22 @@ fixup_riprel (struct gdbarch *gdbarch, struct displaced_step_closure *dsc,
   arch_tmp_regno = amd64_get_unused_input_int_reg (insn_details);
   tmp_regno = amd64_arch_reg_to_regnum (arch_tmp_regno);
 
-  /* REX.B should be unset as we were using rip-relative addressing,
-     but ensure it's unset anyway, tmp_regno is not r8-r15.  */
-  if (insn_details->rex_offset != -1)
-    dsc->insn_buf[insn_details->rex_offset] &= ~REX_B;
+  /* Position of the not-B bit in the 3-byte VEX prefix (in byte 1).  */
+  static gdb_byte VEX3_NOT_B = 0x20;
+
+  /* REX.B should be unset (VEX.!B set) as we were using rip-relative
+     addressing, but ensure it's unset (set for VEX) anyway, tmp_regno
+     is not r8-r15.  */
+  if (insn_details->enc_prefix_offset != -1)
+    {
+      gdb_byte *pfx = &dsc->insn_buf[insn_details->enc_prefix_offset];
+      if (rex_prefix_p (pfx[0]))
+	pfx[0] &= ~REX_B;
+      else if (vex3_prefix_p (pfx[0]))
+	pfx[1] |= VEX3_NOT_B;
+      else
+	gdb_assert_not_reached ("unhandled prefix");
+    }
 
   regcache_cooked_read_unsigned (regs, tmp_regno, &orig_value);
   dsc->tmp_regno = tmp_regno;
@@ -2252,28 +2370,140 @@ amd64_x32_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
   return min (pc + offset + 2, current_pc);
 }
 
-/* Do a limited analysis of the prologue at PC and update CACHE
-   accordingly.  Bail out early if CURRENT_PC is reached.  Return the
-   address where the analysis stopped.
+/* Return non-zero if the instruction at PC saves a register at
+   a location relative to the RSP register.  If it is, then set:
+     - INSN_LEN: The length of the instruction (in bytes);
+     - REGNUM: The register being saved;
+     - OFFSET: The offset from the stack pointer.  */
 
-   We will handle only functions beginning with:
+static int
+amd64_register_save (struct gdbarch *gdbarch, CORE_ADDR pc,
+		     int *insn_len, int *regnum, int *offset)
+{
+  gdb_byte buf[5];
+  int is_save = 0;
+  enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
-      pushq %rbp        0x55
-      movq %rsp, %rbp   0x48 0x89 0xe5 (or 0x48 0x8b 0xec)
+  read_memory (pc, buf, sizeof (buf));
+  if (buf[0] == 0x48
+      && buf[1] == 0x89
+      && (buf[2] & 0xc0) == 0x40 /* ModRM mod == 01 in binary */
+      && (buf[2] & 0x07) == 0x04 /* Base register is %rsp */
+      && buf[3] == 0x24)
+    {
+      int mov_regnum = (buf[2] & 0x38) >> 3;
 
-   or (for the X32 ABI):
+      *insn_len = 5;
+      switch (mov_regnum)
+	{
+	  case 0: *regnum = AMD64_RAX_REGNUM; break;
+	  case 1: *regnum = AMD64_RCX_REGNUM; break;
+	  case 2: *regnum = AMD64_RDX_REGNUM; break;
+	  case 3: *regnum = AMD64_RBX_REGNUM; break;
+	  case 4: *regnum = AMD64_RSP_REGNUM; break;
+	  case 5: *regnum = AMD64_RBP_REGNUM; break;
+	  case 6: *regnum = AMD64_RSI_REGNUM; break;
+	  case 7: *regnum = AMD64_RDI_REGNUM; break;
+	}
+      *offset = extract_signed_integer (buf + 4, 1, byte_order);
+      is_save = 1;
+    }
+  else if (buf[0] == 0x4c
+	   && buf[1] == 0x89
+	   && (buf[2] & 0xc0) == 0x40 /* ModRM mod == 01 in binary */
+	   && (buf[2] & 0x07) == 0x04 /* Base register is %rsp */
+	   && buf[3] == 0x24)
+    {
+      int mov_regnum = (buf[2] & 0x38) >> 3;
 
-      pushq %rbp        0x55
-      movl %esp, %ebp   0x89 0xe5 (or 0x8b 0xec)
+      *insn_len = 5;
+      *regnum = AMD64_R8_REGNUM + mov_regnum;
+      *offset = extract_signed_integer (buf + 4, 1, byte_order);
+      is_save = 1;
+    }
 
-   Any function that doesn't start with one of these sequences will be
-   assumed to have no prologue and thus no valid frame pointer in
-   %rbp.  */
+  return is_save;
+}
+
+/* Return a string representation of the instruction at PC.
+   Set LEN to the number of bytes used by this instruction.
+
+   Disassembling code on x86_64 is so complicated compared to most
+   archictectures, that it can be easier to just parse a string
+   rather than disassembling by hand.  It's definitely overkill,
+   but definitly simpler.  */
+
+static char *
+amd64_disass_insn (struct gdbarch *gdbarch, CORE_ADDR pc, int *len)
+{
+  struct ui_file *tmp_stream;
+  struct cleanup *cleanups;
+  char *insn;
+  long dummy;
+
+  tmp_stream = mem_fileopen ();
+  cleanups = make_cleanup_ui_file_delete (tmp_stream);
+  *len = gdb_print_insn (gdbarch, pc, tmp_stream, NULL);
+  insn = ui_file_xstrdup (tmp_stream, &dummy);
+  do_cleanups (cleanups);
+
+  return insn;
+}
+
+/* Some prologues sometimes start with a few instructions that
+   are not part of a typical prologue.  Observed in the Windows
+   kernel32.dll, we had a couple of "mov" instructions before
+   the real prologue stared.  We have also seen GCC emit some
+   "mov %rN,OFFSET(%rsp)" instructions instead of "push" instructions
+   in order to save a register on the stack.  For lack of a better
+   word, let's call this section of the function the "pre-prologue".
+
+   This function analyzes the contents of the function pre-prologue,
+   updates the cache accordingly, and returns the address of the first
+   instruction past this pre-prologue.  */
 
 static CORE_ADDR
-amd64_analyze_prologue (struct gdbarch *gdbarch,
-			CORE_ADDR pc, CORE_ADDR current_pc,
-			struct amd64_frame_cache *cache)
+amd64_analyze_pre_prologue (struct gdbarch *gdbarch,
+			    CORE_ADDR pc, CORE_ADDR limit_pc,
+			    struct amd64_frame_cache *cache)
+{
+  while (pc < limit_pc)
+    {
+      int len = 0;
+      char *insn;
+      int regnum = 0;
+      int offset = 0;
+      int dummy;
+      int skip = 0;
+
+      if (amd64_register_save (gdbarch, pc, &len, &regnum, &offset))
+	{
+	  cache->saved_regs[regnum] = offset + 8;
+	  pc += len;
+	  continue;
+	}
+
+      insn = amd64_disass_insn (gdbarch, pc, &len);
+      if (pc + len < limit_pc && strncmp (insn, "mov", 3) == 0)
+	skip = 1;
+      xfree (insn);
+      if (skip)
+	pc += len;
+      else
+	break;
+    }
+
+ return pc;
+}
+
+/* If the instruction at PC establishes a frame pointer, then update
+   CACHE accordingly and return the address of the instruction
+   immediately following it.  Otherwise just return the same PC.  */
+
+static CORE_ADDR
+amd64_analyze_frame_pointer_setup (struct gdbarch *gdbarch,
+				   CORE_ADDR pc, CORE_ADDR limit_pc,
+				   struct amd64_frame_cache *cache)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   /* There are two variations of movq %rsp, %rbp.  */
@@ -2286,13 +2516,8 @@ amd64_analyze_prologue (struct gdbarch *gdbarch,
   gdb_byte buf[3];
   gdb_byte op;
 
-  if (current_pc <= pc)
-    return current_pc;
-
-  if (gdbarch_ptr_bit (gdbarch) == 32)
-    pc = amd64_x32_analyze_stack_align (pc, current_pc, cache);
-  else
-    pc = amd64_analyze_stack_align (pc, current_pc, cache);
+  if (limit_pc <= pc)
+    return limit_pc;
 
   op = read_code_unsigned_integer (pc, 1, byte_order);
 
@@ -2304,8 +2529,8 @@ amd64_analyze_prologue (struct gdbarch *gdbarch,
       cache->sp_offset += 8;
 
       /* If that's all, return now.  */
-      if (current_pc <= pc + 1)
-        return current_pc;
+      if (limit_pc <= pc + 1)
+        return limit_pc;
 
       read_code (pc + 1, buf, 3);
 
@@ -2332,6 +2557,116 @@ amd64_analyze_prologue (struct gdbarch *gdbarch,
 
       return pc + 1;
     }
+
+  return pc;
+}
+
+/* Analyzes the instructions in the part of the function prologue
+   where registers are being saved on stack.  Update CACHE accordingly.
+   Return the address of the first instruction past the last register
+   save.  */
+
+static CORE_ADDR
+amd64_analyze_register_saves (struct gdbarch *gdbarch,
+			      CORE_ADDR pc, CORE_ADDR limit_pc,
+			      struct amd64_frame_cache *cache)
+{
+  gdb_byte op;
+  enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+
+  while (pc < limit_pc)
+    {
+      int insn_len;
+      int regnum = -1;
+      int offset;
+
+      op = read_memory_unsigned_integer (pc, 1, byte_order);
+      if (op >= 0x50 && op <= 0x57)
+	{
+	  /* This is a "push REG" insn where REG is %rax .. %rdi.  */
+	  regnum = amd64_arch_reg_to_regnum (op - 0x50);
+	  pc += 1;
+	}
+      else if (op == 0x41)
+	{
+	  op = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	  if (op >= 0x50 && op <= 0x57)
+	    {
+	      /* This is a "push REG" insn where REG is %r8 ..	%r15.  */
+	      regnum = amd64_arch_reg_to_regnum (op - 0x50 + AMD64_R8_REGNUM);
+	      pc += 2;
+	    }
+	}
+
+      if (regnum >= 0)
+	{
+	  cache->sp_offset += 8;
+	  cache->saved_regs[regnum] = cache->sp_offset;
+	}
+      else
+	return pc;  /* This instruction is not a register save.  Return.  */
+    }
+
+  return pc;
+}
+
+/* If PC points to an instruction that decrements the rsp register,
+   (thus finishing the frame setup), analyze it, adjust the CACHE
+   accordingly, and return the address of the instruction immediately
+   following it.  */
+
+static CORE_ADDR
+amd64_analyze_stack_pointer_adjustment (struct gdbarch *gdbarch,
+					CORE_ADDR pc, CORE_ADDR limit_pc,
+					struct amd64_frame_cache *cache)
+{
+  gdb_byte buf[3];
+  enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+
+  /* There are several ways to encode the sub instruction.  Either way,
+     it starts with 3 bytes, so read these bytes first.  */
+  if (pc + sizeof (buf) >= limit_pc)
+    return pc;
+  read_memory (pc, buf, sizeof (buf));
+
+  if (pc + 4 < limit_pc && buf[0] == 0x48 && buf[1] == 0x83 && buf[2] == 0xec)
+    {
+      /* 4-byte version of the sub instruction.  The offset is encoded
+	 in the 4th byte.  */
+      cache->sp_offset +=
+	read_memory_unsigned_integer (pc + sizeof (buf), 1, byte_order);
+      pc += sizeof (buf) + 1;
+    }
+  else if (pc + 7 < limit_pc
+	   && buf [0] == 0x48 && buf[1] == 0x81 && buf[2] == 0xec)
+    {
+      /* 7-byte version of the sub instruction.  The offset is encoded
+	 as a word at the end of the instruction.  */
+      cache->sp_offset +=
+	read_memory_unsigned_integer (pc + sizeof (buf), 4, byte_order);
+      pc += sizeof (buf) + 4;
+    }
+
+  return pc;
+}
+
+/* Do an analysis of the prologue at PC and update CACHE
+   accordingly.  Bail out early if CURRENT_PC is reached.  Return the
+   address where the analysis stopped.  */
+
+static CORE_ADDR
+amd64_analyze_prologue (struct gdbarch *gdbarch,
+			CORE_ADDR pc, CORE_ADDR current_pc,
+			struct amd64_frame_cache *cache)
+{
+  pc = amd64_analyze_pre_prologue (gdbarch, pc, current_pc, cache);
+  if (gdbarch_ptr_bit (gdbarch) == 32)
+    pc = amd64_x32_analyze_stack_align (pc, current_pc, cache);
+  else
+    pc = amd64_analyze_stack_align (pc, current_pc, cache);
+  pc = amd64_analyze_frame_pointer_setup (gdbarch, pc, current_pc, cache);
+  pc = amd64_analyze_register_saves (gdbarch, pc, current_pc, cache);
+  pc = amd64_analyze_stack_pointer_adjustment (gdbarch, pc, current_pc, cache);
 
   return pc;
 }
@@ -2991,6 +3326,18 @@ static const int amd64_record_regmap[] =
   AMD64_DS_REGNUM, AMD64_ES_REGNUM, AMD64_FS_REGNUM, AMD64_GS_REGNUM
 };
 
+static void
+show_mpx_init_on_return (struct ui_file *file, int from_tty,
+			  struct cmd_list_element *c, const char *value)
+{
+  if (mpx_bnd_init_on_return > 0)
+    fprintf_filtered (file,
+		    _("BND registers will be initialized on return.\n"));
+  else
+    fprintf_filtered (file,
+		    _("BND registers will not be initialized on return.\n"));
+}
+
 void
 amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
@@ -3041,9 +3388,24 @@ amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   if (tdesc_find_feature (tdesc, "org.gnu.gdb.i386.mpx") != NULL)
     {
+      add_setshow_boolean_cmd ("mpx-bnd-init-on-return", no_class,
+				&mpx_bnd_init_on_return, _("\
+Set the bnd registers to INIT state when returning from a call."), _("\
+Show the state of the mpx-bnd-init-on-return."),
+			    NULL,
+			    NULL,
+			    show_mpx_init_on_return,
+			    &setlist, &showlist);
       tdep->mpx_register_names = amd64_mpx_names;
       tdep->bndcfgu_regnum = AMD64_BNDCFGU_REGNUM;
       tdep->bnd0r_regnum = AMD64_BND0R_REGNUM;
+    }
+
+  if (tdesc_find_feature (tdesc, "org.gnu.gdb.i386.pkeys") != NULL)
+    {
+      tdep->pkeys_register_names = amd64_pkeys_names;
+      tdep->pkru_regnum = AMD64_PKRU_REGNUM;
+      tdep->num_pkeys_regs = 1;
     }
 
   tdep->num_byte_regs = 20;

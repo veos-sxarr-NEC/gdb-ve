@@ -1,4 +1,7 @@
 /* Low level interface to ptrace, for the remote server for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1995-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -23,6 +26,10 @@
 #include "tdesc.h"
 #include "rsp-low.h"
 #include "signals-state-save-restore.h"
+#ifdef USE_MYO_DBL
+#include "myo.h"
+#endif
+
 #include "nat/linux-nat.h"
 #include "nat/linux-waitpid.h"
 #include "gdb_wait.h"
@@ -100,7 +107,11 @@
 # include "btrace-common.h"
 #endif
 
-#ifndef HAVE_ELF32_AUXV_T
+/* elf.h is not included because ELFMAG0 is defined linux/elf.h but not checked
+   in the autoconf stage. So config.h suggests the system contains
+   HAVE_ELF32_AUXV_T and HAVE_ELF64_AUXV_T but we need the workaround for
+   Android. */
+#if defined(__ANDROID__) || !defined(HAVE_ELF32_AUXV_T)
 /* Copied from glibc's elf.h.  */
 typedef struct
 {
@@ -115,7 +126,7 @@ typedef struct
 } Elf32_auxv_t;
 #endif
 
-#ifndef HAVE_ELF64_AUXV_T
+#if defined(__ANDROID__) || !defined(HAVE_ELF64_AUXV_T)
 /* Copied from glibc's elf.h.  */
 typedef struct
 {
@@ -1658,6 +1669,11 @@ linux_mourn (struct process_info *process)
 
 #ifdef USE_THREAD_DB
   thread_db_mourn (process);
+#endif
+
+#ifdef USE_MYO_DBL
+  if (process->priv->myo_dbl)
+    myo_dbl_disable (process);
 #endif
 
   find_inferior (&all_threads, delete_lwp_callback, process);
@@ -4836,6 +4852,7 @@ static int
 start_step_over (struct lwp_info *lwp)
 {
   struct thread_info *thread = get_lwp_thread (lwp);
+  int lwpid = lwpid_of (thread);
   struct thread_info *saved_thread;
   CORE_ADDR pc;
   int step;
@@ -4845,6 +4862,13 @@ start_step_over (struct lwp_info *lwp)
 		  lwpid_of (thread));
 
   stop_all_lwps (1, lwp);
+
+  if (lwp_is_marked_dead (lwp))
+    {
+      if (debug_threads)
+	debug_printf ("LWP %d is already dead\n", lwpid);
+      return 0;
+    }
 
   if (lwp->suspended != 0)
     {
@@ -5772,7 +5796,7 @@ linux_store_registers (struct regcache *regcache, int regno)
 /* Copy LEN bytes from inferior's memory starting at MEMADDR
    to debugger memory starting at MYADDR.  */
 
-static int
+int
 linux_read_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   int pid = lwpid_of (current_thread);
@@ -5861,7 +5885,7 @@ linux_read_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
    memory at MEMADDR.  On failure (cannot write to the inferior)
    returns the value of errno.  Always succeeds if LEN is zero.  */
 
-static int
+int
 linux_write_memory (CORE_ADDR memaddr, const unsigned char *myaddr, int len)
 {
   register int i;
@@ -5948,6 +5972,38 @@ linux_write_memory (CORE_ADDR memaddr, const unsigned char *myaddr, int len)
   return 0;
 }
 
+#ifdef USE_MYO_DBL
+int linux_myo_read_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
+{
+  struct process_info *proc = current_process ();
+
+  if (proc->priv->myo_dbl != NULL)
+    {
+      int accessible = myo_dbl_mem_readable (proc->priv->myo_dbl,
+					     memaddr, len);
+      if (!accessible)
+	return EIO;
+    }
+
+  return linux_read_memory (memaddr, myaddr, len);;
+}
+
+int linux_myo_write_memory (CORE_ADDR memaddr, const unsigned char *myaddr, int len)
+{
+  struct process_info *proc = current_process ();
+
+  if (proc->priv->myo_dbl != NULL)
+    {
+      int accessible = myo_dbl_mem_writeable (proc->priv->myo_dbl,
+					      memaddr, len);
+      if (!accessible)
+	return EIO;
+    }
+
+  return linux_write_memory (memaddr, myaddr, len);;
+}
+#endif /* USE_MYO_DBL */
+
 static void
 linux_look_up_symbols (void)
 {
@@ -5957,7 +6013,14 @@ linux_look_up_symbols (void)
   if (proc->priv->thread_db != NULL)
     return;
 
+  /* If the kernel supports tracing clones, then we don't need to
+     use the magic thread event breakpoint to learn about
+     threads.  */
   thread_db_init ();
+#ifdef USE_MYO_DBL
+  if (proc->priv->myo_dbl == NULL)
+      myo_dbl_enable (proc);
+#endif
 #endif
 }
 
@@ -5974,7 +6037,7 @@ linux_request_interrupt (void)
 /* Copy LEN bytes from inferior's auxiliary vector starting at OFFSET
    to debugger memory starting at MYADDR.  */
 
-static int
+int
 linux_read_auxv (CORE_ADDR offset, unsigned char *myaddr, unsigned int len)
 {
   char filename[PATH_MAX];
@@ -6401,6 +6464,70 @@ linux_handle_new_gdb_connection (void)
 
   /* Request that all the lwps reset their ptrace options.  */
   find_inferior (&all_threads, reset_lwp_ptrace_options_callback , &pid);
+}
+
+static void
+linux_exec (char *cmd)
+{
+  const char *path;
+  const char *argv[256];
+  unsigned i = 1;
+  pid_t pid;
+
+  path = strtok (cmd, " ");
+  if (path == NULL)
+    return;
+
+  argv[0] = path;
+
+  while ((argv[i] = strtok (NULL, " ")) != NULL)
+    i++;
+
+  pid = fork ();
+  if (pid == -1)
+    return;
+
+  if (pid != 0)
+    return;
+
+  /* Child code: new session, new process group.  */
+  if (setsid () == -1)
+    {
+      perror_with_name ("setsid");
+      exit (0);
+    }
+
+  if (execvp (path, (char * const *)argv) == -1)
+    {
+      char err_msg[512];
+      snprintf (err_msg, sizeof (err_msg) - 1, "execvp '%s'", path);
+      perror_with_name (err_msg);
+      exit (0);
+    }
+}
+
+static int
+linux_handle_monitor_command (char *mon)
+{
+  const char *cmd = "exec";
+  const size_t cmd_len = strlen (cmd);
+
+#ifdef USE_THREAD_DB
+  if (thread_db_handle_monitor_command (mon))
+    return 1;
+#endif
+
+  if (strncmp (mon, cmd, cmd_len) != 0)
+    return 0;
+
+  if (mon[cmd_len] != ' ')
+    {
+      monitor_output ("Path expected in a 'monitor exec' command\n");
+      return 1;
+    }
+
+  linux_exec (&mon[cmd_len + 1]);
+  return 1;
 }
 
 static int
@@ -7514,8 +7641,13 @@ static struct target_ops linux_target_ops = {
   linux_store_registers,
   linux_prepare_to_access_memory,
   linux_done_accessing_memory,
+#ifdef USE_MYO_DBL
+  linux_myo_read_memory,
+  linux_myo_write_memory,
+#else
   linux_read_memory,
   linux_write_memory,
+#endif
   linux_look_up_symbols,
   linux_request_interrupt,
   linux_read_auxv,
@@ -7553,11 +7685,7 @@ static struct target_ops linux_target_ops = {
   linux_supports_vfork_events,
   linux_supports_exec_events,
   linux_handle_new_gdb_connection,
-#ifdef USE_THREAD_DB
-  thread_db_handle_monitor_command,
-#else
-  NULL,
-#endif
+  linux_handle_monitor_command,
   linux_common_core_of_thread,
   linux_read_loadmap,
   linux_process_qsupported,

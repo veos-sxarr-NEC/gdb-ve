@@ -1,5 +1,8 @@
 /* GNU/Linux/x86-64 specific low level interface, for the remote server
    for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -26,6 +29,10 @@
 #include "x86-low.h"
 #include "x86-xstate.h"
 #include "nat/gdb_ptrace.h"
+
+#ifdef __x86_64__
+#include "nat/amd64-linux-siginfo.h"
+#endif
 
 #ifdef __x86_64__
 #include "nat/amd64-linux-siginfo.h"
@@ -70,8 +77,12 @@ static const char *xmltarget_amd64_linux_no_xml = "@<target>\
 </target>";
 #endif
 
+#ifdef HAVE_SYS_REG_H
 #include <sys/reg.h>
+#endif
+#ifdef HAVE_SYS_PROCFS_H
 #include <sys/procfs.h>
+#endif
 #include "nat/gdb_ptrace.h"
 #include <sys/uio.h>
 
@@ -143,7 +154,8 @@ static const int x86_64_regmap[] =
   -1, -1, -1, -1, -1, -1, -1, -1,       /* zmm0 ... zmm31 (AVX512)  */
   -1, -1, -1, -1, -1, -1, -1, -1,
   -1, -1, -1, -1, -1, -1, -1, -1,
-  -1, -1, -1, -1, -1, -1, -1, -1
+  -1, -1, -1, -1, -1, -1, -1, -1,
+  -1					/* pkru  */
 };
 
 #define X86_64_NUM_REGS (sizeof (x86_64_regmap) / sizeof (x86_64_regmap[0]))
@@ -197,11 +209,19 @@ ps_get_thread_area (struct ps_prochandle *ph,
       switch (idx)
 	{
 	case FS:
+#ifndef __ANDROID__
 	  if (ptrace (PTRACE_ARCH_PRCTL, lwpid, base, ARCH_GET_FS) == 0)
+#else
+	  if (ptrace (PTRACE_ARCH_PRCTL, lwpid, base, (void*) ARCH_GET_FS) == 0)
+#endif
 	    return PS_OK;
 	  break;
 	case GS:
+#ifndef __ANDROID__
 	  if (ptrace (PTRACE_ARCH_PRCTL, lwpid, base, ARCH_GET_GS) == 0)
+#else
+	  if (ptrace (PTRACE_ARCH_PRCTL, lwpid, base, (void*) ARCH_GET_GS) == 0)
+#endif
 	    return PS_OK;
 	  break;
 	default:
@@ -238,7 +258,11 @@ x86_get_thread_area (int lwpid, CORE_ADDR *addr)
   if (use_64bit)
     {
       void *base;
+#ifndef __ANDROID__
       if (ptrace (PTRACE_ARCH_PRCTL, lwpid, &base, ARCH_GET_FS) == 0)
+#else
+      if (ptrace (PTRACE_ARCH_PRCTL, lwpid, &base, (void*) ARCH_GET_FS) == 0)
+#endif
 	{
 	  *addr = (CORE_ADDR) (uintptr_t) base;
 	  return 0;

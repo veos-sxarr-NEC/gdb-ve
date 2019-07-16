@@ -1,4 +1,7 @@
 /* MI Command Set for GDB, the GNU debugger.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
@@ -149,6 +152,10 @@ static struct mi_cmd mi_cmds[] =
   DEF_MI_CMD_MI ("target-file-put", mi_cmd_target_file_put),
   DEF_MI_CMD_CLI ("target-select", "target", 1),
   DEF_MI_CMD_MI ("thread-info", mi_cmd_thread_info),
+  DEF_MI_CMD_MI ("function-call-history",
+		 mi_cmd_record_function_call_history),
+  DEF_MI_CMD_MI ("function-call-history-length",
+		 mi_cmd_record_get_function_call_history_length),
   DEF_MI_CMD_MI ("thread-list-ids", mi_cmd_thread_list_ids),
   DEF_MI_CMD_MI_1 ("thread-select", mi_cmd_thread_select,
 		   &mi_suppress_notification.user_selected_context),

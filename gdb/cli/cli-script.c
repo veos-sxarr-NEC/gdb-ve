@@ -1,5 +1,8 @@
 /* GDB CLI command scripting.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -55,6 +58,19 @@ static int command_nest_depth = 1;
 
 /* This is to prevent certain commands being printed twice.  */
 static int suppress_next_print_command_trace = 0;
+
+/* A flag for controlling whether an exception should be thrown when a single
+   command within a user command fails. */
+static int throw_user_command_exceptions = 1;
+
+static void
+show_throw_user_command_exceptions (struct ui_file *file, int from_tty,
+                                    struct cmd_list_element *c,
+									const char *value)
+
+{
+  fprintf_filtered (file, _("Stop scripts on fail is %s.\n"), value);
+}
 
 /* Structure for arguments to user defined functions.  */
 #define MAXUSERARGS 10
@@ -457,13 +473,28 @@ execute_control_command (struct command_line *cmd)
   switch (cmd->control_type)
     {
     case simple_control:
-      /* A simple command, execute it and return.  */
-      new_line = insert_args (cmd->line);
-      if (!new_line)
-	break;
-      make_cleanup (free_current_contents, &new_line);
-      execute_command (new_line, 0);
-      ret = cmd->control_type;
+      {
+	volatile struct gdb_exception ex;
+	/* A simple command, execute it and return.  */
+	new_line = insert_args (cmd->line);
+	if (!new_line)
+	  break;
+	make_cleanup (free_current_contents, &new_line);
+
+	TRY
+	  {
+	    execute_command (new_line, 0);
+	  }
+	CATCH (ex, RETURN_MASK_ALL)
+	  {
+	    if (throw_user_command_exceptions)
+	      throw_exception (ex);
+	    else
+	      exception_print (gdb_stderr, ex);
+	  }
+	END_CATCH
+	ret = cmd->control_type;
+      }
       break;
 
     case continue_control:
@@ -645,7 +676,6 @@ execute_control_command_untraced (struct command_line *cmd)
   suppress_next_print_command_trace = 1;
   return execute_control_command (cmd);
 }
-
 
 /* "while" command support.  Executes a body of statements while the
    loop condition is nonzero.  */
@@ -1775,4 +1805,16 @@ The conditional expression must follow the word `if' and must in turn be\n\
 followed by a new line.  The nested commands must be entered one per line,\n\
 and should be terminated by the word 'else' or `end'.  If an else clause\n\
 is used, the same rules apply to its nested commands as to the first ones."));
+
+  add_setshow_boolean_cmd ("stop-script-on-fail", no_class,
+						   &throw_user_command_exceptions,
+						   _("Stop a script when any command within it fails"),
+						   _("Show if scripts are stopped when any command within them fails"),
+						   _("When stop-script-on-fail is off then failures within "
+							 "the individual commands of the script are printed rather than "
+							 "the script being terminated."),
+						   NULL,
+						   show_throw_user_command_exceptions,
+						   &setlist, &showlist);
+
 }

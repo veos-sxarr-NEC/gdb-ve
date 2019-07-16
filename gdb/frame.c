@@ -1,5 +1,8 @@
 /* Cache and manage frames for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -293,6 +296,16 @@ show_backtrace_past_entry (struct ui_file *file, int from_tty,
 		    value);
 }
 
+static int backtrace_exclude_start_thread = 1;
+static void
+show_backtrace_exclude_start_thread (struct ui_file *file, int from_tty,
+				  struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("\
+Whether backtraces should exclude \"start_thread\" and \"clone\" is %s.\n"),
+		    value);
+}
+
 static unsigned int backtrace_limit = UINT_MAX;
 static void
 show_backtrace_limit (struct ui_file *file, int from_tty,
@@ -303,6 +316,28 @@ show_backtrace_limit (struct ui_file *file, int from_tty,
 		      "of backtrace levels is %s.\n"),
 		    value);
 }
+
+/* Flag to control print of frame-id in mi mode.  */
+
+int mi_print_frame_id;
+static void
+show_mi_print_frame_id (struct ui_file *file, int from_tty,
+                 struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("Printing of frame id is %s.\n"), value);
+}
+
+enum auto_boolean backtrace_addresses = AUTO_BOOLEAN_AUTO;
+static void
+show_backtrace_addresses (struct ui_file *file, int from_tty,
+                          struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("\
+Whether addresses are shown in backtraces is %s.\n"),
+                    value);
+}
+
+
 
 
 static void
@@ -637,6 +672,20 @@ frame_id_artificial_p (struct frame_id l)
     return 0;
 
   return (l.artificial_depth != 0);
+}
+
+
+CORE_ADDR 
+frame_code_addr (struct frame_id l)
+{
+  if (l.code_addr_p) 
+    {
+      return l.code_addr;
+    }
+  else 
+    {
+      return 0;
+    }  
 }
 
 int
@@ -1842,13 +1891,15 @@ get_prev_frame_if_no_cycle (struct frame_info *this_frame)
 }
 
 /* Helper function for get_prev_frame_always, this is called inside a
-   TRY_CATCH block.  Return the frame that called THIS_FRAME or NULL if
+   TRY ... CATCH block.  Return the frame that called THIS_FRAME or NULL if
    there is no such frame.  This may throw an exception.  */
 
 static struct frame_info *
 get_prev_frame_always_1 (struct frame_info *this_frame)
 {
   struct gdbarch *gdbarch;
+  CORE_ADDR frame_pc;
+  int frame_pc_p;
 
   gdb_assert (this_frame != NULL);
   gdbarch = get_frame_arch (this_frame);
@@ -2119,14 +2170,14 @@ frame_debug_got_null_frame (struct frame_info *this_frame,
 /* Is this (non-sentinel) frame in the "main"() function?  */
 
 static int
-inside_main_func (struct frame_info *this_frame)
+inside_func (struct frame_info *this_frame, const char *name, struct objfile *objfile)
 {
   struct bound_minimal_symbol msymbol;
   CORE_ADDR maddr;
 
-  if (symfile_objfile == 0)
+  if (name == NULL)
     return 0;
-  msymbol = lookup_minimal_symbol (main_name (), NULL, symfile_objfile);
+  msymbol = lookup_minimal_symbol (name, NULL, objfile);
   if (msymbol.minsym == NULL)
     return 0;
   /* Make certain that the code, and not descriptor, address is
@@ -2135,6 +2186,41 @@ inside_main_func (struct frame_info *this_frame)
 					      BMSYMBOL_VALUE_ADDRESS (msymbol),
 					      &current_target);
   return maddr == get_frame_func (this_frame);
+}
+
+static int
+inside_func_full (struct frame_info *this_frame, const char *name, struct objfile *objfile)
+{
+  struct block_symbol bs = lookup_symbol(name, NULL, VAR_DOMAIN, 0);
+  struct symbol *sym = bs.symbol;
+  if (sym) {
+     CORE_ADDR maddr;
+     const struct block *block;
+     block = SYMBOL_BLOCK_VALUE (sym); /* gives block for symtab */
+     if (block) {
+         maddr = gdbarch_convert_from_func_ptr_addr
+         (get_frame_arch (this_frame),
+          BLOCK_START (block),
+          &current_target);
+         return maddr == get_frame_func (this_frame);
+     }
+  }
+  return 0;
+}
+
+static int
+inside_main_func (struct frame_info *this_frame)
+{
+  int ret = 0;
+  if (symfile_objfile != NULL)
+    {
+      ret = inside_func_full(this_frame, main_name (), symfile_objfile) ||
+            inside_func(this_frame, "MAIN__", symfile_objfile) ||
+            inside_func(this_frame, "_main_", symfile_objfile) ||
+            inside_func(this_frame, "start__", symfile_objfile) ||
+            inside_func(this_frame, "main", symfile_objfile);
+    }
+  return ret || inside_func(this_frame, "__libc_start_main", NULL);
 }
 
 /* Test whether THIS_FRAME is inside the process entry point function.  */
@@ -2164,6 +2250,7 @@ get_prev_frame (struct frame_info *this_frame)
 {
   CORE_ADDR frame_pc;
   int frame_pc_p;
+  struct frame_info *prev_frame;
 
   /* There is always a frame.  If this assertion fails, suspect that
      something should be calling get_selected_frame() or
@@ -2250,14 +2337,76 @@ get_prev_frame (struct frame_info *this_frame)
       frame_debug_got_null_frame (this_frame, "zero PC");
       return NULL;
     }
+    
+  /* PC in first page is bad.  */
+  if (this_frame->level > 0
+      && (get_frame_type (this_frame) == NORMAL_FRAME
+          || get_frame_type (this_frame) == INLINE_FRAME)
+      && get_frame_type (get_next_frame (this_frame)) == NORMAL_FRAME
+      && frame_pc_p && frame_pc < 0x1000)
+    {
+      frame_debug_got_null_frame (this_frame, "bad PC");
+      return NULL;
+    }
 
-  return get_prev_frame_always (this_frame);
+  prev_frame = get_prev_frame_always (this_frame);
+  if (prev_frame == NULL)
+    {
+      frame_debug_got_null_frame (this_frame, "prev_frame");
+      return NULL;
+    }
+
+  if (get_frame_type (prev_frame) == NORMAL_FRAME
+      && backtrace_exclude_start_thread)
+    {
+      if (inside_func(prev_frame, "start_thread", NULL))
+	{
+	  struct frame_info *prev_prev_frame = get_prev_frame_always (prev_frame);
+	  if (prev_prev_frame
+	      && inside_func(prev_prev_frame, "clone", NULL))
+	    {
+	      frame_debug_got_null_frame (this_frame, "prev frame is start_thread");
+	      return NULL;
+	    }
+	}
+      else if (inside_func(prev_frame, "clone", NULL))
+	{
+	  struct frame_info *prev_prev_frame = get_prev_frame_always (prev_frame);
+	  if (prev_prev_frame
+	      && (get_frame_type (prev_prev_frame) == NORMAL_FRAME
+	          || get_frame_type (prev_prev_frame) == INLINE_FRAME)
+	      && get_frame_type (prev_frame) == NORMAL_FRAME
+	      && get_frame_pc (prev_prev_frame) == 0)
+	    {
+	      frame_debug_got_null_frame (this_frame, "prev frame is clone");
+	      return NULL;
+	    }
+	}
+      else if (inside_func(prev_frame, "_pthread_body", NULL))
+	{
+	  struct frame_info *prev_prev_frame = get_prev_frame_always (prev_frame);
+	  if (prev_prev_frame
+	      && (get_frame_type (prev_prev_frame) == NORMAL_FRAME
+	          || get_frame_type (prev_prev_frame) == INLINE_FRAME)
+	      && get_frame_type (prev_frame) == NORMAL_FRAME
+	      && get_frame_pc (prev_prev_frame) == 0)
+	    {
+	      frame_debug_got_null_frame (this_frame, "prev frame is _pthread_body");
+	      return NULL;
+	    }
+	}
+    }
+  return prev_frame;
 }
 
 CORE_ADDR
 get_frame_pc (struct frame_info *frame)
 {
-  gdb_assert (frame->next != NULL);
+  if (frame->next == NULL)
+      {
+           warning("frame->next is NULL, gdb will try to carry on");
+           return 0;
+      }
   return frame_unwind_pc (frame->next);
 }
 
@@ -2814,6 +2963,8 @@ _initialize_frame (void)
 
   frame_stash_create ();
 
+  mi_print_frame_id = 0;
+
   observer_attach_target_changed (frame_observer_target_changed);
 
   add_prefix_cmd ("backtrace", class_maintenance, set_backtrace_cmd, _("\
@@ -2838,6 +2989,32 @@ of the stack trace."),
 			   show_backtrace_past_main,
 			   &set_backtrace_cmdlist,
 			   &show_backtrace_cmdlist);
+  
+  add_setshow_boolean_cmd ("exclude-start-thread", class_obscure,
+			   &backtrace_exclude_start_thread, _("\
+Set whether backtraces should exclude \"start_thread\" and \"clone\"."),
+			   _("\
+Show whether backtraces should exclude\"start_thread\" and \"clone\"."),
+			   _("\
+Normally \"start_thread\" and \"clone\" at the start of a threads' stack\n\
+are not of interest. Set this variable if you need to see them."),
+			   NULL,
+			   show_backtrace_exclude_start_thread,
+			   &set_backtrace_cmdlist,
+			   &show_backtrace_cmdlist);
+  
+  add_setshow_auto_boolean_cmd ("addresses", class_obscure,
+                                &backtrace_addresses, _("\
+Sets whether addresses are shown in backtraces."), _("\
+Shows whether addresses are shown in backtraces."), _("\
+If ON, addresses are always shown in backtraces.\n\
+If OFF, addresses are never shown in backtraces.\n\
+If AUTO (the default), addresses are shown in backtraces only if not at the\n\
+start of a line."),
+                                NULL,
+                                show_backtrace_addresses,
+                                &set_backtrace_cmdlist,
+                                &show_backtrace_cmdlist);
 
   add_setshow_boolean_cmd ("past-entry", class_obscure,
 			   &backtrace_past_entry, _("\
@@ -2872,4 +3049,14 @@ When non-zero, frame specific internal debugging is enabled."),
 			     NULL,
 			     show_frame_debug,
 			     &setdebuglist, &showdebuglist);
+
+
+  /* Add frame id as frame information while in mi.  */
+  add_setshow_boolean_cmd ("mi-print-frame-id", class_obscure, &mi_print_frame_id,  _("\
+Set printing of frame id on mi mode."), _("				\
+Show mi-print-frame-id."), _("\
+When non-zero, frame-id will be printed together with frame info in mi mode."),
+			   NULL,
+			   show_mi_print_frame_id,
+			   &set_backtrace_cmdlist, &show_backtrace_cmdlist);
 }

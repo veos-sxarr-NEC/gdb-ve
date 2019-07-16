@@ -1,4 +1,7 @@
-/* Copyright (C) 2000-2017 Free Software Foundation, Inc.
+/* Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
+   Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -68,6 +71,19 @@ typedef td_err_e (td_thr_tls_get_addr_ftype) (const td_thrhandle_t *th,
 typedef td_err_e (td_thr_tlsbase_ftype) (const td_thrhandle_t *th,
 					 unsigned long int modid,
 					 psaddr_t *base);
+
+typedef td_err_e (td_ta_map_id2thr_ftype) (const td_thragent_t *ta,
+					   thread_t pt,
+					   td_thrhandle_t *__th);
+
+typedef td_err_e (td_thr_getfpregs_ftype)(const td_thrhandle_t *th_p,
+					  prfpregset_t *fpregset);
+typedef td_err_e (td_thr_setfpregs_ftype)(const td_thrhandle_t *th_p,
+					  const prfpregset_t *fpregset);
+typedef td_err_e (td_thr_getgregs_ftype)(const td_thrhandle_t *th_p,
+					 prgregset_t regset);
+typedef td_err_e (td_thr_setgregs_ftype)(const td_thrhandle_t *th_p,
+					 const prgregset_t regset);
 
 typedef const char ** (td_symbol_list_ftype) (void);
 typedef td_err_e (td_ta_delete_ftype) (td_thragent_t *);

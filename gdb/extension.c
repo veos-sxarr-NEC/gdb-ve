@@ -1,5 +1,8 @@
 /* Interface between gdb and its extension languages.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2014-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -689,34 +692,6 @@ get_active_ext_lang (void)
   return active_ext_lang;
 }
 
-/* Install a SIGINT handler.  */
-
-static void
-install_sigint_handler (const struct signal_handler *handler_state)
-{
-  gdb_assert (handler_state->handler_saved);
-
-  signal (SIGINT, handler_state->handler);
-}
-
-/* Install GDB's SIGINT handler, storing the previous version in *PREVIOUS.
-   As a simple optimization, if the previous version was GDB's SIGINT handler
-   then mark the previous handler as not having been saved, and thus it won't
-   be restored.  */
-
-static void
-install_gdb_sigint_handler (struct signal_handler *previous)
-{
-  /* Save here to simplify comparison.  */
-  sighandler_t handle_sigint_for_compare = handle_sigint;
-
-  previous->handler = signal (SIGINT, handle_sigint);
-  if (previous->handler != handle_sigint_for_compare)
-    previous->handler_saved = 1;
-  else
-    previous->handler_saved = 0;
-}
-
 /* Set the currently active extension language to NOW_ACTIVE.
    The result is a pointer to a malloc'd block of memory to pass to
    restore_active_ext_lang.
@@ -752,12 +727,6 @@ set_active_ext_lang (const struct extension_language_defn *now_active)
 
   if (target_terminal_is_ours ())
     {
-      /* If the newly active extension language uses cooperative SIGINT
-	 handling then ensure GDB's SIGINT handler is installed.  */
-      if (now_active->language == EXT_LANG_GDB
-	  || now_active->ops->check_quit_flag != NULL)
-	install_gdb_sigint_handler (&previous->sigint_handler);
-
       /* If there's a SIGINT recorded in the cooperative extension languages,
 	 move it to the new language, or save it in GDB's global flag if the
 	 newly active extension language doesn't use cooperative SIGINT
@@ -778,10 +747,6 @@ restore_active_ext_lang (struct active_ext_lang_state *previous)
 
   if (target_terminal_is_ours ())
     {
-      /* Restore the previous SIGINT handler if one was saved.  */
-      if (previous->sigint_handler.handler_saved)
-	install_sigint_handler (&previous->sigint_handler);
-
       /* If there's a SIGINT recorded in the cooperative extension languages,
 	 move it to the new language, or save it in GDB's global flag if the
 	 newly active extension language doesn't use cooperative SIGINT

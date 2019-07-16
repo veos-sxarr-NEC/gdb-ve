@@ -1,5 +1,8 @@
 /* Java language support routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1997-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -1213,6 +1216,7 @@ const struct language_defn java_language_defn =
   java_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,

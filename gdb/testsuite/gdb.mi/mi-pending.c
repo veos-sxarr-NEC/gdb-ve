@@ -38,6 +38,7 @@ thread_func (void* arg)
     return NULL;
 
   (*p_func) ();
+  return NULL;
 }
 
 int main()

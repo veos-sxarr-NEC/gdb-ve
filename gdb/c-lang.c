@@ -1,5 +1,8 @@
 /* C language support routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -34,6 +37,7 @@
 #include "gdb_obstack.h"
 #include <ctype.h>
 #include "gdbcore.h"
+#include "upc-lang.h"
 
 extern void _initialize_c_language (void);
 
@@ -180,7 +184,7 @@ c_printchar (int c, struct type *type, struct ui_file *stream)
 /* Print the character string STRING, printing at most LENGTH
    characters.  LENGTH is -1 if the string is nul terminated.  Each
    character is WIDTH bytes long.  Printing stops early if the number
-   hits print_max; repeat counts are printed as appropriate.  Print
+   hits print_smax; repeat counts are printed as appropriate.  Print
    ellipses at the end if we had to stop before printing LENGTH
    characters, or if FORCE_ELLIPSES.  */
 
@@ -753,6 +757,14 @@ const struct op_print c_op_print_tab[] =
   {"sizeof ", UNOP_SIZEOF, PREC_PREFIX, 0},
   {"++", UNOP_PREINCREMENT, PREC_PREFIX, 0},
   {"--", UNOP_PREDECREMENT, PREC_PREFIX, 0},
+  {"isnan", UNOP_ISNAN, PREC_BUILTIN_FUNCTION, 0},
+  {"isinf", UNOP_ISINF, PREC_BUILTIN_FUNCTION, 0},
+  {"creal", UNOP_CREAL, PREC_BUILTIN_FUNCTION, 0},
+  {"cimag", UNOP_CIMAG, PREC_BUILTIN_FUNCTION, 0},
+  {"fmod", BINOP_FMOD, PREC_BUILTIN_FUNCTION, 0},
+  {"fabs", UNOP_FABS, PREC_BUILTIN_FUNCTION, 0},
+  {"ceil", UNOP_CEIL, PREC_BUILTIN_FUNCTION, 0},
+  {"floor", UNOP_FLOOR, PREC_BUILTIN_FUNCTION, 0},
   {NULL, OP_NULL, PREC_PREFIX, 0}
 };
 
@@ -867,12 +879,65 @@ const struct language_defn c_language_defn =
   c_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   &c_varobj_ops,
   c_get_compile_context,
   c_compute_program,
+  LANG_MAGIC
+};
+
+static const char *upc_extensions[] =
+{
+  ".upc", NULL
+};
+
+const struct language_defn upc_language_defn =
+{
+  "upc",				/* Language name */
+  "UPC",
+  language_upc,
+  range_check_off,
+  case_sensitive_on,
+  array_row_major,
+  macro_expansion_c,
+  upc_extensions,
+  &exp_descriptor_c,
+  c_parse,
+  c_yyerror,
+  null_post_parser,
+  c_printchar,			/* Print a character constant */
+  c_printstr,			/* Function to print string constant */
+  c_emit_char,			/* Print a single char */
+  c_print_type,			/* Print a type using appropriate syntax */
+  c_print_typedef,              /* Print a typedef using appropriate syntax */
+  c_val_print,			/* Print a value using appropriate syntax */
+  c_value_print,		/* Print a top-level value */
+  upc_read_var_value,		/* la_read_var_value */
+  NULL,				/* Language specific skip_trampoline */
+  NULL,				/* value_of_this */
+  basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
+  basic_lookup_transparent_type,/* lookup_transparent_type */
+  NULL,				/* Language specific symbol demangler */
+  NULL,
+  NULL,				/* Language specific class_name_from_physname */
+  c_op_print_tab,		/* expression operators for printing */
+  1,				/* c-style arrays */
+  0,				/* String lower bound */
+  default_word_break_characters,
+  default_make_symbol_completion_list,
+  c_language_arch_info,
+  default_print_array_index,
+  default_pass_by_reference,
+  default_return_by_reference,
+  c_get_string,
+  NULL,				/* la_get_symbol_name_cmp */
+  iterate_over_symbols,
+  &c_varobj_ops,
+  NULL,
+  NULL,
   LANG_MAGIC
 };
 
@@ -1001,6 +1066,7 @@ const struct language_defn cplus_language_defn =
   cplus_language_arch_info,
   default_print_array_index,
   cp_pass_by_reference,
+  cp_pass_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -1053,6 +1119,7 @@ const struct language_defn asm_language_defn =
   c_language_arch_info, 	/* FIXME: la_language_arch_info.  */
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -1105,6 +1172,7 @@ const struct language_defn minimal_language_defn =
   c_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -1119,6 +1187,7 @@ _initialize_c_language (void)
 {
   add_language (&c_language_defn);
   add_language (&cplus_language_defn);
+  add_language (&upc_language_defn);
   add_language (&asm_language_defn);
   add_language (&minimal_language_defn);
 }

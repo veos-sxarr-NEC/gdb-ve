@@ -1,4 +1,7 @@
 /* Thread management interface, for the remote server for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
@@ -391,6 +394,13 @@ thread_db_get_tls_address (struct thread_info *thread, CORE_ADDR offset,
 
   proc = get_thread_process (thread);
   thread_db = proc->priv->thread_db;
+
+  if (thread_db == NULL)
+    {
+      if (debug_threads)
+        fprintf(stderr, "%s: thread layer not initialized\n", __func__);
+      return TD_ERR;
+    }
 
   /* If the thread layer is not (yet) initialized, fail.  */
   if (thread_db == NULL || !thread_db->all_symbols_looked_up)

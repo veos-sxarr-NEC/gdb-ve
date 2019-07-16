@@ -1,4 +1,7 @@
 /* Internal interfaces for the GNU/Linux specific target code for gdbserver.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -117,6 +120,10 @@ struct process_info_private
   /* libthread_db-specific additions.  Not NULL if this process has loaded
      thread_db, and it is active.  */
   struct thread_db *thread_db;
+
+  /* libmyodbl-specific additions.  Not NULL if this process has loaded
+     libmyo-{client|service}, and it is active.  */
+  void *myo_dbl;
 
   /* &_r_debug.  0 if not yet determined.  -1 if no PT_DYNAMIC in Phdrs.  */
   CORE_ADDR r_debug;
@@ -382,6 +389,9 @@ int linux_attach_lwp (ptid_t ptid);
 
 struct lwp_info *find_lwp_pid (ptid_t ptid);
 /* For linux_stop_lwp see nat/linux-nat.h.  */
+
+int linux_read_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len);
+int linux_write_memory (CORE_ADDR memaddr, const unsigned char *myaddr, int len);
 
 #ifdef HAVE_LINUX_REGSETS
 void initialize_regsets_info (struct regsets_info *regsets_info);

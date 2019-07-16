@@ -16,12 +16,15 @@
 
 extern int get_version_1 (void);
 extern int get_version_2 (void);
+extern int compare_versions (int);
 
 int
 main (void)
 {
   int v1 = get_version_1 ();
   int v2 = get_version_2 ();
+
+  int compare = compare_versions (v2);
 
   if (v1 != 104)  /* STOP */
     return 1;

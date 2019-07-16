@@ -1,5 +1,8 @@
 /* Language independent support for printing types for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -460,15 +463,37 @@ whatis_exp (char *exp, int show)
 
   type = value_type (val);
 
+  if (TYPE_CODE (type) == TYPE_CODE_PTR)
+    {
+      /* Fall back to the default behaviour when dealing with pointer-like
+	 types in PGI fortran.  */
+      if (!is_producer_pgif (type)
+	  && ((!is_producer_intel (type)
+	       && TYPE_CODE_STRING == TYPE_CODE (TYPE_TARGET_TYPE (type)))
+	      || 0 == type_not_associated(type))
+	  && is_dynamic_type (TYPE_TARGET_TYPE (type)))
+	{
+	  val = value_addr (value_ind (val));
+	  type = value_type (val);
+	}
+    }
+
   get_user_print_options (&opts);
   if (opts.objectprint)
     {
-      if (((TYPE_CODE (type) == TYPE_CODE_PTR)
-	   || (TYPE_CODE (type) == TYPE_CODE_REF))
+      if ((TYPE_CODE (type) == TYPE_CODE_PTR)
 	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
-        real_type = value_rtti_indirect_type (val, &full, &top, &using_enc);
-      else if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
-	real_type = value_rtti_type (val, &full, &top, &using_enc);
+        {
+          real_type = value_rtti_indirect_type (val, &full, &top, &using_enc);
+        }
+      else if ((TYPE_CODE (type) == TYPE_CODE_REF)
+	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
+	{
+	  val = coerce_ref (val);
+	  real_type = value_rtti_type (val, &full, &top, &using_enc);
+	  if (real_type)
+	    real_type = lookup_reference_type (real_type);
+	}
     }
 
   printf_filtered ("type = ");

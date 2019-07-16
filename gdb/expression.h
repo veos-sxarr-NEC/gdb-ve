@@ -1,5 +1,8 @@
 /* Definitions for expressions stored in reversed prefix form, for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -159,10 +162,17 @@ extern void dump_prefix_expression (struct expression *, struct ui_file *);
    
 enum range_type
   {
+#if 0
     BOTH_BOUND_DEFAULT,		/* "(:)"  */
     LOW_BOUND_DEFAULT,		/* "(:high)"  */
     HIGH_BOUND_DEFAULT,		/* "(low:)"  */
     NONE_BOUND_DEFAULT		/* "(low:high)"  */
+#endif
+
+    SUBARRAY_NONE_BOUND = 0x0,		/* "(:)" */
+    SUBARRAY_LOW_BOUND = 0x1,		/* "(low:)" or "(low::)" */
+    SUBARRAY_HIGH_BOUND = 0x2,		/* "(:high)" or "(:high:)"  */
+    SUBARRAY_STRIDE = 0x4		/* "(::stride)"  */
   };
 
 #endif /* !defined (EXPRESSION_H) */

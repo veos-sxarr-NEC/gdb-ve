@@ -1,5 +1,8 @@
 /* Disassemble support for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -25,6 +28,11 @@
 #include "gdbcore.h"
 #include "dis-asm.h"
 #include "source.h"
+#include "gdbcmd.h"
+
+
+/* This variable limits the number of instructions that are disassembled (-1 = no limit). */
+static int disassemble_instruction_limit = -1;
 
 /* Disassemble functions.
    FIXME: We should get rid of all the duplicate code in gdb that does
@@ -346,6 +354,11 @@ dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
 
   memset (&insn, 0, sizeof (insn));
   insn.addr = low;
+
+  if(how_many<0 && disassemble_instruction_limit>0)  //how_many=-1 means no limit and we want to set a limit when disassemble_instructi
+    how_many = disassemble_instruction_limit;
+  else if(disassemble_instruction_limit>0)
+    how_many = min(how_many,disassemble_instruction_limit);
 
   while (insn.addr < high && (how_many < 0 || num_displayed < how_many))
     {
@@ -968,3 +981,20 @@ gdb_buffered_insn_length (struct gdbarch *gdbarch,
 
   return disasm_print_insn (gdbarch, addr, &di);
 }
+
+/* Provide a prototype to silence -Wmissing-prototypes.  */
+void _initialize_disasm (void);
+
+void
+_initialize_disasm (void)
+{
+  add_setshow_zuinteger_unlimited_cmd ("disassemble-instruction-limit", no_class,
+			   &disassemble_instruction_limit, _("\
+Set disassemble instruction limit."), _("\
+Show disassemble instruction limit."), _("\
+The option disassemble_instruction_limit limits the number of instructions that are disassembled.\n"),
+			   NULL,
+			   NULL,
+			   &setlist, &showlist);
+}
+

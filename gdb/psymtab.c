@@ -1,5 +1,8 @@
 /* Partial symbol tables.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2009-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -57,7 +60,7 @@ static struct partial_symbol *lookup_partial_symbol (struct objfile *,
 						     const char *, int,
 						     domain_enum);
 
-static const char *psymtab_to_fullname (struct partial_symtab *ps);
+const char *psymtab_to_fullname (struct partial_symtab *ps);
 
 static struct partial_symbol *find_pc_sect_psymbol (struct objfile *,
 						    struct partial_symtab *,
@@ -67,8 +70,8 @@ static struct partial_symbol *find_pc_sect_psymbol (struct objfile *,
 static void fixup_psymbol_section (struct partial_symbol *psym,
 				   struct objfile *objfile);
 
-static struct compunit_symtab *psymtab_to_symtab (struct objfile *objfile,
-						  struct partial_symtab *pst);
+struct compunit_symtab *psymtab_to_symtab (struct objfile *objfile,
+					   struct partial_symtab *pst);
 
 /* Ensure that the partial symbols for OBJFILE have been loaded.  This
    function always returns its argument, as a convenience.  */
@@ -76,6 +79,8 @@ static struct compunit_symtab *psymtab_to_symtab (struct objfile *objfile,
 struct objfile *
 require_partial_symbols (struct objfile *objfile, int verbose)
 {
+  struct cleanup *back_to;
+
   if ((objfile->flags & OBJF_PSYMTABS_READ) == 0)
     {
       objfile->flags |= OBJF_PSYMTABS_READ;
@@ -88,7 +93,9 @@ require_partial_symbols (struct objfile *objfile, int verbose)
 				 objfile_name (objfile));
 	      gdb_flush (gdb_stdout);
 	    }
-	  (*objfile->sf->sym_read_psymbols) (objfile);
+          back_to = increment_reading_symtab ();
+          (*objfile->sf->sym_read_psymbols) (objfile);
+          do_cleanups (back_to);
 	  if (verbose)
 	    {
 	      if (!objfile_has_symbols (objfile))
@@ -166,6 +173,7 @@ psym_map_symtabs_matching_filename (struct objfile *objfile,
 {
   struct partial_symtab *pst;
   const char *name_basename = lbasename (name);
+  int found = 0;
 
   ALL_OBJFILE_PSYMTABS_REQUIRED (objfile, pst)
   {
@@ -182,7 +190,7 @@ psym_map_symtabs_matching_filename (struct objfile *objfile,
       {
 	if (partial_map_expand_apply (objfile, name, real_path,
 				      pst, callback, data))
-	  return 1;
+	  found = 1;
 	continue;
       }
 
@@ -196,7 +204,7 @@ psym_map_symtabs_matching_filename (struct objfile *objfile,
       {
 	if (partial_map_expand_apply (objfile, name, real_path,
 				      pst, callback, data))
-	  return 1;
+	  found = 1;
 	continue;
       }
 
@@ -210,13 +218,13 @@ psym_map_symtabs_matching_filename (struct objfile *objfile,
 	  {
 	    if (partial_map_expand_apply (objfile, name, real_path,
 					  pst, callback, data))
-	      return 1;
+	      found = 1;
 	    continue;
 	  }
       }
   }
 
-  return 0;
+  return found;
 }
 
 /* Find which partial symtab contains PC and SECTION starting at psymtab PST.
@@ -675,6 +683,8 @@ lookup_partial_symbol (struct objfile *objfile,
   int do_linear_search = 1;
   char *search_name;
   struct cleanup *cleanup;
+  char *simple_name = NULL;
+  const char *paren = 0;
 
   if (length == 0)
     return NULL;
@@ -684,6 +694,16 @@ lookup_partial_symbol (struct objfile *objfile,
   start = (global ?
 	   objfile->global_psymbols.list + pst->globals_offset :
 	   objfile->static_psymbols.list + pst->statics_offset);
+ 
+  /* FIXME: What about "(anonymous namespace)".  */
+  paren = strchr (name, '(');
+  if (paren)
+    {
+      simple_name = (char *) alloca (strlen (name));
+      memcpy (simple_name, name, paren - name);
+      simple_name[paren - name] = '\0';
+      name = simple_name;
+    }
 
   if (global)			/* This means we can use a binary search.  */
     {
@@ -770,7 +790,7 @@ lookup_partial_symbol (struct objfile *objfile,
    which can happen.  Otherwise the result is the primary symtab
    that contains PST.  */
 
-static struct compunit_symtab *
+struct compunit_symtab *
 psymtab_to_symtab (struct objfile *objfile, struct partial_symtab *pst)
 {
   /* If it is a shared psymtab, find an unshared psymtab that includes
@@ -1199,7 +1219,7 @@ psym_map_symbol_filenames (struct objfile *objfile,
    If this function fails to find the file that this partial_symtab represents,
    NULL will be returned and ps->fullname will be set to NULL.  */
 
-static const char *
+const char *
 psymtab_to_fullname (struct partial_symtab *ps)
 {
   gdb_assert (!ps->anonymous);

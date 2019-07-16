@@ -27,6 +27,7 @@ if ![info exists mi_gdb_prompt] then {
 }
 
 global mi_inferior_tty_name
+global mi_print_frame_id
 
 # Always points to GDB's main UI spawn ID, even when testing with MI
 # running on a secondary UI.
@@ -40,6 +41,7 @@ global mi_spawn_id
 
 set MIFLAGS "-i=mi"
 
+set mi_print_frame_id 0
 set thread_selected_re "=thread-selected,id=\"\[0-9\]+\"\r\n"
 set gdbindex_warning_re "&\"warning: Skipping \[^\r\n\]+ \.gdb_index section in \[^\r\n\]+\"\r\n(?:&\"\\\\n\"\r\n)?"
 set library_loaded_re "=library-loaded\[^\n\]+\"\r\n(?:$gdbindex_warning_re)?"
@@ -319,6 +321,31 @@ proc default_mi_gdb_start { args } {
     }
 
     mi_detect_async
+
+    return 0
+}
+
+proc mi_set_print_frame_id {state} {
+    global mi_gdb_prompt
+    global mi_print_frame_id
+
+    if {$state == 1} {
+	send_gdb "set backtrace mi-print-frame-id 1\n"
+	set mi_print_frame_id 1
+    } else {
+	send_gdb "set backtrace mi-print-frame-id 0\n"
+	set mi_print_frame_id 0
+    }
+
+    gdb_expect 30 {
+	-re "$mi_gdb_prompt$" {
+	    return 1
+	}
+	timeout {
+	    perror "failed to set backtrace mi-print-frame-id (timeout)"
+	    return 0
+	}
+    }
 
     return 0
 }
@@ -1166,7 +1193,7 @@ proc mi_expect_stop { reason func args file line extra test } {
 
     if { $reason == "really-no-reason" } {
 	gdb_expect {
-	    -re "\\*stopped\r\n$prompt_re" {
+	    -re "\\*stopped,\[^\n\]*\r\n$prompt_re" {
 		pass "$test"
 	    }
 	    timeout {
@@ -1235,9 +1262,22 @@ proc mi_expect_stop { reason func args file line extra test } {
 
     set a $after_reason
 
+    set any "\[^\n\]*"
+    global mi_print_frame_id
+    if {$mi_print_frame_id == 0} {
     verbose -log "mi_expect_stop: expecting: \\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$func\",args=$args,(?:file=\"$any$file\",fullname=\"${fullname_syntax}$file\",line=\"$line\"|from=\"$file\")\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where0 "\\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$func\",args=$args,(?:file=\"$any$file\",fullname=\"${fullname_syntax}$file\",line=\"($line)\"|from=\"$file\")\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where1 "\\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$any\",args=\[\\\[\{\]$any\[\\\]\}\],file=\"$any\",fullname=\"${fullname_syntax}$any\",line=\"\[0-9\]*\"\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where2 "\\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$any\",args=\[\\\[\{\]$any\[\\\]\}\],file=\"$any\",fullname=\"${fullname_syntax}$any\",line=\"\[0-9\]*\"\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+    } else {
+         verbose -log "mi_expect_stop: expecting: \\*stopped,${r}${a}${bn}frame=\{id=\"$hex\",addr=\"$hex\",func=\"$func\",args=$args,(?:file=\"$any$file\",fullname=\"${fullname_syntax}$file\",line=\"$line\"|from=\"$file\")\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where0 "\\*stopped,${r}${a}${bn}frame=\{id=\"$hex\",addr=\"$hex\",func=\"$func\",args=$args,(?:file=\"$any$file\",fullname=\"${fullname_syntax}$file\",line=\"($line)\"|from=\"$file\")\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where1 "\\*stopped,${r}${a}${bn}frame=\{id=\"$hex\",addr=\"$hex\",func=\"$any\",args=\[\\\[\{\]$any\[\\\]\}\],file=\"$any\",fullname=\"${fullname_syntax}$any\",line=\"\[0-9\]*\"\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+         set where2 "\\*stopped,${r}${a}${bn}frame=\{id=\"$hex\",addr=\"$hex\",func=\"$any\",args=\[\\\[\{\]$any\[\\\]\}\],file=\"$any\",fullname=\"${fullname_syntax}$any\",line=\"\[0-9\]*\"\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re"
+    }
+
     gdb_expect {
-	-re "\\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$func\",args=$args,(?:file=\"$any$file\",fullname=\"${fullname_syntax}$file\",line=\"($line)\"|from=\"$file\")\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re" {
+	-re $where0 {
 	    pass "$test"
 	    if {[array names expect_out "2,string"] != ""} {
 		return $expect_out(2,string)
@@ -1245,7 +1285,12 @@ proc mi_expect_stop { reason func args file line extra test } {
 	    # No debug info available but $file does match.
 	    return 0
 	}
-	-re "\\*stopped,${r}${a}${bn}frame=\{addr=\"$hex\",func=\"$any\",args=\[\\\[\{\]$any\[\\\]\}\],file=\"$any\",fullname=\"${fullname_syntax}$any\",line=\"\[0-9\]*\"\}$after_stopped,thread-id=\"$decimal\",stopped-threads=$any\r\n($thread_selected_re|$breakpoint_re)*$prompt_re" {
+	-re $where1 {
+        verbose -log "got $expect_out(buffer)"
+	    fail "$test (stopped at wrong place)"
+	    return -1
+	}
+	-re $where2 {
 	    verbose -log "got $expect_out(buffer)"
 	    fail "$test (stopped at wrong place)"
 	    return -1

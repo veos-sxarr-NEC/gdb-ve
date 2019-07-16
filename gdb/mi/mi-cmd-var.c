@@ -1,4 +1,7 @@
 /* MI Command Set - varobj commands.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
@@ -720,7 +723,14 @@ mi_cmd_var_update (char *command, char **argv, int argc)
   else
     {
       /* Get varobj handle, if a valid var obj name was specified.  */
+
       struct varobj *var = varobj_get_handle (name);
+
+      if (var->changes_memory == 1)
+	{
+	  make_cleanup_restore_integer (&mi_suppress_notification.memory);
+	  mi_suppress_notification.memory = 1;
+	}
 
       varobj_update_one (var, print_values, 1 /* explicit */);
     }

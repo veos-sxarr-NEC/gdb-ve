@@ -1,5 +1,8 @@
 /* Exception (throw catch) mechanism, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -95,5 +98,7 @@ extern int catch_errors (catch_errors_ftype *, void *, char *, return_mask);
 #else
 # define GDB_NOEXCEPT noexcept
 #endif
+
+typedef gdb_byte* (catch_errors_with_ptr_return_ftype) (void *);
 
 #endif

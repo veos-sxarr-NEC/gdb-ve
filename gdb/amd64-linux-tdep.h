@@ -1,5 +1,8 @@
 /* Target-dependent code for GNU/Linux AMD64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -26,7 +29,7 @@
 /* Register number for the "orig_rax" register.  If this register
    contains a value >= 0 it is interpreted as the system call number
    that the kernel is supposed to restart.  */
-#define AMD64_LINUX_ORIG_RAX_REGNUM (AMD64_ZMM31H_REGNUM + 1)
+#define AMD64_LINUX_ORIG_RAX_REGNUM (AMD64_PKRU_REGNUM + 1)
 
 /* Total number of registers for GNU/Linux.  */
 #define AMD64_LINUX_NUM_REGS (AMD64_LINUX_ORIG_RAX_REGNUM + 1)

@@ -1,5 +1,8 @@
 /* Read ELF (Executable and Linking Format) object files for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1991-2017 Free Software Foundation, Inc.
 
    Written by Fred Fish at Cygnus Support.
@@ -447,6 +450,13 @@ elf_symtab_read (struct objfile *objfile, int type,
 		  ms_type = mst_unknown;
 		}
 	    }
+          else if (strstr(sym->section->name, "upc_shared"))
+              /* upc_shared section might be unloadable if link
+                 script is used for linking. Make sure we have all
+                 shared symbols included for debugging */
+            {
+              ms_type = mst_unknown;
+            }
 	  else
 	    {
 	      /* FIXME:  Solaris2 shared libraries include lots of
@@ -598,7 +608,7 @@ elf_rel_plt_read (struct objfile *objfile, asymbol **dyn_symbol_table)
 	 OBJFILE the symbol is undefined and the objfile having NAME defined
 	 may not yet have been loaded.  */
 
-      if (string_buffer_size < name_len + got_suffix_len + 1)
+      if (string_buffer_size <= name_len + got_suffix_len + 1)
 	{
 	  string_buffer_size = 2 * (name_len + got_suffix_len);
 	  string_buffer = (char *) xrealloc (string_buffer, string_buffer_size);
@@ -878,7 +888,7 @@ elf_gnu_ifunc_resolve_addr (struct gdbarch *gdbarch, CORE_ADDR pc)
   /* STT_GNU_IFUNC resolver functions have no parameters.  FUNCTION is the
      function entry address.  ADDRESS may be a function descriptor.  */
 
-  address_val = call_function_by_hand (function, 0, NULL);
+  address_val = call_function_by_hand_ex (function, language_c, 0, NULL);
   address = value_as_address (address_val);
   address = gdbarch_convert_from_func_ptr_addr (gdbarch, address,
 						&current_target);

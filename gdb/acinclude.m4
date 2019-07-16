@@ -76,6 +76,9 @@ m4_include(ptrace.m4)
 ## From Franc,ois Pinard                     ##
 ## ----------------------------------------- ##
 
+# Modified by Arm.
+
+# Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 # Copyright (C) 1996-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -351,7 +354,12 @@ AC_DEFUN([GDB_AC_CHECK_BFD], [
   ZLIBDIR=`echo $zlibdir | sed 's,\$(top_builddir)/,,g'`
   LDFLAGS="-L../bfd -L../libiberty $ZLIBDIR $LDFLAGS"
   intl=`echo $LIBINTL | sed 's,${top_builddir}/,,g'`
+  # -ldl is provided by bfd/Makfile.am (LIBDL) <PLUGINS>.
+  if test "$plugins" = "yes"; then
+    AC_SEARCH_LIBS(dlopen, dl)
+  fi
   LIBS="-lbfd -liberty -lz $intl $LIBS"
+
   AC_CACHE_CHECK([$1], [$2],
   [AC_TRY_LINK(
   [#include <stdlib.h>

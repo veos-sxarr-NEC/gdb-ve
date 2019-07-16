@@ -18,8 +18,6 @@
 # This file is part of the gdb testsuite.  It contains tests for type-printing
 # and value-printing Fortran derived types.
 
-if { [skip_fortran_tests] } { return -1 }
-
 standard_testfile .f90
 load_lib "fortran.exp"
 
@@ -27,26 +25,30 @@ if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug f90}]} {
     return -1
 }
 
-if ![runto MAIN__] then {
-    perror "couldn't run to breakpoint MAIN__"
-    continue
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
 }
 
 # Depending on the compiler being used, the type names can be printed differently.
 set int [fortran_int4]
 set real [fortran_real4]
 
-gdb_test "ptype p" "type = Type bar\r\n *$int :: c\r\n *$real :: d\r\n *End Type bar"
+gdb_test "ptype p" "type = TYPE bar\r\n *$int :: c\r\n *$real :: d\r\n *END TYPE bar"
 
 set test "type-printing for derived type"
 gdb_test_multiple "ptype q" $test {
-    -re "type = Type foo\r\n *$real :: a\r\n *Type bar :: x\r\n *character\\*7 :: b\r\n *End Type foo\r\n$gdb_prompt $" {
+    -re "type = TYPE foo\r\n *$real :: a\r\n *TYPE bar :: x\r\n *character\\*7 :: b\r\n *END TYPE foo\r\n$gdb_prompt $" {
 	pass $test
     }
-    -re "type = Type foo\r\n *$real :: a\r\n *Type bar :: x\r\n *character :: b\\(7\\)\r\n *End Type foo\r\n$gdb_prompt $" {
+    -re "type = TYPE foo\r\n *$real :: a\r\n *TYPE bar :: x\r\n *character :: b\\(7\\)\r\n *END TYPE foo\r\n$gdb_prompt $" {
 	# Compiler should produce string, not an array of characters.
 	setup_xfail "*-*-*"
 	fail $test
+    }
+    -re "type = TYPE foo\r\n *${real} :: a\r\n *TYPE\\(bar\\) :: x\r\n *character\\*7 :: b\r\n *END TYPE foo\r\n$gdb_prompt $" {
+        # We don't print the full type definition for nested type (as some compilers like to nest a type inside itself!)
+	kfail "allinea" $test
     }
 }
 
@@ -82,7 +84,7 @@ b = \\('abcdefg'\\) \\)\r\n$gdb_prompt $"
 
 set test "print q"
 gdb_test_multiple $test $test {
-    -re $result_line {
+    -re "\\$\[0-9\]+ = \\( a = 3.125, x = \\( c = 1, d = 2\\.375 \\), b = 'abcdefg' \\)\r\n$gdb_prompt $" {
 	pass $test
     }
     -re $result_line_2 {

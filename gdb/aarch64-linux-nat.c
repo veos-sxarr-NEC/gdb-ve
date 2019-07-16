@@ -1,5 +1,8 @@
 /* Native-dependent code for GNU/Linux AArch64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2011-2017 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
@@ -481,6 +484,18 @@ aarch64_linux_child_post_startup_inferior (struct target_ops *self,
   super_post_startup_inferior (self, ptid);
 }
 
+static void (*super_post_attach) (struct target_ops *self, int pid);
+
+/* Implement the "to_post_attach" target_ops method.  */
+
+static void
+aarch64_linux_child_post_attach (struct target_ops *self, int pid)
+{
+  aarch64_forget_process (pid);
+  aarch64_linux_get_debug_reg_capacity (pid);
+  super_post_attach (self, pid);
+}
+
 extern struct target_desc *tdesc_arm_with_neon;
 
 /* Implement the "to_read_description" target_ops method.  */
@@ -836,6 +851,11 @@ _initialize_aarch64_linux_nat (void)
   /* Override the GNU/Linux inferior startup hook.  */
   super_post_startup_inferior = t->to_post_startup_inferior;
   t->to_post_startup_inferior = aarch64_linux_child_post_startup_inferior;
+
+  /* Override the GNU/Linux post attach hook.  */
+  super_post_attach = t->to_post_attach;
+  gdb_assert (super_post_attach);
+  t->to_post_attach = aarch64_linux_child_post_attach;
 
   /* Register the target.  */
   linux_nat_add_target (t);

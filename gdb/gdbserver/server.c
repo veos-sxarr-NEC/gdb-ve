@@ -1,4 +1,7 @@
 /* Main code for remote server for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1989-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -23,6 +26,10 @@
 #include "tdesc.h"
 #include "rsp-low.h"
 #include "signals-state-save-restore.h"
+#ifdef USE_MYO_DBL
+#include "myo.h"
+#endif
+
 #include <ctype.h>
 #include <unistd.h>
 #if HAVE_SIGNAL_H
@@ -868,6 +875,10 @@ monitor_show_help (void)
   monitor_output ("    Options: all, none");
   monitor_output (", timestamp");
   monitor_output ("\n");
+#ifdef USE_MYO_DBL
+  monitor_output ("  set myo-debug <0|1>\n");
+  monitor_output ("    Enable myo debugging messages\n");
+#endif
   monitor_output ("  exit\n");
   monitor_output ("    Quit GDBserver\n");
 }
@@ -1223,6 +1234,18 @@ handle_monitor_command (char *mon, char *own_buf)
 	  xfree (error_msg);
 	}
     }
+#ifdef USE_MYO_DBL
+  else if (strcmp (mon, "set myo-dbl-debug 1") == 0)
+    {
+      debug_myo_dbl = 1;
+      monitor_output ("Myo debug output enabled.\n");
+    }
+  else if (strcmp (mon, "set myo-dbl-debug 0") == 0)
+    {
+      debug_myo_dbl = 0;
+      monitor_output ("Myo debug output disabled.\n");
+    }
+#endif
   else if (strcmp (mon, "help") == 0)
     monitor_show_help ();
   else if (strcmp (mon, "exit") == 0)
@@ -2074,13 +2097,16 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 	 the library at all.  We also re-validate breakpoints when we
 	 see a second GDB breakpoint for the same address, and or when
 	 we access breakpoint shadows.  */
-      validate_breakpoints ();
+      if (current_thread != NULL)
+	{
+	  validate_breakpoints ();
 
-      if (target_supports_tracepoints ())
-	tracepoint_look_up_symbols ();
+	  if (target_supports_tracepoints ())
+	    tracepoint_look_up_symbols ();
 
-      if (current_thread != NULL && the_target->look_up_symbols != NULL)
-	(*the_target->look_up_symbols) ();
+	  if (current_thread != NULL && the_target->look_up_symbols != NULL)
+	    (*the_target->look_up_symbols) ();
+	}
 
       current_thread = save_thread;
 
@@ -3272,7 +3298,8 @@ static void
 gdbserver_version (void)
 {
   printf ("GNU gdbserver %s%s\n"
-	  "Copyright (C) 2017 Free Software Foundation, Inc.\n"
+
+	  "Modified by Arm. Copyright (C) 2002-2019 Arm Limited (or its affiliates). All rights reserved.\nCopyright (C) 2017 Free Software Foundation, Inc; (C) 2016 Intel Corp.\n"
 	  "gdbserver is free software, covered by the "
 	  "GNU General Public License.\n"
 	  "This gdbserver was configured as \"%s\"\n",
@@ -3611,7 +3638,7 @@ captured_main (int argc, char *argv[])
      opened by remote_prepare.  */
   notice_open_fds ();
 
-  save_original_signals_state ();
+  save_original_signals_state (false);
 
   /* We need to know whether the remote connection is stdio before
      starting the inferior.  Inferiors created in this scenario have

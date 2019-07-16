@@ -1,5 +1,8 @@
 /* Routines for name->symbol lookups in GDB.
    
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    Contributed by David Carlton <carlton@bactrian.org> and by Kealia,
@@ -180,5 +183,10 @@ extern int dict_size (const struct dictionary *dict);
 	for ((sym) = dict_iterator_first ((dict), &(iter));	\
 	     (sym);						\
 	     (sym) = dict_iterator_next (&(iter)))
+
+/* Return an expandable version of the specified dictionary, copied
+   from the original if the original was not expandable.  */
+
+extern struct dictionary *dict_convert_dictionary(struct dictionary *old_dict);
 
 #endif /* DICTIONARY_H */

@@ -1,5 +1,8 @@
 /* Inline frame unwinder for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -340,7 +343,12 @@ skip_inline_frames (ptid_t ptid)
 	}
     }
 
+#define NO_ASSERT_ON_RERUN 
+#ifdef ASSERT_ON_RERUN 
+  /* For multiple inferiors this assert causes an
+   * error on re-run */
   gdb_assert (find_inline_frame_state (ptid) == NULL);
+#endif
   state = allocate_inline_frame_state (ptid);
   state->skipped_frames = skip_count;
   state->saved_pc = this_pc;

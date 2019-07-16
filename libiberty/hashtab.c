@@ -1,4 +1,7 @@
 /* An expandable hash tables datatype.  
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Vladimir Makarov (vmakarov@cygnus.com).
@@ -726,6 +729,8 @@ htab_remove_elt_with_hash (htab_t htab, PTR element, hashval_t hash)
   PTR *slot;
 
   slot = htab_find_slot_with_hash (htab, element, hash, NO_INSERT);
+  if (!slot) /* #41833 (ALL-284): do nothing for NULL slot, see htab_find... */
+    return;  /* or else gdb11479.exp is failing (crashing) for example. */
   if (*slot == HTAB_EMPTY_ENTRY)
     return;
 

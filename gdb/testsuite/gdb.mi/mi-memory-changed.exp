@@ -52,6 +52,29 @@ mi_gdb_test  "-data-write-memory-bytes &C \"00\"" \
     {\^done} \
     "change C thru. -data-write-memory-bytes"
 
+mi_gdb_test "-var-create var_cpp * \"C = C + 1\"" \
+    ".*\\^done,name=\"var_cpp\",numchild=\"0\",value=\"1\",type=\"int\",thread-id=\"1\",has_more=\"0\"" \
+    "create objvar for C assigning to C + 1"
+
+# New test, notice that currently GDB gets the placement of the ","
+# wrong in its reply.
+set test "update objvar for C assigning to C + 1"
+send_gdb "-var-update 1 var_cpp\n"
+gdb_expect {
+    -re "=memory-changed,thread-group=\"i${decimal}\".addr=\"${hex}\",len=\"${hex}\"\[\n\r\]+\\^done,changelist=\\\[\{name=\"var_cpp\",value=\"2\",in_scope=\"true\",type_changed=\"false\",has_more=\"0\"\}\\\].*$mi_gdb_prompt$" {
+	pass $test
+    }
+    -re "=memory-changedthread-group=\"i${decimal}\".addr=\"${hex}\",len=\"${hex}\"\[\n\r\]+\\^done,changelist=\\\[,\{name=\"var_cpp\",value=\"2\",in_scope=\"true\",type_changed=\"false\",has_more=\"0\"\}\\\].*$mi_gdb_prompt$" {
+	kfail "xxx" $test
+    }
+    -re ".*$mi_gdb_prompt$" {
+	fail $test
+    }
+    timeout {
+	fail "$test (timeout)"
+    }
+}
+
 # Modify code section also triggers MI notification.
 
 # Get the instruction content of function main and its address.

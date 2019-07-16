@@ -1,5 +1,8 @@
 /* Definitions for dealing with stack frames, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -175,6 +178,10 @@ extern const struct frame_id outer_frame_id;
 
 extern unsigned int frame_debug;
 
+/* Flag to control printing of frame-id when in MI.  */
+
+extern int mi_print_frame_id;
+
 /* Construct a frame ID.  The first parameter is the frame's constant
    stack address (typically the outer-bound), and the second the
    frame's constant code address (typically the entry point).
@@ -218,6 +225,9 @@ extern int frame_id_p (struct frame_id l);
    without stack data representation in inferior, such as INLINE_FRAME or
    TAILCALL_FRAME.  */
 extern int frame_id_artificial_p (struct frame_id l);
+
+CORE_ADDR 
+frame_code_addr (struct frame_id l);
 
 /* Returns non-zero when L and R identify the same frame, or, if
    either L or R have a zero .func, then the same frame base.  */
@@ -719,7 +729,7 @@ extern void print_stack_frame (struct frame_info *, int print_level,
 
 extern void print_frame_info (struct frame_info *, int print_level,
 			      enum print_what print_what, int args,
-			      int set_current_sal);
+			      int set_current_sal, int print_id);
 
 extern struct frame_info *block_innermost_frame (const struct block *);
 
@@ -839,5 +849,8 @@ extern struct frame_info *skip_tailcall_frames (struct frame_info *frame);
    writable.  */
 
 extern struct frame_info *skip_unwritable_frames (struct frame_info *frame);
+
+/* Whether addresses are shown in backtraces.  */
+extern enum auto_boolean backtrace_addresses;
 
 #endif /* !defined (FRAME_H)  */

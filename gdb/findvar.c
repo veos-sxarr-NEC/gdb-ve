@@ -1,5 +1,8 @@
 /* Find a variable's value in memory, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -33,6 +36,11 @@
 #include "objfiles.h"
 #include "language.h"
 #include "dwarf2loc.h"
+#include "f-lang.h"
+
+void 
+setup_array_bounds (struct type *type, CORE_ADDR address,
+                    struct frame_info *frame); /* this belongs elsewhere */
 
 /* Basic byte-swapping routines.  All 'extract' functions return a
    host-format integer from a target-format integer at ADDR which is
@@ -796,8 +804,8 @@ default_read_var_value (struct symbol *var, const struct block *var_block,
 /* Calls VAR's language la_read_var_value hook with the given arguments.  */
 
 struct value *
-read_var_value (struct symbol *var, const struct block *var_block,
-		struct frame_info *frame)
+read_var_value_1 (struct symbol *var, const struct block *var_block,
+		  struct frame_info *frame)
 {
   const struct language_defn *lang = language_def (SYMBOL_LANGUAGE (var));
 
@@ -805,6 +813,20 @@ read_var_value (struct symbol *var, const struct block *var_block,
   gdb_assert (lang->la_read_var_value != NULL);
 
   return lang->la_read_var_value (var, var_block, frame);
+}
+
+struct value *
+read_var_value (struct symbol *var,  const struct block *var_block,
+		struct frame_info *frame)
+{
+  struct value* v;
+
+  /* FIXME drow/2003-09-06: this call to the selected frame should be
+     pushed upwards to the callers.  */
+  if (frame == NULL)
+    frame = deprecated_safe_get_selected_frame ();
+
+  return read_var_value_1 (var, var_block, frame);
 }
 
 /* Install default attributes for register values.  */

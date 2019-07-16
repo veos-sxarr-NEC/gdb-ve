@@ -1,4 +1,7 @@
 /* Linux-specific ptrace manipulation routines.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2012-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,6 +27,11 @@
 #include "gdb_wait.h"
 #include "gdb_ptrace.h"
 #include <sys/procfs.h>
+
+/* If PaX or NX prevents execution of stack memory then calls to functions in
+   the inferior must use the entry point as the return address.  */
+
+int linux_ptrace_force_use_entry_point_to_call_inferior_functions = 0;
 
 /* Stores the ptrace options supported by the running kernel.
    A value of -1 means we did not check for features yet.  A value
@@ -132,6 +140,7 @@ linux_ptrace_test_ret_to_nx (void)
 		 safe_strerror (errno));
       else
 	{
+	  alarm (2);
 #if defined __i386__
 	  asm volatile ("pushl %0;"
 			".globl linux_ptrace_test_ret_to_nx_instr;"
@@ -184,6 +193,7 @@ linux_ptrace_test_ret_to_nx (void)
   /* We may get SIGSEGV due to missing PROT_EXEC of the return_address.  */
   if (WSTOPSIG (status) != SIGTRAP && WSTOPSIG (status) != SIGSEGV)
     {
+      linux_ptrace_force_use_entry_point_to_call_inferior_functions = 1;
       warning (_("linux_ptrace_test_ret_to_nx: "
 		 "WSTOPSIG %d is neither SIGTRAP nor SIGSEGV!"),
 	       (int) WSTOPSIG (status));

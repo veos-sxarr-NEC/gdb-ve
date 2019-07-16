@@ -1,5 +1,8 @@
 /* DWARF 2 Expression Evaluator.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    Contributed by Daniel Berlin (dan@dberlin.org)
@@ -97,6 +100,7 @@ new_dwarf_expr_context (void)
   struct dwarf_expr_context *retval;
 
   retval = XCNEW (struct dwarf_expr_context);
+  memset (retval, 0, sizeof (*retval));
   retval->stack_len = 0;
   retval->stack_allocated = 10;
   retval->stack = XNEWVEC (struct dwarf_stack_value, retval->stack_allocated);
@@ -1048,15 +1052,22 @@ execute_stack_op (struct dwarf_expr_context *ctx,
 	       from the type length, we need to zero-extend it.  */
 	    if (TYPE_LENGTH (type) != addr_size)
 	      {
-		ULONGEST result =
-		  extract_unsigned_integer (buf, addr_size, byte_order);
+		ULONGEST result;
+
+		/* The PGI compiler seems to assumed signed integers here
+		   rather than unsigned.  The DWARF standard is very clear
+		   and the PGI compiler is wrong on this one.  */
+		if (ctx->producer_is_pgi)
+		  result = extract_signed_integer (buf, addr_size, byte_order);
+		else
+		  result = extract_unsigned_integer (buf, addr_size, byte_order);
 
 		buf = (gdb_byte *) alloca (TYPE_LENGTH (type));
 		store_unsigned_integer (buf, TYPE_LENGTH (type),
 					byte_order, result);
 	      }
 
-	    result_val = value_from_contents_and_address (type, buf, addr);
+	    result_val = value_from_contents_and_address (type, buf, TYPE_LENGTH (type), addr);
 	    break;
 	  }
 
@@ -1478,6 +1489,8 @@ execute_stack_op (struct dwarf_expr_context *ctx,
 
 	case DW_OP_push_object_address:
 	  /* Return the address of the object we are currently observing.  */
+	  if (ctx->funcs->get_object_address == NULL)
+	    error (_("DW_OP_push_object_address: no get_object_address function."));
 	  result = (ctx->funcs->get_object_address) (ctx->baton);
 	  result_val = value_from_ulongest (address_type, result);
 	  break;

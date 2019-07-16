@@ -1,5 +1,8 @@
 /* Top level stuff for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -45,6 +48,12 @@
 #include "event-top.h"
 #include "infrun.h"
 #include "signals-state-save-restore.h"
+
+#include <sys/signal.h>
+#include <string.h>
+#ifdef __linux__
+#include <execinfo.h>
+#endif
 
 /* The selected interpreter.  This will be used as a set command
    variable, so it should always be malloc'ed - since
@@ -99,6 +108,8 @@ get_gdb_program_name (void)
 
 static void print_gdb_help (struct ui_file *);
 
+static void sighandler (int signo);
+
 /* Set the data-directory parameter to NEW_DATADIR.
    If NEW_DATADIR is not a directory then a warning is printed.
    We don't signal an error for backward compatibility.  */
@@ -144,7 +155,7 @@ static char *
 relocate_path (const char *progname, const char *initial, int flag)
 {
   if (flag)
-    return make_relative_prefix (progname, BINDIR, initial);
+    return make_relative_prefix_ignore_links (progname, BINDIR, initial);
   return xstrdup (initial);
 }
 
@@ -255,7 +266,7 @@ get_init_files (const char **system_gdbinit,
       memset (&homebuf, 0, sizeof (struct stat));
       memset (&cwdbuf, 0, sizeof (struct stat));
 
-      if (homedir)
+      if (homedir && !inhibit_gdbinit)
 	{
 	  homeinit = xstrprintf ("%s/%s", homedir, gdbinit);
 	  if (stat (homeinit, &homebuf) != 0)
@@ -265,7 +276,7 @@ get_init_files (const char **system_gdbinit,
 	    }
 	}
 
-      if (stat (gdbinit, &cwdbuf) == 0)
+      if (!inhibit_gdbinit && stat (gdbinit, &cwdbuf) == 0)
 	{
 	  if (!homeinit
 	      || memcmp ((char *) &homebuf, (char *) &cwdbuf,
@@ -506,7 +517,17 @@ captured_main (void *data)
 
   bfd_init ();
   notice_open_fds ();
-  save_original_signals_state ();
+  save_original_signals_state (quiet);
+
+  /* ARM: Special signal handlers.  */
+  signal(SIGSEGV, sighandler);
+  signal(SIGABRT, sighandler);
+  signal(SIGFPE, sighandler);
+  signal(SIGBUS, sighandler);
+  signal(SIGTERM, sighandler);
+  signal(SIGINT, sighandler);
+  signal(SIGQUIT, sighandler);
+  /* End of ARM signal handlers.  */
 
   make_cleanup (VEC_cleanup (cmdarg_s), &cmdarg_vec);
   dirsize = 1;
@@ -559,15 +580,7 @@ captured_main (void *data)
   gdb_datadir = relocate_gdb_directory (GDB_DATADIR,
 					GDB_DATADIR_RELOCATABLE);
 
-#ifdef WITH_PYTHON_PATH
-  {
-    /* For later use in helping Python find itself.  */
-    char *tmp = concat (WITH_PYTHON_PATH, SLASH_STRING, "lib", (char *) NULL);
-
-    python_libdir = relocate_gdb_directory (tmp, PYTHON_PATH_RELOCATABLE);
-    xfree (tmp);
-  }
-#endif
+  python_libdir = relocate_gdb_directory (LIBDIR, 1);
 
 #ifdef RELOC_SRCDIR
   add_substitute_path_rule (RELOC_SRCDIR,
@@ -1129,7 +1142,7 @@ captured_main (void *data)
 
   /* Read in the old history after all the command files have been
      read.  */
-  init_history ();
+  init_history (inhibit_gdbinit);
 
   if (batch_flag)
     {
@@ -1149,6 +1162,32 @@ captured_main (void *data)
       catch_errors (captured_command_loop, 0, "", RETURN_MASK_ALL);
     }
   /* No exit -- exit is through quit_command.  */
+}
+
+static void
+sighandler (int signo)
+{
+  void *array[20];
+  size_t size;
+  char **strings;
+  size_t i;
+
+  signal (signo, SIG_DFL);
+
+  fprintf (stderr, "%s\n", strsignal(signo));
+#ifdef __linux__
+  size = backtrace (array, 20);
+  strings = backtrace_symbols (array, size);
+
+  for (i = 0; i < size; i++)
+     fprintf (stderr, "%s\n", strings[i]);
+
+  free (strings);
+#endif
+  printf("%s ", get_prompt());
+  fflush(stdout);
+
+  raise(signo);
 }
 
 int

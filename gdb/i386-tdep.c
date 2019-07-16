@@ -1,5 +1,8 @@
 /* Intel 386 target-dependent stuff.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1988-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -124,6 +127,11 @@ static const char *i386_mpx_names[] =
 static const char *i386_bnd_names[] =
 {
   "bnd0", "bnd1", "bnd2", "bnd3"
+};
+
+static const char* i386_pkeys_names[] =
+{
+  "pkru"
 };
 
 /* Register names for MMX pseudo-registers.  */
@@ -411,6 +419,19 @@ i386_mpx_ctrl_regnum_p (struct gdbarch *gdbarch, int regnum)
 
   regnum -= I387_BNDCFGU_REGNUM (tdep);
   return regnum >= 0 && regnum < I387_NUM_MPX_CTRL_REGS;
+}
+
+int
+i386_pkru_regnum_p (struct gdbarch *gdbarch, int regnum)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  int pkru_regnum = tdep->pkru_regnum;
+
+  if (pkru_regnum < 0)
+    return 0;
+
+  regnum -= pkru_regnum;
+  return regnum >= 0 && regnum < I387_NUM_PKEYS_REGS;
 }
 
 /* Return the name of register REGNUM, or the empty string if it is
@@ -1592,7 +1613,126 @@ i386_analyze_frame_setup (struct gdbarch *gdbarch,
   if (target_read_code (pc, &op, 1))
     return pc;
 
-  if (op == 0x55)		/* pushl %ebp */
+  if (op == 0x53)		/* pushl %ebx */
+    {
+      /* Take into account that we've executed the `pushl %ebx' that
+	 starts this instruction sequence.  */
+      cache->saved_regs[I386_EBX_REGNUM] = 0;
+      cache->sp_offset += 4;
+      pc++;
+
+      /* If that's all, return now.  */
+      if (limit <= pc)
+	return limit;
+
+      /* Check for some special instructions that might be migrated by
+	 GCC into the prologue and skip them.  At this point in the
+	 prologue, code should only touch the scratch registers %eax,
+	 %ecx and %edx, so while the number of posibilities is sheer,
+	 it is limited.
+
+	 Make sure we only skip these instructions if we later see the
+	 `movl %esp, %ebp' that actually sets up the frame.  */
+      while (pc + skip < limit)
+	{
+	  insn = i386_match_insn (pc + skip, i386_frame_setup_skip_insns);
+	  if (insn == NULL)
+	    break;
+
+	  skip += insn->len;
+	}
+
+      /* If that's all, return now.  */
+      if (limit <= pc + skip)
+	return limit;
+
+      target_read_memory (pc + skip, &op, 1);
+
+      /* Check for `movl %esp, %ebx' -- can be written in two ways.  */
+      switch (op)
+	{
+	case 0x8b:
+	  if (read_memory_unsigned_integer (pc + skip + 1, 1, byte_order)
+	      != 0xdc)
+	    return pc;
+	  break;
+	case 0x89:
+	  if (read_memory_unsigned_integer (pc + skip + 1, 1, byte_order)
+	      != 0xe3)
+	    return pc;
+	  break;
+	case 0x53:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EBX_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x55:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EBP_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x56:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_ESI_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x57:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EDI_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	default:
+	  return pc;
+	}
+
+      /* OK, we actually have a frame.  We just don't know how large
+	 it is yet.  Set its size to zero.  We'll adjust it if
+	 necessary.  We also now commit to skipping the special
+	 instructions mentioned before.  */
+      cache->locals = 0;
+      pc += (skip + 2);
+
+      /* If that's all, return now.  */
+      if (limit <= pc)
+	return limit;
+
+      /* Check for stack adjustment 
+
+	    subl $XXX, %esp
+
+	 NOTE: You can't subtract a 16-bit immediate from a 32-bit
+	 reg, so we don't have to worry about a data16 prefix.  */
+      target_read_memory (pc, &op, 1);
+      if (op == 0x83)
+	{
+	  /* `subl' with 8-bit immediate.  */
+	  if (read_memory_unsigned_integer (pc + 1, 1, byte_order) != 0xec)
+	    /* Some instruction starting with 0x83 other than `subl'.  */
+	    return pc;
+
+	  /* `subl' with signed 8-bit immediate (though it wouldn't
+	     make sense to be negative).  */
+	  cache->locals = read_memory_integer (pc + 2, 1, byte_order);
+	  return pc + 3;
+	}
+      else if (op == 0x81)
+	{
+	  /* Maybe it is `subl' with a 32-bit immediate.  */
+	  if (read_memory_unsigned_integer (pc + 1, 1, byte_order) != 0xec)
+	    /* Some instruction starting with 0x81 other than `subl'.  */
+	    return pc;
+
+	  /* It is `subl' with a 32-bit immediate.  */
+	  cache->locals = read_memory_integer (pc + 2, 4, byte_order);
+	  return pc + 6;
+	}
+      else
+	{
+	  /* Some instruction other than `subl'.  */
+	  return pc;
+	}
+    }
+  else if (op == 0x55)		/* pushl %ebp */
     {
       /* Take into account that we've executed the `pushl %ebp' that
 	 starts this instruction sequence.  */
@@ -1662,6 +1802,26 @@ i386_analyze_frame_setup (struct gdbarch *gdbarch,
 	      != 0x242c)
 	    return pc;
 	  pc += (skip + 3);
+	  break;
+	case 0x53:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EBX_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x55:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EBP_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x56:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_ESI_REGNUM] = 0;
+	  skip -= 1;
+	  break;
+	case 0x57:
+	  cache->sp_offset += 4;
+	  cache->saved_regs[I386_EDI_REGNUM] = 0;
+	  skip -= 1;
 	  break;
 	default:
 	  return pc;
@@ -1942,6 +2102,188 @@ i386_skip_main_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
   return pc;
 }
 
+
+static int
+i386_analyze_frameless(CORE_ADDR pc, CORE_ADDR current_pc,
+		       struct i386_frame_cache *cache, enum bfd_endian byte_order)
+{
+  unsigned char op;
+  unsigned int pushes = 0;
+  int i = 0;
+  while (pc < current_pc)
+    {
+      op = read_memory_unsigned_integer (pc, 1, byte_order);
+ 
+      if (op >= 0x50 && op <= 0x57)
+	{
+	  if (i >= 8) pushes+=4;
+	  pc++;
+	  i++;
+	}
+      else {
+	i = 8;
+	if (op == 0xff)
+	  {
+	    pushes += 4;
+	    pc += 4;
+	  }
+	else if (op == 0x68)
+	  {
+	    pushes += 4;
+	    pc += 5;
+	  }
+	else if (op == 0x6a)
+	  {
+	    pushes += 4;
+	    pc += 2;
+	  }
+	else if (op >= 0x58 && op <= 0x5f)
+	  {
+	    pushes-=4;
+	    pc++;
+	  }
+	else if (op == 0x83) /* sub or add*/
+	  {
+	    int reg, val;
+	    reg = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    val = read_memory_unsigned_integer (pc + 2, 1, byte_order);
+	    if (reg == 0xec)
+	      {
+		pushes += val;
+	      }
+	    else if (reg == 0xc4)
+	      {
+		pushes -= val;
+	      }
+	    pc += 3;
+	  }
+	else if (op == 0xe8)
+	  {
+ 	    /* call */
+	    pc += 5;
+	  }
+	else if (op == 0x8d)	/* lea ..(%eax), %edi */
+	  {
+	    int type = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    switch (type)
+	      {
+	      case 0x91:
+		pc += 6;
+		break;
+	      case 0x5c :
+	      case 0x54 :
+	      case 0x4c : pc += 4;
+		break;
+	      case 0x78 : 
+	      case 0x0c:pc += 3;
+		break;
+
+	      default :
+		goto unknown;
+	      }
+	  }
+	else if (op == 0x3b) 	/* cmp */
+	  {
+	    int val = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    if (val == 0x3c)
+	      pc += 3;
+	    else 
+	      pc += 2;
+	  }
+	else if (op == 0x74 || op == 0x75 || op == 0x73 || op == 0x7c)
+	  { 			/* small jumps */
+	    pc += 2;
+	  }
+	else if (op == 0x8b)	/* mov reg, reg */
+	  {
+	    int type = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    switch (type) 
+	      {
+	      case 0x74:
+	      case 0x7c:
+	      case 0x54:
+	      case 0x4c:
+		pc += 4;
+		break;
+	      case 0x14:
+	      case 0x0c:
+		pc += 3;
+		break;
+	      default:
+		pc += 2;
+	      }
+	  }
+	else if (op == 0x89)	/* mov %edi, (%esp) */
+	  {
+	    int type = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    switch (type) 
+	      {
+	      case 0x54:
+	      case 0x7c: 
+	      case 0x6c: pc += 4;
+		break;
+	      case 0x3c:
+	      case 0x04: pc += 3;
+		break;
+	      case 0x85:
+		break;
+	      default:
+	        goto unknown;
+	      }
+	  }
+	else if (op == 0xb8)
+	  {
+	    pc += 5;
+	  }
+	else if (op == 0x03 || op == 0x85 || op == 0x33)
+	  /* add reg, reg. test reg,reg, xor reg,reg */
+	  {
+	    pc += 2;
+	  }
+	else if (op == 0x0f)	/* je , jle etc... */
+	  {	
+	    int type = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    if (type == 0xbe) pc +=3;
+	    else pc += 6;
+	  }
+	else if (op == 0xeb)	/* Jmp */
+	  {
+	    pc += 2;
+	  }
+	else if (op == 0xe9)	/* Jmp */
+	  {
+	    pc += 5;
+	  }
+	else if (op == 0xc7)	/* movl */
+	  {
+	    int type = read_memory_unsigned_integer (pc + 1, 1, byte_order);
+	    switch (type)
+	      {
+	      case 0x44:
+		pc += 8;
+		break;
+	      default:
+		goto unknown;
+	      }
+	  }
+	else if (op == 0x72) 	/* jb */
+	  {
+	    pc += 2;
+	  }
+	else if (op == 0xc1) 	/* jb */
+	  {
+	    pc += 3;
+	  }
+	else 
+	  {
+	    unknown:
+	    break;
+	  }
+      }
+    }
+  return pushes;  
+}
+
 /* This function is 64-bit safe.  */
 
 static CORE_ADDR
@@ -2000,6 +2342,9 @@ i386_frame_cache_1 (struct frame_info *this_frame,
 	 setup yet.  Try to reconstruct the base address for the stack
 	 frame by looking at the stack pointer.  For truly "frameless"
 	 functions this might work too.  */
+      int pushed_offset = (cache->pc != 0) ? i386_analyze_frameless(cache->pc,
+						 get_frame_pc (this_frame), 
+						 cache, byte_order) : 0;
 
       if (cache->saved_sp_reg != -1)
 	{
@@ -2024,7 +2369,7 @@ i386_frame_cache_1 (struct frame_info *this_frame,
 	     frame in %ebp.  */
 	  get_frame_register (this_frame, I386_ESP_REGNUM, buf);
 	  cache->base = extract_unsigned_integer (buf, 4, byte_order)
-			+ cache->sp_offset;
+			+ cache->sp_offset + pushed_offset;
 	}
       else
 	/* We're in an unknown function.  We could not find the start
@@ -4531,7 +4876,7 @@ i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
       ymm_regnum_p, ymmh_regnum_p, ymm_avx512_regnum_p, ymmh_avx512_regnum_p,
       bndr_regnum_p, bnd_regnum_p, k_regnum_p, zmm_regnum_p, zmmh_regnum_p,
       zmm_avx512_regnum_p, mpx_ctrl_regnum_p, xmm_avx512_regnum_p,
-      avx512_p, avx_p, sse_p;
+      avx512_p, avx_p, sse_p, pkru_regnum_p;
 
   /* Don't include pseudo registers, except for MMX, in any register
      groups.  */
@@ -4548,6 +4893,7 @@ i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
   if (group == i386_mmx_reggroup)
     return mmx_regnum_p;
 
+  pkru_regnum_p = i386_pkru_regnum_p(gdbarch, regnum);
   xmm_regnum_p = i386_xmm_regnum_p (gdbarch, regnum);
   xmm_avx512_regnum_p = i386_xmm_avx512_regnum_p (gdbarch, regnum);
   mxcsr_regnum_p = i386_mxcsr_regnum_p (gdbarch, regnum);
@@ -4619,7 +4965,8 @@ i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 	    && !bnd_regnum_p
 	    && !mpx_ctrl_regnum_p
 	    && !zmm_regnum_p
-	    && !zmmh_regnum_p);
+	    && !zmmh_regnum_p
+	    && !pkru_regnum_p);
 
   return default_register_reggroup_p (gdbarch, regnum, group);
 }
@@ -8169,7 +8516,7 @@ i386_validate_tdesc_p (struct gdbarch_tdep *tdep,
   const struct tdesc_feature *feature_core;
 
   const struct tdesc_feature *feature_sse, *feature_avx, *feature_mpx,
-			     *feature_avx512;
+			     *feature_avx512, *feature_pkeys;
   int i, num_regs, valid_p;
 
   if (! tdesc_has_registers (tdesc))
@@ -8191,6 +8538,9 @@ i386_validate_tdesc_p (struct gdbarch_tdep *tdep,
 
   /* Try AVX512 registers.  */
   feature_avx512 = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.avx512");
+
+  /* Try PKEYS  */
+  feature_pkeys = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.pkeys");
 
   valid_p = 1;
 
@@ -8296,6 +8646,16 @@ i386_validate_tdesc_p (struct gdbarch_tdep *tdep,
 	valid_p &= tdesc_numbered_register (feature_mpx, tdesc_data,
 	    I387_BND0R_REGNUM (tdep) + i,
 	    tdep->mpx_register_names[i]);
+    }
+
+  if (feature_pkeys)
+    {
+      tdep->xcr0 |= X86_XSTATE_PKRU;
+
+      for (i = 0; i < I387_NUM_PKEYS_REGS; i++)
+	valid_p &= tdesc_numbered_register (feature_pkeys, tdesc_data,
+	                                    I387_PKRU_REGNUM (tdep) + i,
+	                                    tdep->pkeys_register_names[i]);
     }
 
   return valid_p;
@@ -8531,6 +8891,10 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   tdep->num_ymm_avx512_regs = 0;
   tdep->num_xmm_avx512_regs = 0;
 
+  /* No PKEYS registers  */
+  tdep->pkru_regnum = -1;
+  tdep->num_pkeys_regs = 0;
+
   tdesc_data = tdesc_data_alloc ();
 
   set_gdbarch_relocate_instruction (gdbarch, i386_relocate_instruction);
@@ -8703,6 +9067,8 @@ i386_mpx_bd_base (void)
 
   return ret & MPX_BASE_MASK;
 }
+
+/* Check if the current target is MPX enabled.  */
 
 int
 i386_mpx_enabled (void)

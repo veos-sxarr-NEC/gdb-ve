@@ -1,5 +1,8 @@
 /* General utility routines for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -539,7 +542,7 @@ error_stream (struct ui_file *stream)
 static void ATTRIBUTE_NORETURN
 abort_with_message (const char *msg)
 {
-  if (gdb_stderr == NULL)
+  if (!has_gdb_stderr ())
     fputs (msg, stderr);
   else
     fputs_unfiltered (msg, gdb_stderr);
@@ -701,7 +704,7 @@ internal_vproblem (struct internal_problem *problem,
   }
 
   /* Fall back to abort_with_message if gdb_stderr is not set up.  */
-  if (gdb_stderr == NULL)
+  if (!has_gdb_stderr ())
     {
       fputs (reason, stderr);
       abort_with_message ("\n");
@@ -1972,6 +1975,12 @@ reinitialize_more_filter (void)
 void
 wrap_here (char *indent)
 {
+  fwrap_here(indent, gdb_stdout);
+}
+
+void
+fwrap_here (char *indent, struct ui_file *file)
+{
   /* This should have been allocated, but be paranoid anyway.  */
   if (!wrap_buffer)
     internal_error (__FILE__, __LINE__,
@@ -1980,7 +1989,7 @@ wrap_here (char *indent)
   if (wrap_buffer[0])
     {
       *wrap_pointer = '\0';
-      fputs_unfiltered (wrap_buffer, gdb_stdout);
+      fputs_unfiltered (wrap_buffer, file);
     }
   wrap_pointer = wrap_buffer;
   wrap_buffer[0] = '\0';
@@ -1990,9 +1999,9 @@ wrap_here (char *indent)
     }
   else if (chars_printed >= chars_per_line)
     {
-      puts_filtered ("\n");
+      fputs_filtered ("\n", file);
       if (indent != NULL)
-	puts_filtered (indent);
+		fputs_filtered (indent, file);
       wrap_column = 0;
     }
   else
@@ -2575,7 +2584,14 @@ strcmp_iw (const char *string1, const char *string2)
 	  string2++;
 	}
     }
-  return (*string1 != '\0' && *string1 != '(') || (*string2 != '\0');
+  while (isspace (*string1))
+    {
+      string1++;
+    }
+  /* Allinea added the isstartoftemplate check, but this breaks some of the
+     C++ support.  I've disabled this for now, but this might break some of
+     Allinea's additional python functionality.  */
+  return (*string1 != '\0' && *string1 != '(' /*&& !isstartoftemplate (string1)*/) || (*string2 != '\0');
 }
 
 /* This is like strcmp except that it ignores whitespace and treats
@@ -2671,8 +2687,16 @@ strcmp_iw_ordered (const char *string1, const char *string2)
 	    return 1;
 	  else
 	    return -1;
+	case '<':
+	  if (isstartoftemplate (string1))
+	    {
+	      if (*string2 == '\0')
+		return 1;
+	      else
+		return -1;
+	    }
 	default:
-	  if (*string2 == '\0' || *string2 == '(')
+	  if (*string2 == '\0' || *string2 == '(' || isstartoftemplate (string2))
 	    return 1;
 	  else if (c1 > c2)
 	    return 1;
@@ -2691,6 +2715,26 @@ strcmp_iw_ordered (const char *string1, const char *string2)
       string1 = saved_string1;
       string2 = saved_string2;
     }
+}
+
+static int
+isidentstartchar (char c)
+{
+  return (c >= 'A' && c <= 'Z')
+	 || (c >= 'a' && c <= 'z')
+	 || c == '_';
+}
+
+int
+isstartoftemplate (const char *s)
+{
+  if (*s++ != '<')
+    return 0;
+  while (isspace (*s))
+    {
+      s++;
+    }
+  return isidentstartchar (*s);
 }
 
 /* A simple comparison function with opposite semantics to strcmp.  */
@@ -2728,6 +2772,14 @@ show_debug_timestamp (struct ui_file *file, int from_tty,
 {
   fprintf_filtered (file, _("Timestamping debugging messages is %s.\n"),
 		    value);
+}
+
+static void
+sleep_command (char *arg, int from_tty)
+{
+  int n = atoi(arg);
+  if (n)
+    sleep (n);
 }
 
 
@@ -2780,6 +2832,10 @@ When set, debugging messages will be marked with seconds and microseconds."),
 			   NULL,
 			   show_debug_timestamp,
 			   &setdebuglist, &showdebuglist);
+
+  add_cmd ("sleep", class_support, sleep_command,
+	   _("Sleep for the given number of seconds."),
+	   &cmdlist);
 }
 
 const char *
@@ -3200,6 +3256,14 @@ producer_is_gcc_ge_4 (const char *producer)
   return minor;
 }
 
+/* Check to see if the producer is pgi fortran compiler.  */
+
+int
+producer_is_pgi_fortran (const char *producer)
+{
+  return (producer != 0 && strncmp (producer, "PGF90 ", 6) == 0);
+}
+
 /* Returns nonzero if the given PRODUCER string is GCC and sets the MAJOR
    and MINOR versions when not NULL.  Returns zero if the given PRODUCER
    is NULL or it isn't GCC.  */
@@ -3495,6 +3559,82 @@ strip_leading_path_elements (const char *path, int n)
     }
 
   return p;
+}
+
+/*
+ * Simplify pathnames containing "." and ".." entries.
+ * ie, simplify_path("/a/b/c/./../d/..") returns "/a/b"
+ */
+void
+simplify_path (char *pathl)
+{
+  char *cur, *t;
+  int isrooted;
+  char *very_start = pathl, *start;
+
+  if (!*pathl)
+    return;
+
+  if ((isrooted = pathl[0] == '/'))
+    very_start++;
+
+  /* Before                       After
+   * /foo/                        /foo
+   * /foo/../../bar               /bar
+   * /foo/./blah/..               /foo
+   * .                            .
+   * ..                           ..
+   * ./foo                        foo
+   * foo/../../../bar             ../../bar
+   */
+
+  for (cur = t = start = very_start;;)
+    {
+      /* treat multiple '/'s as one '/' */
+      while (*t == '/')
+	t++;
+
+      if (*t == '\0')
+	{
+	  if (cur == pathl)
+	    /* convert empty path to dot */
+	    *cur++ = '.';
+	  *cur = '\0';
+	  break;
+	}
+
+      if (t[0] == '.')
+	{
+	  if (!t[1] || t[1] == '/')
+	    {
+	      t += 1;
+	      continue;
+	    }
+	  else if (t[1] == '.' && (!t[2] || t[2] == '/'))
+	    {
+	      if (!isrooted && cur == start)
+		{
+		  if (cur != very_start)
+		    *cur++ = '/';
+		  *cur++ = '.';
+		  *cur++ = '.';
+		  start = cur;
+		}
+	      else if (cur != start)
+		while (--cur > start && *cur != '/')
+		  ;
+	      t += 2;
+	      continue;
+	    }
+	}
+
+      if (cur != very_start)
+	*cur++ = '/';
+
+      /* find/copy next component of pathname */
+      while (*t && *t != '/')
+	*cur++ = *t++;
+    }
 }
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */

@@ -1,5 +1,8 @@
 /* Multiple source language support for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1991-2017 Free Software Foundation, Inc.
 
    Contributed by the Department of Computer Science at the State University
@@ -44,6 +47,8 @@
 #include "symfile.h"
 #include "cp-support.h"
 #include "frame.h"
+#include "objfiles.h"
+#include "observer.h"
 
 extern void _initialize_language (void);
 
@@ -690,7 +695,7 @@ language_class_name_from_physname (const struct language_defn *lang,
   return NULL;
 }
 
-/* Return non-zero if TYPE should be passed (and returned) by
+/* Return non-zero if TYPE should be passed by
    reference at the language level.  */
 int
 language_pass_by_reference (struct type *type)
@@ -699,10 +704,27 @@ language_pass_by_reference (struct type *type)
 }
 
 /* Return zero; by default, types are passed by value at the language
-   level.  The target ABI may pass or return some structs by reference
+   level.  The target ABI may pass some structs by reference
    independent of this.  */
 int
 default_pass_by_reference (struct type *type)
+{
+  return 0;
+}
+
+/* Return non-zero if TYPE should be returned by
+   reference at the language level.  */
+int
+language_return_by_reference (struct type *type)
+{
+  return current_language->la_return_by_reference (type);
+}
+
+/* Return zero; by default, types are returned by value at the language
+   level.  The target ABI may return some structs by reference
+   independent of this.  */
+int
+default_return_by_reference (struct type *type)
 {
   return 0;
 }
@@ -871,6 +893,7 @@ const struct language_defn unknown_language_defn =
   unknown_language_arch_info,	/* la_language_arch_info.  */
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -920,6 +943,7 @@ const struct language_defn auto_language_defn =
   unknown_language_arch_info,	/* la_language_arch_info.  */
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -967,6 +991,7 @@ const struct language_defn local_language_defn =
   unknown_language_arch_info,	/* la_language_arch_info.  */
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   default_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
@@ -986,6 +1011,26 @@ struct language_gdbarch
      language".  */
   struct language_arch_info arch_info[nr_languages];
 };
+
+static void
+language_gdbarch_new_objfile (struct objfile *objfile)
+{
+  struct gdbarch *gdbarch;
+  struct language_gdbarch *ld;
+  int i;
+
+  if (!objfile)
+    return;
+  gdbarch = get_objfile_arch (objfile);
+  if (!gdbarch)
+    return;
+  ld = (struct language_gdbarch *) gdbarch_data (gdbarch,
+						 language_gdbarch_data);
+  if (!ld)
+    return;
+  for (i = 0; i < nr_languages; i++)
+    ld->arch_info[i].bool_type = NULL;
+}
 
 static void *
 language_gdbarch_post_init (struct gdbarch *gdbarch)
@@ -1021,6 +1066,9 @@ language_bool_type (const struct language_defn *la,
   struct language_gdbarch *ld
     = (struct language_gdbarch *) gdbarch_data (gdbarch, language_gdbarch_data);
 
+  if (ld->arch_info[la->la_language].bool_type)
+    return ld->arch_info[la->la_language].bool_type;
+
   if (ld->arch_info[la->la_language].bool_type_symbol)
     {
       struct symbol *sym;
@@ -1032,11 +1080,15 @@ language_bool_type (const struct language_defn *la,
 	  struct type *type = SYMBOL_TYPE (sym);
 
 	  if (type && TYPE_CODE (type) == TYPE_CODE_BOOL)
-	    return type;
+	    {
+	      ld->arch_info[la->la_language].bool_type = type;
+	      return ld->arch_info[la->la_language].bool_type;
+	    }
 	}
     }
 
-  return ld->arch_info[la->la_language].bool_type_default;
+  ld->arch_info[la->la_language].bool_type = ld->arch_info[la->la_language].bool_type_default;
+  return ld->arch_info[la->la_language].bool_type;
 }
 
 /* Helper function for primitive type lookup.  */
@@ -1182,6 +1234,8 @@ _initialize_language (void)
 
   language_gdbarch_data
     = gdbarch_data_register_post_init (language_gdbarch_post_init);
+    
+  observer_attach_new_objfile (language_gdbarch_new_objfile);    
 
   /* GDB commands for language specific stuff.  */
 

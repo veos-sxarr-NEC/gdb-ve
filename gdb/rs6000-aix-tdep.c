@@ -1,5 +1,8 @@
 /* Native support code for PPC AIX, for GDB the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
    Free Software Foundation, Inc.
@@ -293,7 +296,7 @@ rs6000_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	  gdb_byte word[MAX_REGISTER_SIZE];
 
 	  memset (word, 0, reg_size);
-	  memcpy (word, value_contents (arg), len);
+	  memcpy (word + reg_size - len, value_contents (arg), len);
 	  regcache_cooked_write (regcache, tdep->ppc_gp0_regnum + 3 +ii, word);
 	}
       ++argno;

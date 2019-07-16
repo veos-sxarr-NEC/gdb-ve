@@ -1,3 +1,6 @@
+# Modified by Arm.
+
+# Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 # Copyright (C) 1989-2017 Free Software Foundation, Inc.
 
 # This file is part of GDB.
@@ -178,6 +181,13 @@ LIBBABELTRACE = @LIBBABELTRACE@
 
 # Where is libipt?  This will be empty if libipt was not available.
 LIBIPT = @LIBIPT@
+
+# GOOGLE-LOCAL addition, use libexpat from the build tree
+EXPAT_DIR = ../expat
+EXPAT_SRC = $(srcdir)/$(EXPAT_DIR)
+EXPAT_DEPS = $(EXPAT_DIR)/.libs/libexpat.a
+EXPAT_INCLUDE = $(EXPAT_SRC)/lib
+EXPAT_CFLAGS = -I$(EXPAT_INCLUDE)
 
 WARN_CFLAGS = @WARN_CFLAGS@
 WERROR_CFLAGS = @WERROR_CFLAGS@
@@ -572,6 +582,7 @@ INTERNAL_CFLAGS_BASE = \
 	$(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) $(ZLIBINC) \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) $(LIBDECNUMBER_CFLAGS) \
 	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS)
+INTERNAL_CFLAGS_BASE += $(EXPAT_CFLAGS)
 INTERNAL_WARN_CFLAGS = $(INTERNAL_CFLAGS_BASE) $(GDB_WARN_CFLAGS)
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
 
@@ -848,6 +859,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	exceptions.c expprint.c extension.c \
 	f-exp.y f-lang.c f-typeprint.c f-valprint.c filesystem.c \
 	findcmd.c findvar.c frame.c frame-base.c frame-unwind.c \
+	f-module.c \
 	gdbarch.c arch-utils.c gdb_bfd.c gdb_obstack.c \
 	gdbtypes.c gnu-v2-abi.c gnu-v3-abi.c \
 	go-exp.y go-lang.c go-typeprint.c go-valprint.c \
@@ -881,7 +893,10 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	trad-frame.c \
 	tramp-frame.c \
 	typeprint.c \
+	uda-client.c uda-rmt-client-cmd.y uda-rmt-utils.c \
+	uda-plugin.c uda-plugin-iface.c \
 	ui-out.c utils.c ui-file.h ui-file.c \
+	upc-lang.c upc-thread.c \
 	user-regs.c \
 	valarith.c valops.c valprint.c value.c varobj.c common/vec.c \
 	xml-tdesc.c xml-support.c \
@@ -1038,6 +1053,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	extension.o \
 	filesystem.o \
 	filestuff.o \
+	f-module.o \
 	inf-child.o \
 	interps.o \
 	minidebug.o \
@@ -1059,6 +1075,9 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	dwarf2read.o mipsread.o stabsread.o corefile.o \
 	dwarf2expr.o dwarf2loc.o dwarf2-frame.o dwarf2-frame-tailcall.o \
 	ada-lang.o c-lang.o d-lang.o f-lang.o objc-lang.o \
+	upc-lang.o upc-thread.o \
+	uda-client.o uda-rmt-client-cmd.o uda-rmt-utils.o \
+	uda-plugin.o uda-plugin-iface.o \
 	ada-tasks.o ada-varobj.o c-varobj.o \
 	ui-out.o cli-out.o \
 	varobj.o vec.o \
@@ -1665,6 +1684,7 @@ ALLDEPFILES = \
 	aarch64-tdep.c aarch64-linux-tdep.c aarch64-newlib-tdep.c \
 	aarch64-linux-nat.c \
 	aix-thread.c \
+	upc-thread.c \
 	alphabsd-nat.c alpha-linux-nat.c \
 	alpha-tdep.c alpha-mdebug-tdep.c \
 	alpha-linux-tdep.c \

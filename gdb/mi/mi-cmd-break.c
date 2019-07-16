@@ -1,4 +1,7 @@
 /* MI Command Set - breakpoint and watchpoint commands.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -191,6 +194,7 @@ mi_cmd_break_insert_1 (int dprintf, char *command, char **argv, int argc)
       HARDWARE_OPT, TEMP_OPT, CONDITION_OPT,
       IGNORE_COUNT_OPT, THREAD_OPT, PENDING_OPT, DISABLE_OPT,
       TRACEPOINT_OPT,
+      EXACT_OPT,
       EXPLICIT_SOURCE_OPT, EXPLICIT_FUNC_OPT,
       EXPLICIT_LABEL_OPT, EXPLICIT_LINE_OPT
     };
@@ -204,6 +208,7 @@ mi_cmd_break_insert_1 (int dprintf, char *command, char **argv, int argc)
     {"f", PENDING_OPT, 0},
     {"d", DISABLE_OPT, 0},
     {"a", TRACEPOINT_OPT, 0},
+    {"e", EXACT_OPT, 0},
     {"-source" , EXPLICIT_SOURCE_OPT, 1},
     {"-function", EXPLICIT_FUNC_OPT, 1},
     {"-label", EXPLICIT_LABEL_OPT, 1},
@@ -215,6 +220,7 @@ mi_cmd_break_insert_1 (int dprintf, char *command, char **argv, int argc)
      to denote the end of the option list. */
   int oind = 0;
   char *oarg;
+  unsigned flags = 0;
 
   initialize_explicit_location (&explicit_loc);
 
@@ -250,6 +256,8 @@ mi_cmd_break_insert_1 (int dprintf, char *command, char **argv, int argc)
 	case TRACEPOINT_OPT:
 	  tracepoint = 1;
 	  break;
+	case EXACT_OPT:
+	  flags |= CREATE_BREAKPOINT_FLAGS_EXACT;
 	case EXPLICIT_SOURCE_OPT:
 	  is_explicit = 1;
 	  explicit_loc.source_filename = oarg;
@@ -357,7 +365,7 @@ mi_cmd_break_insert_1 (int dprintf, char *command, char **argv, int argc)
 		     temp_p, type_wanted,
 		     ignore_count,
 		     pending ? AUTO_BOOLEAN_TRUE : AUTO_BOOLEAN_FALSE,
-		     ops, 0, enabled, 0, 0);
+		     ops, 0, enabled, 0, flags);
   do_cleanups (back_to);
 }
 

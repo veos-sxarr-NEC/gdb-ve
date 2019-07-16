@@ -43,7 +43,7 @@ gdb_test "break $hdrfile:$bp_location" \
 # Do "info break" now so we can easily compare it with the later "info break"
 # if problems arise.
 gdb_test "info break" \
-    "\[\r\n\]1\.1.* y .* at .*$hdrfile:$bp_location.*\[\r\n\]1\.2.* y .* at .*$hdrfile:$bp_location.*"
+    "\[\r\n\]1\.1.*y .* at .*$hdrfile:$bp_location.*\[\r\n\]1\.2.*y .* at .*$hdrfile:$bp_location.*"
 
 gdb_run_cmd
 gdb_test "" "Breakpoint \[0-9\]+,.*foo \\(i=0\\).*" "run to breakpoint"
@@ -62,10 +62,10 @@ gdb_run_cmd
 gdb_test "" "Breakpoint \[0-9\]+,.*foo \\(i=0\\).*" "disabling location: run to breakpoint"
 
 gdb_test_multiple "info break" "disabled breakpoint 1.2" {
-    -re "1\.2.* n .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
+    -re "1\.2.*n .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
 	pass "disabled breakpoint 1.2"
     }
-    -re "1\.2.* y .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
+    -re "1\.2.*y .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
 	# When inferior is restarted, breakpoint locations will be updated.
 	# On uclinux, it is not guaranteed that new inferior is located the
 	# same address as previous one, so status/state of breakpoint location

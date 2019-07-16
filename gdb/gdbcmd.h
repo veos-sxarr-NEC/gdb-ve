@@ -6,6 +6,9 @@
    fnasser@redhat.com    */
 
 /* Header file for GDB-specific command-line stuff.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
@@ -126,6 +129,10 @@ extern struct cmd_list_element *showchecklist;
 /* Chain containing all defined "save" subcommands.  */
 
 extern struct cmd_list_element *save_cmdlist;
+
+extern struct cmd_list_element *setsourcelist;
+
+extern struct cmd_list_element *showsourcelist;
 
 extern void execute_command (char *, int);
 extern char *execute_command_to_string (char *p, int from_tty);

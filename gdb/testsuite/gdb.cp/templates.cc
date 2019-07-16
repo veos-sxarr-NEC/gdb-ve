@@ -734,6 +734,8 @@ int main()
 {
     int i;
     long l, m, n;
+    short j;
+    float k;
 
     i = i + 1;
 
@@ -793,6 +795,8 @@ int main()
   
   i=GetMax<int>(x,y);
   n=GetMax<long>(l,m);
+  j=GetMax<short>(x,y);
+  k=GetMax<float>(l,m);
 
   intBazOne ibo;
   z = ibo.baz (2, 21);

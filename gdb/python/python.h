@@ -1,5 +1,8 @@
 /* Python/gdb header for generic use in gdb
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,5 +27,9 @@
 
 /* This is all that python exports to gdb.  */
 extern const struct extension_language_defn extension_language_python;
+
+struct value *apply_val_child (struct value *object,
+			       struct value *index,
+			       const struct language_defn *language);
 
 #endif /* GDB_PYTHON_H */

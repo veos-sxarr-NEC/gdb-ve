@@ -1,5 +1,8 @@
 /* Source-language-related definitions for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1991-2017 Free Software Foundation, Inc.
 
    Contributed by the Department of Computer Science at the State University
@@ -123,6 +126,8 @@ struct language_arch_info
   const char *bool_type_symbol;
   /* Otherwise, this is the default boolean builtin type.  */
   struct type *bool_type_default;
+  /* Cached boolean type.  */
+  struct type *bool_type;  
 };
 
 /* A pointer to a function expected to return nonzero if
@@ -344,10 +349,14 @@ struct language_defn
                                   struct ui_file *stream,
                                   const struct value_print_options *options);
 
-    /* Return non-zero if TYPE should be passed (and returned) by
+    /* Return non-zero if TYPE should be passed by
        reference at the language level.  */
     int (*la_pass_by_reference) (struct type *type);
 
+    /* Return non-zero if TYPE should be returned by
+       reference at the language level.  */
+    int (*la_return_by_reference) (struct type *type);
+    
     /* Obtain a string from the inferior, storing it in a newly allocated
        buffer in BUFFER, which should be freed by the caller.  If the
        in- and out-parameter *LENGTH is specified at -1, the string is
@@ -600,14 +609,23 @@ extern void default_print_array_index (struct value *index_value,
                                        struct ui_file *stream,
 				       const struct value_print_options *options);
 
-/* Return non-zero if TYPE should be passed (and returned) by
+/* Return non-zero if TYPE should be passed by
    reference at the language level.  */
 int language_pass_by_reference (struct type *type);
 
 /* Return zero; by default, types are passed by value at the language
-   level.  The target ABI may pass or return some structs by reference
+   level.  The target ABI may pass some structs by reference
    independent of this.  */
 int default_pass_by_reference (struct type *type);
+
+/* Return non-zero if TYPE should be returned by
+   reference at the language level.  */
+int language_return_by_reference (struct type *type);
+
+/* Return zero; by default, types are returned by value at the language
+   level.  The target ABI may return some structs by reference
+   independent of this.  */
+int default_return_by_reference (struct type *type);
 
 /* The default implementation of la_print_typedef.  */
 void default_print_typedef (struct type *type, struct symbol *new_symbol,

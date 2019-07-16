@@ -48,10 +48,20 @@ gdb_test "show remote memory-write-packet-size" \
 	"The memory-write-packet-size is 20. Packets are limited to 20 bytes." \
 	"set write-packet - small"
 
+#The setting of a fixed length can sometime give an interactive prompt,
+# so disable it.
+gdb_test_no_output "set confirm off" "confirm"
+gdb_test "set remote memory-write-packet-size fixed"
+gdb_test "show remote memory-write-packet-size" \
+	"The memory-write-packet-size is 20. Packets are fixed at 20 bytes." \
+	"set write-packet - fixed"
+gdb_test_no_output "set confirm on" "confirm"
+
 gdb_test_no_output "set remote memory-write-packet-size 1"
 gdb_test "show remote memory-write-packet-size" \
-	"The memory-write-packet-size is 1. Packets are limited to 20 bytes." \
+	"The memory-write-packet-size is 1. Packets are fixed at 20 bytes." \
 	"set write-packet - very-small"
+
 
 #
 # Part TWO: Check the download behavour

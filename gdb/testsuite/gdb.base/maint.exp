@@ -460,6 +460,9 @@ gdb_test_multiple "maint info breakpoints" "maint info breakpoints" {
     -re "Num\[ \t\]+Type\[ \t\]+Disp\[ \t\]+Enb\[ \t\]+Address\[ \t\]+What\r\n1\[ \t\]+breakpoint\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex in main at.*break.c:$bp_location6 sspace 1\r\n\[ \t\]+breakpoint already hit 1 time\r\n-1\[ \t\]+shlib events\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex.*breakpoint already hit.*$gdb_prompt $" {
 	pass "maint info breakpoints (with shlib events)"
     }
+    -re "Num\[ \t\]+Type\[ \t\]+Disp\[ \t\]+Enb\[ \t\]+Address\[ \t\]+What\r\n(-)?1\[ \t\]+breakpoint\[ \t\]+keep\[ \t\]+y\[ \t\]+\<PENDING\>\[ \t\]+__pdbx_switch_to_debugger.*$gdb_prompt $" {
+	pass "maint info breakpoints (with shlib events)"
+    }
 }
 
 gdb_test "maint print" \

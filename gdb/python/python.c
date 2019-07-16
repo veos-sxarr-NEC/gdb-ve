@@ -1,5 +1,8 @@
 /* General python/gdb code
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -121,6 +124,7 @@ PyObject *gdbpy_display_hint_cst;
 PyObject *gdbpy_doc_cst;
 PyObject *gdbpy_enabled_cst;
 PyObject *gdbpy_value_cst;
+PyObject *gdbpy_child_cst;
 
 /* The GdbError exception.  */
 PyObject *gdbpy_gdberror_exc;
@@ -1709,7 +1713,6 @@ message == an error message without a stack will be printed."),
 			&user_show_python_list);
 
 #ifdef HAVE_PYTHON
-#ifdef WITH_PYTHON_PATH
   /* Work around problem where python gets confused about where it is,
      and then can't find its libraries, etc.
      NOTE: Python assumes the following layout:
@@ -1746,7 +1749,10 @@ message == an error message without a stack will be printed."),
 #else
   Py_SetProgramName (progname);
 #endif
-#endif
+
+  /* Disable bytecode generation */
+  extern int Py_DontWriteBytecodeFlag;
+  Py_DontWriteBytecodeFlag = 1;
 
   Py_Initialize ();
   PyEval_InitThreads ();
@@ -1851,6 +1857,9 @@ message == an error message without a stack will be printed."),
     goto fail;
   gdbpy_value_cst = PyString_FromString ("value");
   if (gdbpy_value_cst == NULL)
+    goto fail;
+  gdbpy_child_cst = PyString_FromString ("child");
+  if (gdbpy_child_cst == NULL)
     goto fail;
 
   /* Release the GIL while gdb runs.  */

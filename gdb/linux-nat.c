@@ -1,5 +1,8 @@
 /* GNU/Linux native-dependent code common to multiple platforms.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -228,6 +231,17 @@ show_debug_linux_nat (struct ui_file *file, int from_tty,
 		      struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file, _("Debugging of GNU/Linux lwp module is %s.\n"),
+		    value);
+}
+
+int print_task_groups = 0;
+
+static void
+show_print_task_groups (struct ui_file *file, int from_tty,
+		       struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("\
+Printing of Linux LWP task groups in thread identifiers %s.\n"),
 		    value);
 }
 
@@ -495,35 +509,7 @@ linux_child_follow_fork (struct target_ops *ops, int follow_child,
 
 	  if (linux_nat_prepare_to_resume != NULL)
 	    linux_nat_prepare_to_resume (child_lp);
-
-	  /* When debugging an inferior in an architecture that supports
-	     hardware single stepping on a kernel without commit
-	     6580807da14c423f0d0a708108e6df6ebc8bc83d, the vfork child
-	     process starts with the TIF_SINGLESTEP/X86_EFLAGS_TF bits
-	     set if the parent process had them set.
-	     To work around this, single step the child process
-	     once before detaching to clear the flags.  */
-
-	  if (!gdbarch_software_single_step_p (target_thread_architecture
-						   (child_lp->ptid)))
-	    {
-	      linux_disable_event_reporting (child_pid);
-	      if (ptrace (PTRACE_SINGLESTEP, child_pid, 0, 0) < 0)
-		perror_with_name (_("Couldn't do single step"));
-	      if (my_waitpid (child_pid, &status, 0) < 0)
-		perror_with_name (_("Couldn't wait vfork process"));
-	    }
-
-	  if (WIFSTOPPED (status))
-	    {
-	      int signo;
-
-	      signo = WSTOPSIG (status);
-	      if (signo != 0
-		  && !signal_pass_state (gdb_signal_from_host (signo)))
-		signo = 0;
-	      ptrace (PTRACE_DETACH, child_pid, 0, signo);
-	    }
+	  ptrace (PTRACE_DETACH, child_pid, 0, 0);
 
 	  /* Resets value of inferior_ptid to parent ptid.  */
 	  do_cleanups (old_chain);
@@ -1331,7 +1317,7 @@ get_detach_signal (struct lwp_info *lp)
     signo = GDB_SIGNAL_0; /* a pending ptrace event, not a real signal.  */
   else if (lp->status)
     signo = gdb_signal_from_host (WSTOPSIG (lp->status));
-  else if (target_is_non_stop_p () && !is_executing (lp->ptid))
+  else if (target_is_non_stop_p () && !inferior_stop && !is_executing (lp->ptid))
     {
       struct thread_info *tp = find_thread_ptid (lp->ptid);
 
@@ -1340,7 +1326,7 @@ get_detach_signal (struct lwp_info *lp)
       else
 	signo = tp->suspend.stop_signal;
     }
-  else if (!target_is_non_stop_p ())
+  else if (!target_is_non_stop_p () || inferior_stop)
     {
       struct target_waitstatus last;
       ptid_t last_ptid;
@@ -1510,10 +1496,12 @@ linux_nat_detach (struct target_ops *ops, const char *args, int from_tty)
 
   iterate_over_lwps (pid_to_ptid (pid), detach_callback, NULL);
 
+  main_lwp = find_lwp_pid (pid_to_ptid (pid));
+  if (!main_lwp)
+    return;
+
   /* Only the initial process should be left right now.  */
   gdb_assert (num_lwps (ptid_get_pid (inferior_ptid)) == 1);
-
-  main_lwp = find_lwp_pid (pid_to_ptid (pid));
 
   if (forks_exist_p ())
     {
@@ -1785,7 +1773,8 @@ linux_nat_resume (struct target_ops *ops,
     {
       /* FIXME: What should we do if we are supposed to continue
 	 this thread with a signal?  */
-      gdb_assert (signo == GDB_SIGNAL_0);
+      if (WIFSTOPPED (lp->status) && WSTOPSIG (lp->status) != signo)
+	gdb_assert (signo == GDB_SIGNAL_0);
 
       if (debug_linux_nat)
 	fprintf_unfiltered (gdb_stdlog,
@@ -2405,7 +2394,7 @@ set_ignore_sigint (struct lwp_info *lp, void *data)
   if (lp->stopped && lp->status != 0 && WIFSTOPPED (lp->status)
       && WSTOPSIG (lp->status) == SIGINT)
     lp->status = 0;
-  else
+  else if (!lp->stopped)
     lp->ignore_sigint = 1;
 
   return 0;
@@ -2587,6 +2576,17 @@ stop_wait_callback (struct lwp_info *lp, void *data)
 	  /* Reset SIGNALLED only after the stop_wait_callback call
 	     above as it does gdb_assert on SIGNALLED.  */
 	  lp->signalled = 0;
+
+	  // Only enable this fix when in non-stop mode as it breaks all-stop mode, which
+	  // is required by CUDA GDB 9.1.
+	  if (target_is_non_stop_p ()) {
+	    // The expected SIGSTOP has arrived early. Save the status so it can be processed
+	    // later by linux_nat_wait_1. Failure to do so will result in a hang as
+	    // linux_nat_wait_1 will wait indefinitely (in sigsuspend) for a thread that has
+	    // already stopped but had its wait status set incorrectly.
+	    lp->status = status;
+	    lp->last_resume_kind = resume_stop;
+	  }
 	}
     }
 
@@ -3140,7 +3140,11 @@ linux_nat_filter_event (int lwpid, int status)
 			    lp->step ?
 			    "PTRACE_SINGLESTEP" : "PTRACE_CONT",
 			    target_pid_to_str (lp->ptid));
+#if 0
+      /* TODO - more research is needed for this as in non-stop mode
+         this assert fails if thread apply all is used. */
       gdb_assert (lp->resumed);
+#endif
 
       /* Discard the event.  */
       return NULL;
@@ -3181,6 +3185,11 @@ linux_nat_filter_event (int lwpid, int status)
 	 except signals that might be caused by a breakpoint.  */
       if (!lp->step
 	  && WSTOPSIG (status) && sigismember (&pass_mask, WSTOPSIG (status))
+	  && WSTOPSIG (status) != SIGSTOP
+	  && WSTOPSIG (status) != SIGSTOP
+	  && WSTOPSIG (status) != SIGSEGV
+	  && WSTOPSIG (status) != SIGILL
+	  && WSTOPSIG (status) != SIGTRAP
 	  && !linux_wstatus_maybe_breakpoint (status))
 	{
 	  linux_resume_one_lwp (lp, lp->step, signo);
@@ -3948,7 +3957,11 @@ linux_nat_pid_to_str (struct target_ops *ops, ptid_t ptid)
       && (ptid_get_pid (ptid) != ptid_get_lwp (ptid)
 	  || num_lwps (ptid_get_pid (ptid)) > 1))
     {
-      snprintf (buf, sizeof (buf), "LWP %ld", ptid_get_lwp (ptid));
+      if (print_task_groups)
+	snprintf (buf, sizeof (buf), "LWP %d.%ld", ptid_get_pid (ptid),
+		  ptid_get_lwp (ptid));
+      else
+	snprintf (buf, sizeof (buf), "LWP %ld", ptid_get_lwp (ptid));
       return buf;
     }
 
@@ -4990,6 +5003,9 @@ Enables printf debugging output."),
   /* Save this mask as the default.  */
   sigprocmask (SIG_SETMASK, NULL, &normal_mask);
 
+  /* Added because Cray environment masks this by default. */
+  sigdelset (&normal_mask, SIGINT);
+
   /* Install a SIGCHLD handler.  */
   sigchld_action.sa_handler = sigchld_handler;
   sigemptyset (&sigchld_action.sa_mask);
@@ -5002,9 +5018,20 @@ Enables printf debugging output."),
   sigprocmask (SIG_SETMASK, NULL, &suspend_mask);
   sigdelset (&suspend_mask, SIGCHLD);
 
+  /* Added because Cray environment masks this by default. */
+  sigdelset (&suspend_mask, SIGINT);
+ 
   sigemptyset (&blocked_mask);
 
   lwp_lwpid_htab_create ();
+
+  add_setshow_boolean_cmd ("lin-lwp-task-groups", no_class,
+         &print_task_groups, _("\
+Set printing of Linux LWP task groups."), _("\
+Show printing of Linux LWP task groups."), NULL,
+         NULL,
+         show_print_task_groups,
+         &setprintlist, &showprintlist);
 }
 
 

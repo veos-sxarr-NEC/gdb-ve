@@ -1,5 +1,8 @@
 /* Target-dependent code for GNU/Linux i386.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -450,6 +453,54 @@ i386_linux_handle_segmentation_fault (struct gdbarch *gdbarch,
 		    paddress (gdbarch, upper_bound));
 
   ui_out_text (uiout, _("]"));
+}
+
+
+void
+i386_mpx_bound_violation_handler (struct gdbarch *gdbarch, struct ui_out *uiout)
+{
+  CORE_ADDR lower_bound, upper_bound, access;
+  int is_upper;
+
+  if (!i386_mpx_enabled ())
+    return;
+
+  /* Added to silence compiler warning about these being using
+     uninitialised, which is wrong.  */
+  lower_bound = upper_bound = access = 0;
+
+  TRY
+    {
+      lower_bound
+        = parse_and_eval_long ("$_siginfo._sifields._sigfault._addr_bnd._lower");
+      upper_bound
+        = parse_and_eval_long ("$_siginfo._sifields._sigfault._addr_bnd._upper");
+      access
+        = parse_and_eval_long ("$_siginfo._sifields._sigfault.si_addr");
+    }
+  CATCH (exception, RETURN_MASK_ALL)
+    {
+      return;
+    }
+  END_CATCH
+
+  is_upper = (access > upper_bound ? 1 : 0);
+
+  ui_out_text (uiout, "\n");
+  if (is_upper)
+    ui_out_field_string (uiout, "sigcode-meaning", "Upper bound violation");
+  else
+    ui_out_field_string (uiout, "sigcode-meaning", "Lower bound violation");
+
+  ui_out_text (uiout, " while accessing address ");
+  ui_out_field_fmt (uiout,"bound-access", "%s", paddress (gdbarch, access));
+  ui_out_text (uiout, "\nBounds: [lower = ");
+  ui_out_field_fmt (uiout,"lower-bound", "%s", paddress (gdbarch, lower_bound));
+  ui_out_text (uiout, ", upper = ");
+  ui_out_field_fmt (uiout,"upper-bound", "%s", paddress (gdbarch, upper_bound));
+  ui_out_text (uiout, "]");
+
+  return;
 }
 
 /* Parse the arguments of current system call instruction and record

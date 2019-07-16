@@ -1,4 +1,7 @@
-/* Copyright (C) 2011-2017 Free Software Foundation, Inc.
+/* Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
+   Copyright (C) 2011-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -174,6 +177,9 @@ struct buffer;
 #ifndef TRAP_HWBKPT
 # define TRAP_HWBKPT 4
 #endif
+
+
+extern int linux_ptrace_force_use_entry_point_to_call_inferior_functions;
 
 extern void linux_ptrace_attach_fail_reason (pid_t pid, struct buffer *buffer);
 

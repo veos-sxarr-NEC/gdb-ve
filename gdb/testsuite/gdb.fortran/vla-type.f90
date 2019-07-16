@@ -15,19 +15,19 @@
 
 program vla_struct
   type :: one
-    integer, allocatable :: ivla (:, :, :)
+    real, allocatable :: ivla (:, :, :)
   end type one
   type :: two
-    integer, allocatable :: ivla1 (:, :, :)
-    integer, allocatable :: ivla2 (:, :)
+    real, allocatable :: ivla1 (:, :, :)
+    real, allocatable :: ivla2 (:, :)
   end type two
   type :: three
-    integer :: ivar
-    integer, allocatable :: ivla (:)
+    real :: ivar
+    real, allocatable :: ivla (:)
   end type three
   type :: four
-    integer, allocatable :: ivla (:)
-    integer :: ivar
+    real, allocatable :: ivla (:)
+    real :: ivar
   end type four
   type :: five
     type(one) :: tone
@@ -40,6 +40,8 @@ program vla_struct
   type(five)               :: fivev
   type(five)               :: fivearr (2)
   type(five), allocatable  :: fivedynarr (:)
+  type(one), allocatable   :: onevla(:, :)
+  type(one), pointer       :: onep
   logical                  :: l
   integer                  :: i, j
 
@@ -63,7 +65,7 @@ program vla_struct
   twov%ivla2(1, 2) = 12
   twov%ivla2(2, 1) = 21
 
-  threev%ivar = 3                      ! twov-filled
+  threev%ivar = 3.14                      ! twov-filled
   allocate (threev%ivla (20))
   l = allocated(threev%ivla)
 
@@ -74,16 +76,30 @@ program vla_struct
   allocate (fourv%ivla (10))             ! threev-filled
   l = allocated(fourv%ivla)
 
-  fourv%ivar = 3
+  fourv%ivar = 3.14
   fourv%ivla(:) = 1
   fourv%ivla(2) = 2
   fourv%ivla(7) = 7
 
-  allocate (fivev%tone%ivla (10, 10, 10))         ! fourv-filled
+  allocate (onevla (10, 10))             ! fourv-filled
+  do i = 1, 10
+    do j = 1, 10
+      allocate (onevla(i,j)%ivla(10,10,10))
+      l = allocated(onevla(i,j)%ivla)
+
+      onevla(i,j)%ivla(3, 6, 9) = 369
+      onevla(i,j)%ivla(9, 3, 6) = 936
+    end do
+  end do
+
+  allocate (fivev%tone%ivla (10, 10, 10))         ! onevla-filled
   l = allocated(fivev%tone%ivla)
   fivev%tone%ivla(:, :, :) = 1
   fivev%tone%ivla(1, 2, 3) = 123
   fivev%tone%ivla(3, 2, 1) = 321
+
+  onev%ivla(:,:,:) = 2
+  onep => onev
 
   allocate (fivearr(1)%tone%ivla (2, 4, 6))        ! fivev-filled
   allocate (fivearr(2)%tone%ivla (12, 14, 16))
@@ -100,5 +116,9 @@ program vla_struct
   fivedynarr(2)%tone%ivla(:, :, :) = 2
   fivedynarr(2)%tone%ivla(6, 7, 8) = 678
 
+  ! dummy statement for bp
+  l = allocated(fivev%tone%ivla)                  ! onep-associated
+
   l = allocated(fivedynarr)                        ! fivedynarr-filled
+
 end program vla_struct

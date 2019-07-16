@@ -1,4 +1,7 @@
 /* Header for GDB line completion.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
@@ -17,9 +20,12 @@
 #if !defined (LINESPEC_H)
 #define LINESPEC_H 1
 
+#include "common/vec.h" //modified path the vec.h  kdavis@cray.com
+#include "symtab.h" //added symtab.h include statement kdavis@cray.com
+
 struct symtab;
 
-#include "vec.h"
+
 
 /* Flags to pass to decode_line_1 and decode_line_full.  */
 

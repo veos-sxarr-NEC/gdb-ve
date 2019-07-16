@@ -1,5 +1,8 @@
 /* GDB routines for supporting auto-loaded scripts.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2012-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -838,6 +841,31 @@ auto_load_objfile_script_1 (struct objfile *objfile, const char *realname,
 	  if (input != NULL)
 	    break;
 	}
+
+      if (!input)
+	{
+	  /* Now try just the basename */
+	  for (ix = 0; VEC_iterate (char_ptr, vec, ix, dir); ++ix)
+	    {
+	      debugfile = (char *) xmalloc (strlen (dir) + 1
+					    + strlen (filename) + 1);
+	      strcpy (debugfile, dir);
+
+	      /* FILENAME is relative so we need a "/" here.  */
+	      strcat (debugfile, "/");
+	      strcat (debugfile, lbasename (filename));
+
+	      make_cleanup (xfree, debugfile);
+	      input = fopen (debugfile, "r");
+	      if (debug_auto_load)
+		fprintf_unfiltered (gdb_stdlog, _("auto-load: Attempted file "
+						  "\"%s\" %s.\n"),
+				    debugfile,
+				    input ? _("exists") : _("does not exist"));
+	      if (input != NULL)
+		break;
+	    }
+	}
     }
 
   if (input)
@@ -899,22 +927,34 @@ auto_load_objfile_script (struct objfile *objfile,
 
   if (!auto_load_objfile_script_1 (objfile, realname, language))
     {
-      /* For Windows/DOS .exe executables, strip the .exe suffix, so that
-	 FOO-gdb.gdb could be used for FOO.exe, and try again.  */
-
-      size_t len = strlen (realname);
-      const size_t lexe = sizeof (".exe") - 1;
-
-      if (len > lexe && strcasecmp (realname + len - lexe, ".exe") == 0)
+      /* Try again with the original name.  */
+      if (!auto_load_objfile_script_1 (objfile, objfile_name (objfile), language))
 	{
-	  len -= lexe;
-	  realname[len] = '\0';
-	  if (debug_auto_load)
-	    fprintf_unfiltered (gdb_stdlog, _("auto-load: Stripped .exe suffix, "
-					      "retrying with \"%s\".\n"),
-				realname);
-	  auto_load_objfile_script_1 (objfile, realname, language);
+	  /* For Windows/DOS .exe executables, strip the .exe suffix, so that
+	    FOO-gdb.gdb could be used for FOO.exe, and try again.  */
+
+	  size_t len = strlen (realname);
+	  const size_t lexe = sizeof (".exe") - 1;
+
+	  if (len > lexe && strcasecmp (realname + len - lexe, ".exe") == 0)
+	    {
+	      len -= lexe;
+	      realname[len] = '\0';
+	      if (debug_auto_load)
+		fprintf_unfiltered (gdb_stdlog, _("auto-load: Stripped .exe suffix, "
+						  "retrying with \"%s\".\n"),
+				    realname);
+	      auto_load_objfile_script_1 (objfile, realname, language);
+	    }
 	}
+    }
+
+  if (strcmp (lbasename (objfile_name (objfile)), "libstdc++.so.6") != 0
+      && lookup_minimal_symbol ("__gxx_personality_v0", NULL, objfile).minsym != NULL)
+    {
+      /* objfile is probably statically linked with libstdc++, auto-load the
+	 listdc++ pretty printers using the hard-coded name.  */
+      auto_load_objfile_script_1 (objfile, "libstdc++.so.6", language);
     }
 
   do_cleanups (cleanups);

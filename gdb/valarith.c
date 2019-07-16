@@ -1,5 +1,8 @@
 /* Perform arithmetic and other operations on values, for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,6 +27,7 @@
 #include "expression.h"
 #include "target.h"
 #include "language.h"
+#include "upc-lang.h"
 #include "doublest.h"
 #include "dfp.h"
 #include <math.h>
@@ -83,16 +87,27 @@ find_size_for_pointer_math (struct type *ptr_type)
 struct value *
 value_ptradd (struct value *arg1, LONGEST arg2)
 {
-  struct type *valptrtype;
   LONGEST sz;
+  struct type *valptrtype, *tt;
+  struct gdbarch *gdbarch = get_type_arch (value_type (arg1));
   struct value *result;
 
   arg1 = coerce_array (arg1);
   valptrtype = check_typedef (value_type (arg1));
   sz = find_size_for_pointer_math (valptrtype);
 
-  result = value_from_pointer (valptrtype,
-			       value_as_address (arg1) + sz * arg2);
+  tt = check_typedef (TYPE_TARGET_TYPE (valptrtype));
+  if (upc_shared_type_p (tt))
+    {
+      struct value *valint;
+      valint = value_from_longest (builtin_type (gdbarch)->builtin_int, arg2);
+      result = upc_pts_index_add (valptrtype, arg1, valint, sz);
+    }
+  else
+    {
+      result = value_from_pointer (valptrtype,
+			          value_as_address (arg1) + sz * arg2);
+    }
   if (VALUE_LVAL (result) != lval_internalvar)
     set_value_component_location (result, arg1);
   return result;
@@ -106,20 +121,44 @@ value_ptrdiff (struct value *arg1, struct value *arg2)
 {
   struct type *type1, *type2;
   LONGEST sz;
+  struct gdbarch *gdbarch = get_type_arch (value_type (arg1));
 
   arg1 = coerce_array (arg1);
   arg2 = coerce_array (arg2);
   type1 = check_typedef (value_type (arg1));
   type2 = check_typedef (value_type (arg2));
 
-  gdb_assert (TYPE_CODE (type1) == TYPE_CODE_PTR);
-  gdb_assert (TYPE_CODE (type2) == TYPE_CODE_PTR);
-
-  if (TYPE_LENGTH (check_typedef (TYPE_TARGET_TYPE (type1)))
-      != TYPE_LENGTH (check_typedef (TYPE_TARGET_TYPE (type2))))
-    error (_("First argument of `-' is a pointer and "
-	     "second argument is neither\n"
-	     "an integer nor a pointer of the same type."));
+  if (TYPE_CODE (type1) == TYPE_CODE_PTR)
+    {
+      struct type *tt1 = check_typedef (TYPE_TARGET_TYPE (type1));
+      struct type *tt2 = (TYPE_CODE (type2) == TYPE_CODE_PTR)
+                         ? check_typedef (TYPE_TARGET_TYPE (type2)) : NULL;
+      if (is_integral_type (type2))
+	{
+	  /* Rewrite into pointer + (-integer) */
+	  return value_as_long (value_ptradd (arg1, value_as_long (value_neg (arg2))));
+	}
+      else if (TYPE_CODE (type2) == TYPE_CODE_PTR
+	       && TYPE_LENGTH (tt1) == TYPE_LENGTH (tt2))
+	{
+          struct value *retval;
+	  /* pointer to <type x> - pointer to <type x>.  */
+	  if (upc_shared_type_p (tt1) || upc_shared_type_p (tt2))
+	    {
+	      if (upc_shared_type_p (tt1) != upc_shared_type_p (tt2))
+		error (_("\
+First and second arguments of '-' are not both UPC pointer-to-shared types."));
+	      if (upc_blocksizeof (tt1) != upc_blocksizeof (tt2))
+		error (_("\
+First and second arguments of '-' do not have the same block size."));
+	      return value_as_long (upc_pts_diff (arg1, arg2));
+	    }
+	}
+      else
+	error (_("First argument of `-' is a pointer and "
+		 "second argument is neither\n"
+		 "an integer nor a pointer of the same type."));
+    }
 
   sz = type_length_units (check_typedef (TYPE_TARGET_TYPE (type1)));
   if (sz == 0) 
@@ -155,10 +194,11 @@ value_subscript (struct value *array, LONGEST index)
       || TYPE_CODE (tarray) == TYPE_CODE_STRING)
     {
       struct type *range_type = TYPE_INDEX_TYPE (tarray);
+      enum lval_type lval = VALUE_LVAL (array);      
       LONGEST lowerbound, upperbound;
 
       get_discrete_bounds (range_type, &lowerbound, &upperbound);
-      if (VALUE_LVAL (array) != lval_memory)
+      if (lval != lval_memory && lval != lval_upc_shared)
 	return value_subscripted_rvalue (array, index, lowerbound);
 
       if (c_style == 0)
@@ -174,6 +214,9 @@ value_subscript (struct value *array, LONGEST index)
 	}
 
       index -= lowerbound;
+      if (TYPE_CODE (tarray) == TYPE_CODE_ARRAY
+	  && upc_shared_type_p (tarray))
+	return upc_value_subscript (array, index);
       array = value_coerce_array (array);
     }
 
@@ -193,8 +236,23 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
   struct type *array_type = check_typedef (value_type (array));
   struct type *elt_type = check_typedef (TYPE_TARGET_TYPE (array_type));
   ULONGEST elt_size = type_length_units (elt_type);
-  ULONGEST elt_offs = elt_size * (index - lowerbound);
+  unsigned int elt_offs = longest_to_int (index - lowerbound);
+  LONGEST elt_stride = TYPE_BYTE_STRIDE (TYPE_INDEX_TYPE (array_type));
+  LONGEST lstride = TYPE_LSTRIDE (TYPE_INDEX_TYPE (array_type));
   struct value *v;
+
+  if (lstride > 0)
+    elt_offs *= (elt_stride * elt_size);
+  else if (elt_stride > 0)
+    elt_offs *= elt_stride;
+  else if (elt_stride < 0)
+    {
+      int offs = (elt_offs + 1) * elt_stride;
+
+      elt_offs = TYPE_LENGTH (array_type) + offs;
+    }
+  else
+    elt_offs *= elt_size;
 
   if (index < lowerbound || (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
 			     && elt_offs >= type_length_units (array_type)))
@@ -209,10 +267,17 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
 
   if (is_dynamic_type (elt_type))
     {
-      CORE_ADDR address;
+      gdb_byte *valaddr = NULL;
+      CORE_ADDR address = elt_offs;
 
-      address = value_address (array) + elt_offs;
-      elt_type = resolve_dynamic_type (elt_type, NULL, address);
+      /* Is the outer array dynamic use the solved data location of it.  */
+      if (TYPE_DATA_LOCATION (array_type)
+          && TYPE_DATA_LOCATION_KIND (array_type) == PROP_CONST)
+        address += TYPE_DATA_LOCATION_ADDR (array_type);
+      else
+        address += value_address(array);
+
+      elt_type = resolve_dynamic_type (elt_type, valaddr, address);
     }
 
   if (VALUE_LVAL (array) == lval_memory && value_lazy (array))
@@ -220,15 +285,20 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
   else
     {
       v = allocate_value (elt_type);
+      // Check the offset is sane. Allow the case where both are 0 as this
+      // is the case for pointers to unallocated memory.
+      gdb_assert(elt_offs < value_length (array)
+		 || (elt_offs == 0 && value_length (array) == 0));
       value_contents_copy (v, value_embedded_offset (v),
 			   array, value_embedded_offset (array) + elt_offs,
-			   elt_size);
+			   min (elt_size, value_length (array) - elt_offs));
     }
 
+
+  set_value_offset (v, value_offset (array) + elt_offs);
   set_value_component_location (v, array);
   VALUE_REGNUM (v) = VALUE_REGNUM (array);
   VALUE_FRAME_ID (v) = VALUE_FRAME_ID (array);
-  set_value_offset (v, value_offset (array) + elt_offs);
   return v;
 }
 
@@ -1087,13 +1157,14 @@ scalar_binop (struct value *arg1, struct value *arg2, enum exp_opcode op)
 	  v = v1 ^ v2;
           break;
               
-        case BINOP_EQUAL:
-          v = v1 == v2;
+
+	case BINOP_EQUAL:
+	  v = !((!v1 && v2) || (v1 && !v2));
           break;
           
         case BINOP_NOTEQUAL:
-          v = v1 != v2;
-	  break;
+          v = (!v1 && v2) || (v1 && !v2);
+          break;
 
 	default:
 	  error (_("Invalid operation on booleans."));
@@ -1671,6 +1742,10 @@ int
 value_equal_contents (struct value *arg1, struct value *arg2)
 {
   struct type *type1, *type2;
+
+  /* make sure the the contents are not of a capped length due to lazy fetching */
+  value_contents_ensure_unlimited(arg1);
+  value_contents_ensure_unlimited(arg2);
 
   type1 = check_typedef (value_type (arg1));
   type2 = check_typedef (value_type (arg2));

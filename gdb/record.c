@@ -1,5 +1,8 @@
 /* Process record and replay target for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -621,6 +624,75 @@ get_call_history_modifiers (char **arg)
   *arg = args;
 
   return modifiers;
+}
+
+void
+mi_cmd_record_function_call_history (char *command, char **argv, int argc)
+{
+  unsigned int low, high;
+  int found;
+  int tflags, flags, size;
+  char *charend;
+  char *targv;
+
+  require_record_target ();
+
+  size = command_size_to_target_size (record_call_history_size);
+
+  flags = 0;
+
+  if ((argc < 0) || (argc > 3))
+    error (_("-function-call-history: Invalid number of arguments."));
+
+  targv = argv[0];
+  if ((argc == 1 ) || (argc == 3))
+    flags = get_call_history_modifiers (&targv);
+
+  if ((argc == 0 ) || (argc == 1))
+    {
+      target_call_history ( size, flags );
+    }
+  else
+    {
+      if (argc == 3)
+	{
+	  low = strtoul (argv[1], &charend, 10);
+
+	  if (*charend != '\0')
+	    error (_("Invalid syntax of begin func id '%s'"), argv[1]);
+
+	  high = strtoul (argv[2], &charend, 10);
+
+	  if (*charend != '\0')
+	    error (_("Invalid syntax of end func id '%s'"), argv[2]);
+	}
+      else
+	{
+	  low = strtoul (argv[0], &charend, 10);
+
+	  if (*charend != '\0')
+	    error (_("Invalid syntax of begin func id '%s'"), argv[0]);
+
+	  high = strtoul (argv[1], &charend, 10);
+
+	  if (*charend != '\0')
+	    error (_("Invalid syntax of end func id '%s'"), argv[1]);
+
+	}
+
+      target_call_history_range ( low, high, flags );
+    }
+}
+
+void
+mi_cmd_record_get_function_call_history_length (char *command,
+						char **argv,
+						int argc)
+{
+  if (argc != 0)
+    error (_("-function-call-history-length: Invalid number of arguments."));
+
+  target_get_call_history_length ();
 }
 
 /* The "record function-call-history" command.  */

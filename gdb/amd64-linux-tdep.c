@@ -1,5 +1,8 @@
 /* Target-dependent code for GNU/Linux x86-64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2001-2017 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
@@ -103,6 +106,7 @@ int amd64_linux_gregset_reg_offset[] =
   -1, -1, -1, -1, -1, -1, -1, -1,
   -1, -1, -1, -1, -1, -1, -1, -1,
   -1, -1, -1, -1, -1, -1, -1, -1,
+  -1,				/* PKEYS register pkru  */
   15 * 8			      /* "orig_rax" */
 };
 

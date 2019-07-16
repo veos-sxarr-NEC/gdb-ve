@@ -1,5 +1,8 @@
 /* Low-level siginfo manipulation for amd64.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -43,7 +46,7 @@ typedef int nat_time_t;
 typedef int nat_timer_t;
 
 /* For native 64-bit, clock_t in _sigchld is 64-bit.  */
-typedef long nat_clock_t;
+typedef long __attribute__ ((__aligned__ (4))) nat_clock_t;
 
 typedef union nat_sigval
 {
@@ -112,7 +115,7 @@ typedef struct nat_siginfo
       int _fd;
     } _sigpoll;
   } _sifields;
-} nat_siginfo_t;
+} nat_siginfo_t __attribute__ ((__aligned__ (8)));
 
 #endif /* __ILP32__ */
 

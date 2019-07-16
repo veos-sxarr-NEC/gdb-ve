@@ -1,5 +1,8 @@
 /* Python interface to types.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -702,7 +705,9 @@ typy_const (PyObject *self, PyObject *args)
 
   TRY
     {
-      type = make_cv_type (1, 0, type, NULL);
+      struct type_quals type_quals = null_type_quals;
+      TYPE_QUAL_FLAGS(type_quals) |= TYPE_INSTANCE_FLAG_CONST;
+      type = make_qual_variant_type (type_quals, type, NULL);
     }
   CATCH (except, RETURN_MASK_ALL)
     {
@@ -721,7 +726,9 @@ typy_volatile (PyObject *self, PyObject *args)
 
   TRY
     {
-      type = make_cv_type (0, 1, type, NULL);
+      struct type_quals type_quals = null_type_quals;
+      TYPE_QUAL_FLAGS(type_quals) |= TYPE_INSTANCE_FLAG_VOLATILE;
+      type = make_qual_variant_type (type_quals, type, NULL);
     }
   CATCH (except, RETURN_MASK_ALL)
     {
@@ -740,7 +747,8 @@ typy_unqualified (PyObject *self, PyObject *args)
 
   TRY
     {
-      type = make_cv_type (0, 0, type, NULL);
+      struct type_quals type_quals = null_type_quals;
+      type = make_qual_variant_type (type_quals, type, NULL);
     }
   CATCH (except, RETURN_MASK_ALL)
     {
@@ -833,11 +841,18 @@ typy_lookup_type (struct demangle_component *demangled,
 	      rtype = lookup_pointer_type (type);
 	      break;
 	    case DEMANGLE_COMPONENT_CONST:
-	      rtype = make_cv_type (1, 0, type, NULL);
+              {
+                struct type_quals type_quals = null_type_quals;
+                TYPE_QUAL_FLAGS(type_quals) |= TYPE_INSTANCE_FLAG_CONST;
+                rtype = make_qual_variant_type (type_quals, type, NULL);
+              }
 	      break;
 	    case DEMANGLE_COMPONENT_VOLATILE:
-	      rtype = make_cv_type (0, 1, type, NULL);
-	      break;
+              {
+                struct type_quals type_quals = null_type_quals;
+                TYPE_QUAL_FLAGS(type_quals) |= TYPE_INSTANCE_FLAG_VOLATILE;
+                rtype = make_qual_variant_type (type_quals, type, NULL);
+              }
 	    }
 	}
       CATCH (except, RETURN_MASK_ALL)

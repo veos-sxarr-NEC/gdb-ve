@@ -1,5 +1,8 @@
 /* Multi-process/thread control for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
@@ -44,6 +47,7 @@
 #include "cli/cli-utils.h"
 #include "thread-fsm.h"
 #include "tid-parse.h"
+#include "upc-thread.h"
 
 /* Definition of struct thread_info exported to gdbthread.h.  */
 
@@ -54,7 +58,7 @@ void _initialize_thread (void);
 /* Prototypes for local functions.  */
 
 struct thread_info *thread_list = NULL;
-static int highest_thread_num;
+int highest_thread_num;
 
 /* True if any thread is, or may be executing.  We need to track this
    separately because until we fully sync the thread list, we won't
@@ -67,7 +71,8 @@ static void thread_apply_all_command (char *, int);
 static int thread_alive (struct thread_info *);
 static void info_threads_command (char *, int);
 static void thread_apply_command (char *, int);
-static void restore_current_thread (ptid_t);
+void restore_current_thread (ptid_t);
+static void restore_selected_frame (struct frame_id a_frame_id, int frame_level);
 
 /* Data to cleanup thread array.  */
 
@@ -259,6 +264,12 @@ new_thread (struct inferior *inf, ptid_t ptid)
   tp->pending_follow.kind = TARGET_WAITKIND_SPURIOUS;
   tp->state = THREAD_STOPPED;
   tp->suspend.waitstatus.kind = TARGET_WAITKIND_IGNORE;
+
+  /* No collective breakpoint and step */
+  tp->collective_bp_num = 0;
+  tp->collective_step = 0;
+
+  tp->selected_frame_level = -1;
 
   return tp;
 }
@@ -549,8 +560,29 @@ iterate_over_threads (int (*callback) (struct thread_info *, void *),
   for (tp = thread_list; tp; tp = next)
     {
       next = tp->next;
-      if ((*callback) (tp, data))
-	return tp;
+      if (!upcmode || is_upc_thread(tp))
+        if ((*callback) (tp, data))
+ 	  return tp;
+    }
+
+  return NULL;
+}
+
+struct thread_info *
+iterate_over_inferior_threads (int pid,
+			       int (*callback) (struct thread_info *, void *),
+			       void *data)
+{
+  struct thread_info *tp, *next;
+
+  for (tp = thread_list; tp; tp = next)
+    {
+      next = tp->next;
+      if (ptid_get_pid (tp->ptid) != pid)
+        continue;
+      if (!upcmode || is_upc_thread(tp))
+        if ((*callback) (tp, data))
+ 	  return tp;
     }
 
   return NULL;
@@ -979,6 +1011,10 @@ is_thread_state (ptid_t ptid, enum thread_state state)
   struct thread_info *tp;
 
   tp = find_thread_ptid (ptid);
+  /* There is sometimes a window between inferior_ptid being set and the thread
+     actually being added to the list.  */
+  if (!tp)
+    return state == THREAD_RUNNING;
   gdb_assert (tp);
   return tp->state == state;
 }
@@ -1002,6 +1038,18 @@ is_running (ptid_t ptid)
 }
 
 int
+any_running (void)
+{
+  struct thread_info *tp;
+
+  for (tp = thread_list; tp; tp = tp->next)
+    if (tp->state == THREAD_RUNNING)
+      return 1;
+
+  return 0;
+}
+
+int
 is_executing (ptid_t ptid)
 {
   struct thread_info *tp;
@@ -1021,13 +1069,17 @@ set_executing (ptid_t ptid, int executing)
     {
       for (tp = thread_list; tp; tp = tp->next)
 	if (all || ptid_get_pid (tp->ptid) == ptid_get_pid (ptid))
-	  tp->executing = executing;
+	  {
+	    tp->executing = executing;
+	    tp->selected_frame_level = -1;
+	  }
     }
   else
     {
       tp = find_thread_ptid (ptid);
       gdb_assert (tp);
       tp->executing = executing;
+      tp->selected_frame_level = -1;
     }
 
   /* It only takes one running thread to spawn more threads.*/
@@ -1062,8 +1114,10 @@ set_stop_requested (ptid_t ptid, int stop)
   else
     {
       tp = find_thread_ptid (ptid);
-      gdb_assert (tp);
-      tp->stop_requested = stop;
+      if (!tp)
+        warning(_("set_stop_requested: failed to find thread `%s'."), target_pid_to_str (ptid));
+      else
+        tp->stop_requested = stop;
     }
 
   /* Call the stop requested observer so other components of GDB can
@@ -1185,6 +1239,10 @@ should_print_thread (const char *requested_threads, int default_inf_num,
   if (thr->state == THREAD_EXITED)
     return 0;
 
+  if (upcmode && !is_upc_thread(thr))
+    /* Do not show non UPC threads */
+    return 0;
+
   return 1;
 }
 
@@ -1205,6 +1263,16 @@ print_thread_info_1 (struct ui_out *uiout, char *requested_threads,
   int default_inf_num = current_inferior ()->num;
 
   update_thread_list ();
+
+  if (upcmode && (thread_count() != 1))
+    { /* make sure UPC thread is selected if in UPC mode */
+      tp = inferior_thread ();
+      if (!is_upc_thread(tp))
+        {
+          if (upc_thread0)
+            switch_to_thread (upc_thread0->ptid);
+        }
+    }
   current_ptid = inferior_ptid;
 
   /* We'll be switching threads temporarily.  */
@@ -1283,7 +1351,17 @@ print_thread_info_1 (struct ui_out *uiout, char *requested_threads,
 	}
 
       if (!ui_out_is_mi_like_p (uiout))
-	ui_out_field_string (uiout, "id-in-tg", print_thread_id (tp));
+	{
+	  if (upcmode)
+	    {
+	      char *s = get_print_cell ();
+
+	      xsnprintf (s, PRINT_CELL_SIZE, "%d", tp->unum);
+	      ui_out_field_string (uiout, "id-in-tg", s);
+	    }
+	  else
+	    ui_out_field_string (uiout, "id-in-tg", print_thread_id (tp));
+	}
 
       if (show_global_ids || ui_out_is_mi_like_p (uiout))
 	ui_out_field_int (uiout, "id", tp->global_num);
@@ -1432,6 +1510,37 @@ switch_to_thread_no_regs (struct thread_info *thread)
 void
 switch_to_thread (ptid_t ptid)
 {
+  struct thread_info *tp;
+  struct frame_info *frame;
+  
+  if (!ptid_equal (inferior_ptid, null_ptid) && !ptid_equal (inferior_ptid, ptid))
+    {
+      tp = find_thread_ptid (inferior_ptid);
+      if (tp)
+        {
+	  if (is_stopped (inferior_ptid)
+	      && target_has_registers
+	      && target_has_stack
+	      && target_has_memory)
+	    {
+	      TRY
+		{
+		  struct frame_info *frame;
+		  frame = get_selected_frame (NULL);
+		  tp->selected_frame_id = get_frame_id (frame);
+		  tp->selected_frame_level = frame_relative_level (frame);
+		}
+	      CATCH (ex, RETURN_MASK_ALL)
+		{
+		  tp->selected_frame_level = -1;
+		}
+	      END_CATCH
+	    }
+	  else
+	    tp->selected_frame_level = -1;
+	}
+    }
+
   /* Switch the program space as well, if we can infer it from the now
      current thread.  Otherwise, it's up to the caller to select the
      space it wants.  */
@@ -1447,7 +1556,7 @@ switch_to_thread (ptid_t ptid)
 
   if (ptid_equal (ptid, inferior_ptid))
     return;
-
+  
   inferior_ptid = ptid;
   reinit_frame_cache ();
 
@@ -1460,9 +1569,23 @@ switch_to_thread (ptid_t ptid)
     stop_pc = regcache_read_pc (get_thread_regcache (ptid));
   else
     stop_pc = ~(CORE_ADDR) 0;
+
+  if (!ptid_equal (inferior_ptid, null_ptid))
+    {
+      tp = find_thread_ptid (inferior_ptid);
+      if (tp)
+        {
+	  if (is_stopped (inferior_ptid)
+	      && target_has_registers
+	      && target_has_stack
+	      && target_has_memory
+	      && tp->selected_frame_level != -1)
+	    restore_selected_frame (tp->selected_frame_id, tp->selected_frame_level);
+	}
+    }
 }
 
-static void
+void
 restore_current_thread (ptid_t ptid)
 {
   switch_to_thread (ptid);
@@ -1586,7 +1709,9 @@ do_restore_current_thread_cleanup (void *arg)
   else
     {
       restore_current_thread (null_ptid);
-      set_current_inferior (find_inferior_id (old->inf_id));
+      /* all our inferiors might be gone */
+      if (find_inferior_id (old->inf_id))
+        set_current_inferior (find_inferior_id (old->inf_id));
     }
 
   /* The running state of the originally selected thread may have
@@ -1596,7 +1721,8 @@ do_restore_current_thread_cleanup (void *arg)
       && is_stopped (inferior_ptid)
       && target_has_registers
       && target_has_stack
-      && target_has_memory)
+      && target_has_memory
+      && old->selected_frame_level != -1)
     restore_selected_frame (old->selected_frame_id,
 			    old->selected_frame_level);
 }
@@ -1801,17 +1927,33 @@ thread_apply_all_command (char *cmd, int from_tty)
       make_cleanup (set_thread_refcount, &ta_cleanup);
 
       for (k = 0; k != i; k++)
-        if (thread_alive (tp_array[k]))
-          {
-            switch_to_thread (tp_array[k]->ptid);
-            printf_filtered (_("\nThread %s (%s):\n"),
-			     print_thread_id (tp_array[k]),
-			     target_pid_to_str (inferior_ptid));
-            execute_command (cmd, from_tty);
+	{
+	  if (upcmode && !is_upc_thread(tp_array[k]))
+	    continue;
+	  if (thread_alive (tp_array[k]))
+	    {
+	      volatile struct gdb_exception ex;
+	      switch_to_thread (tp_array[k]->ptid);
+	      if (upcmode)
+		printf_filtered (_("\nUPC thread %d:\n"), tp->unum);
+	      else
+		printf_filtered (_("\nThread %s (%s):\n"),
+				 print_thread_id (tp_array[k]),
+				 target_pid_to_str (inferior_ptid));
+	      TRY
+		{
+		  execute_command (cmd, from_tty);
+		}
+	      CATCH (ex, RETURN_MASK_ALL)
+		{
+		  printf_filtered("<%s>\n", ex.message);
+		}
+	      END_CATCH
 
-            /* Restore exact command used previously.  */
-            strcpy (cmd, saved_cmd);
-	  }
+		/* Restore exact command used previously.  */
+		strcpy (cmd, saved_cmd);
+	    }
+	}
     }
 
   do_cleanups (old_chain);
@@ -1888,6 +2030,9 @@ thread_apply_command (char *tidlist, int from_tty)
 	    continue;
 	}
 
+      if (upcmode && !is_upc_thread(tp))
+	continue;
+
       if (tp == NULL)
 	{
 	  if (show_inferior_qualified_tids ()
@@ -1906,9 +2051,20 @@ thread_apply_command (char *tidlist, int from_tty)
 
       switch_to_thread (tp->ptid);
 
-      printf_filtered (_("\nThread %s (%s):\n"), print_thread_id (tp),
-		       target_pid_to_str (inferior_ptid));
-      execute_command (cmd, from_tty);
+      if (upcmode)
+	printf_filtered (_("\nUPC thread %d:\n"), tp->unum);
+      else
+	printf_filtered (_("\nThread %s (%s):\n"), print_thread_id (tp),
+			 target_pid_to_str (inferior_ptid));
+      TRY
+	{
+	  execute_command (cmd, from_tty);
+	}
+      CATCH (ex, RETURN_MASK_ALL)
+	{
+	  printf_filtered("<%s>\n", ex.message);
+	}
+      END_CATCH
 
       /* Restore exact command used previously.  */
       strcpy (cmd, saved_cmd);
@@ -1933,13 +2089,29 @@ thread_command (char *tidstr, int from_tty)
 	  struct thread_info *tp = inferior_thread ();
 
 	  if (is_exited (inferior_ptid))
-	    printf_filtered (_("[Current thread is %s (%s) (exited)]\n"),
-			     print_thread_id (tp),
-			     target_pid_to_str (inferior_ptid));
+	    {
+	      if (upcmode)
+		{
+		  printf_filtered (_("[Current UPC thread is %d (exited)]\n"),
+				   show_thread_id (ptid_to_global_thread_id (inferior_ptid)));
+		}
+	      else
+		printf_filtered (_("[Current thread is %s (%s) (exited)]\n"),
+				 print_thread_id (tp),
+				 target_pid_to_str (inferior_ptid));
+	    }
 	  else
-	    printf_filtered (_("[Current thread is %s (%s)]\n"),
-			     print_thread_id (tp),
-			     target_pid_to_str (inferior_ptid));
+	    {
+	      if (upcmode)
+		{
+		  printf_filtered (_("[Current UPC thread is %d]\n"),
+				   show_thread_id (ptid_to_global_thread_id (inferior_ptid)));
+		}
+	      else
+		printf_filtered (_("[Current thread is %s (%s)]\n"),
+				 print_thread_id (tp),
+				 target_pid_to_str (inferior_ptid));
+	    }
 	}
       else
 	error (_("No stack."));
@@ -2075,6 +2247,12 @@ do_captured_thread_select (struct ui_out *uiout, void *tidstr_v)
   if (!thread_alive (tp))
     error (_("Thread ID %s has terminated."), tidstr);
 
+  if (upcmode && !is_upc_thread(tp))
+    error (_("Thread ID %s is not UPC thread."), tidstr);
+
+  if (current_inferior())
+    current_inferior()->last_thread = inferior_ptid;
+  
   switch_to_thread (tp->ptid);
 
   annotate_thread_changed ();
@@ -2202,6 +2380,62 @@ global_thread_id_make_value (struct gdbarch *gdbarch, struct internalvar *var,
 			     void *ignore)
 {
   return thread_num_make_value_helper (gdbarch, 1);
+}
+
+#define COLLECTIVE_BP_NOWAIT 0
+
+/* Collective breakpoints - clear threads from collective wait.
+   If bptno is 0 then clear any thread that is waiting, otherwise
+   clear only threads waiting on bptno breakpoint. */
+int
+thread_clear_collective_bp(int bptno)
+{
+  struct thread_info *tp;
+  int cleared_bpts = 0;
+
+  for (tp = thread_list; tp; tp = tp->next)
+    {
+      if (bptno != CLEAR_ALL_COLLECTIVE_BPS)
+        {
+          if (tp->collective_bp_num == bptno)
+            {
+              tp->collective_bp_num = COLLECTIVE_BP_NOWAIT;
+              cleared_bpts++;
+            }
+        }
+      else
+        {
+          tp->collective_bp_num = COLLECTIVE_BP_NOWAIT;
+          cleared_bpts = 1;
+        }
+    }   
+  return cleared_bpts;
+}
+
+/* Collective breakpoints - check for breakpoint missmatch */
+int
+thread_check_collective_bp (int bpnum)
+{
+  struct thread_info *tp;
+  for (tp = thread_list; tp; tp = tp->next)
+    {
+      if (tp->collective_bp_num &&
+          (tp->collective_bp_num != bpnum))
+        return 1;
+    }   
+  return 0;
+}
+
+/* Collective step - check if threads completed a step */
+int
+thread_check_collective_step (void)
+{
+  struct thread_info *tp;
+  for (tp = thread_list; tp; tp = tp->next)
+    {
+      if (tp->collective_step) return 0;
+    }   
+  return 1;
 }
 
 /* Commands with a prefix of `thread'.  */

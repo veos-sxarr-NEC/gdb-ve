@@ -1,5 +1,8 @@
 /* Fortran language support definitions for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C definitions by Farooq Butt
@@ -65,6 +68,7 @@ struct builtin_f_type
   struct type *builtin_character;
   struct type *builtin_integer;
   struct type *builtin_integer_s2;
+  struct type *builtin_integer_s8;
   struct type *builtin_logical;
   struct type *builtin_logical_s1;
   struct type *builtin_logical_s2;
@@ -81,3 +85,9 @@ struct builtin_f_type
 /* Return the Fortran type table for the specified architecture.  */
 extern const struct builtin_f_type *builtin_f_type (struct gdbarch *gdbarch);
 
+/* Transparently follow pointers.  */
+extern struct value *f_follow_pointers (struct value *);
+
+extern int f_not_allocated (struct value *val);
+extern int f_not_associated (struct value *val);
+extern int f_not_associated_address (struct type *type, CORE_ADDR addr);

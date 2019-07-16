@@ -1,4 +1,7 @@
 /* Low level interface to ptrace, for GDB when running under Unix.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -756,13 +759,15 @@ set_sigint_trap (void)
   struct inferior *inf = current_inferior ();
   struct terminal_info *tinfo = get_inflow_inferior_data (inf);
 
-  if (inf->attach_flag || tinfo->run_terminal)
+/* Our previous patches (00540, 00550) are designed to make sure we always send sigint to gdb.
+ * This being the case, we always want gdb to pass that on to the target, regardless of attach
+ * or terminal status.
+ */
+ /*if (inf->attach_flag || tinfo->run_terminal)*/
     {
       osig = signal (SIGINT, pass_signal);
       osig_set = 1;
     }
-  else
-    osig_set = 0;
 }
 
 void

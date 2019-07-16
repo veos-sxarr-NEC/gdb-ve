@@ -1,4 +1,7 @@
 /* YACC parser for C expressions, for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -192,11 +195,14 @@ static void c_print_token (FILE *file, int type, YYSTYPE value);
 
 /* Special type cases, put in to allow the parser to distinguish different
    legal basetypes.  */
-%token SIGNED_KEYWORD LONG SHORT INT_KEYWORD CONST_KEYWORD VOLATILE_KEYWORD DOUBLE_KEYWORD
+%token SIGNED_KEYWORD LONG SHORT INT_KEYWORD CONST_KEYWORD VOLATILE_KEYWORD DOUBLE_KEYWORD VOID_KEYWORD
+%token SHARED_KEYWORD RELAXED_KEYWORD STRICT_KEYWORD
 
 %token <sval> VARIABLE
 
 %token <opcode> ASSIGN_MODIFY
+%token <opcode> UNOP_INTRINSIC
+%token <opcode> BINOP_INTRINSIC
 
 /* C++ */
 %token TRUEKEYWORD
@@ -524,6 +530,14 @@ exp	:	UNKNOWN_CPP_NAME '('
 			}
 	;
 
+exp     :       UNOP_INTRINSIC '(' exp ')'
+			{ write_exp_elt_opcode (pstate, $1); }
+	;
+
+exp     :       BINOP_INTRINSIC '(' exp ',' exp ')'
+			{ write_exp_elt_opcode (pstate, $1); }
+	;
+
 lcurly	:	'{'
 			{ start_arglist (); }
 	;
@@ -539,7 +553,7 @@ arglist	:	arglist ',' exp   %prec ABOVE_COMMA
 			{ arglist_len++; }
 	;
 
-exp     :       exp '(' parameter_typelist ')' const_or_volatile
+exp     :       exp '(' parameter_typelist ')' type_qualifier
 			{ int i;
 			  VEC (type_ptr) *type_list = $3;
 			  struct type *type_elt;
@@ -1005,6 +1019,7 @@ variable:	qualified_name
 
 variable:	name_not_typename
 			{ struct block_symbol sym = $1.sym;
+			  struct internalvar *isym = NULL;
 
 			  if (sym.symbol)
 			    {
@@ -1036,6 +1051,15 @@ variable:	name_not_typename
 			      write_exp_string (pstate, $1.stoken);
 			      write_exp_elt_opcode (pstate, STRUCTOP_PTR);
 			    }
+			  else if (parse_language (pstate)->la_language == language_upc
+			           && (!strcmp ($1.stoken.ptr, "THREADS")
+				       || !strcmp ($1.stoken.ptr, "MYTHREAD"))
+				   && (isym = lookup_only_internalvar (copy_name ($1.stoken))))
+			    {
+  			        write_exp_elt_opcode (pstate, OP_INTERNALVAR);
+				write_exp_elt_intern (pstate, isym);
+				write_exp_elt_opcode (pstate, OP_INTERNALVAR);
+			    }
 			  else
 			    {
 			      struct bound_minimal_symbol msymbol;
@@ -1058,29 +1082,29 @@ space_identifier : '@' NAME
 		{ insert_type_address_space (pstate, copy_name ($2.stoken)); }
 	;
 
-const_or_volatile: const_or_volatile_noopt
+type_qualifier: type_qualifier_noopt
 	|
 	;
 
-cv_with_space_id : const_or_volatile space_identifier const_or_volatile
+cv_with_space_id : type_qualifier space_identifier type_qualifier
 	;
 
-const_or_volatile_or_space_identifier_noopt: cv_with_space_id
-	| const_or_volatile_noopt
+type_qualifier_or_space_identifier_noopt: cv_with_space_id
+	| type_qualifier_noopt 
 	;
 
-const_or_volatile_or_space_identifier:
-		const_or_volatile_or_space_identifier_noopt
+type_qualifier_or_space_identifier: 
+		type_qualifier_or_space_identifier_noopt
 	|
 	;
 
 ptr_operator:
 		ptr_operator '*'
 			{ insert_type (tp_pointer); }
-		const_or_volatile_or_space_identifier
-	|	'*'
+		type_qualifier_or_space_identifier
+	|	'*' 
 			{ insert_type (tp_pointer); }
-		const_or_volatile_or_space_identifier
+		type_qualifier_or_space_identifier
 	|	'&'
 			{ insert_type (tp_reference); }
 	|	'&' ptr_operator
@@ -1117,7 +1141,6 @@ direct_abs_decl: '(' abs_decl ')'
 			  push_type (tp_array);
 			  $$ = get_type_stack ();
 			}
-
 	| 	direct_abs_decl func_mod
 			{
 			  push_type_stack ($1);
@@ -1277,6 +1300,8 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 						"long double",
 						(struct block *) NULL,
 						0); }
+	|	VOID_KEYWORD
+ 	                { $$ = parse_type (pstate)->builtin_void; }
 	|	STRUCT name
 			{ $$ = lookup_struct (copy_name ($2),
 					      expression_context_block); }
@@ -1356,9 +1381,9 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 			{ $$ = lookup_template_type(copy_name($2), $4,
 						    expression_context_block);
 			}
-	| const_or_volatile_or_space_identifier_noopt typebase
+	| type_qualifier_or_space_identifier_noopt typebase 
 			{ $$ = follow_types ($2); }
-	| typebase const_or_volatile_or_space_identifier_noopt
+	| typebase type_qualifier_or_space_identifier_noopt 
 			{ $$ = follow_types ($1); }
 	;
 
@@ -1387,6 +1412,12 @@ type_name:	TYPENAME
 						    parse_gdbarch (pstate),
 						    "short");
 		}
+	|	VOID_KEYWORD
+		{
+		  $$.stoken.ptr = "void";
+		  $$.stoken.length = 4;
+		  $$.type = parse_type (pstate)->builtin_void;
+		}
 	;
 
 parameter_typelist:
@@ -1413,6 +1444,36 @@ nonempty_typelist
 		  $$ = $1;
 		}
 	;
+shared_and_relaxed:	SHARED_KEYWORD RELAXED_KEYWORD
+			{ push_type (tp_shared);
+			  push_type (tp_relaxed); 
+			}
+	|		RELAXED_KEYWORD SHARED_KEYWORD
+			{ push_type (tp_shared);
+			  push_type (tp_relaxed); 
+			}
+	;
+shared_and_strict:	SHARED_KEYWORD STRICT_KEYWORD
+			{ push_type (tp_shared);
+			  push_type (tp_strict); 
+			}
+	|		STRICT_KEYWORD SHARED_KEYWORD
+			{ push_type (tp_shared);
+			  push_type (tp_strict); 
+			}
+	;
+shared_and_strict_or_relaxed:
+			SHARED_KEYWORD
+			{ push_type (tp_shared); }
+	|		shared_and_strict
+	|		shared_and_relaxed
+	;
+
+type_qualifier_noopt:  	const_and_or_volatile 
+	|		shared_and_strict_or_relaxed
+	|		const_and_or_volatile shared_and_strict_or_relaxed
+	|		shared_and_strict_or_relaxed const_and_or_volatile
+	;
 
 ptype	:	typebase
 	|	ptype abs_decl
@@ -1430,11 +1491,11 @@ conversion_declarator:  /* Nothing.  */
 	| ptr_operator conversion_declarator
 	;
 
-const_and_volatile: 	CONST_KEYWORD VOLATILE_KEYWORD
+const_and_or_volatile: 	CONST_KEYWORD VOLATILE_KEYWORD
+			{ insert_type (tp_const);
+			  insert_type (tp_volatile); 
+			}
 	| 		VOLATILE_KEYWORD CONST_KEYWORD
-	;
-
-const_or_volatile_noopt:  	const_and_volatile
 			{ insert_type (tp_const);
 			  insert_type (tp_volatile);
 			}
@@ -2281,6 +2342,7 @@ static const struct token ident_tokens[] =
     {"new", NEW, OP_NULL, FLAG_CXX},
     {"delete", DELETE, OP_NULL, FLAG_CXX},
     {"operator", OPERATOR, OP_NULL, FLAG_CXX},
+    {"void", VOID_KEYWORD, OP_NULL, 0},
 
     {"and", ANDAND, BINOP_END, FLAG_CXX},
     {"and_eq", ASSIGN_MODIFY, BINOP_BITWISE_AND, FLAG_CXX},
@@ -2304,8 +2366,10 @@ static const struct token ident_tokens[] =
     {"typeof", TYPEOF, OP_TYPEOF, FLAG_SHADOW },
     {"__decltype", DECLTYPE, OP_DECLTYPE, FLAG_CXX },
     {"decltype", DECLTYPE, OP_DECLTYPE, FLAG_CXX | FLAG_SHADOW },
-
-    {"typeid", TYPEID, OP_TYPEID, FLAG_CXX}
+    {"typeid", TYPEID, OP_TYPEID, FLAG_CXX},
+    {"shared", SHARED_KEYWORD, OP_NULL, 0 },
+    {"relaxed", RELAXED_KEYWORD, OP_NULL, 0 },
+    {"strict", STRICT_KEYWORD, OP_NULL, 0 }
   };
 
 /* When we find that lexptr (the global var defined in parse.c) is
@@ -2404,6 +2468,20 @@ static int saw_name_at_eof;
    operator -- either '.' or ARROW.  This is used only when parsing to
    do field name completion.  */
 static int last_was_structop;
+
+static const struct token intrinsics[] =
+  {
+    {"isinf", UNOP_INTRINSIC, UNOP_ISINF},
+    {"isnan", UNOP_INTRINSIC, UNOP_ISNAN},
+    {"isfinite", UNOP_INTRINSIC, UNOP_ISFINITE},
+    {"isnormal", UNOP_INTRINSIC, UNOP_ISNORMAL},
+    {"creal", UNOP_INTRINSIC, UNOP_CREAL},
+    {"cimag", UNOP_INTRINSIC, UNOP_CIMAG},
+    {"fabs", UNOP_INTRINSIC, UNOP_FABS},
+    {"fmod", BINOP_INTRINSIC, BINOP_FMOD},
+    {"ceil", UNOP_INTRINSIC, UNOP_CEIL},
+    {"floor", UNOP_INTRINSIC, UNOP_FLOOR},
+  };
 
 /* Read one token, getting characters through lexptr.  */
 
@@ -2726,7 +2804,8 @@ lex_one_token (struct parser_state *par_state, int *is_quoted_name)
      similarly to breakpoint.c:find_condition_and_thread.  */
   if (namelen >= 1
       && (strncmp (tokstart, "thread", namelen) == 0
-	  || strncmp (tokstart, "task", namelen) == 0)
+	  || strncmp (tokstart, "task", namelen) == 0
+	  || strncmp (tokstart, "inf", namelen) == 0)
       && (tokstart[namelen] == ' ' || tokstart[namelen] == '\t')
       && ! scanning_macro_expansion ())
     {
@@ -2741,6 +2820,14 @@ lex_one_token (struct parser_state *par_state, int *is_quoted_name)
   lexptr += namelen;
 
   tryname:
+
+  for (i = 0; i < sizeof intrinsics / sizeof intrinsics[0]; i++)
+    if (strncmp (tokstart, intrinsics[i].oper, strlen(intrinsics[i].oper)) == 0
+	&& strlen(intrinsics[i].oper) == namelen)
+      {
+        yylval.opcode = intrinsics[i].opcode;
+        return intrinsics[i].token;
+      }
 
   yylval.sval.ptr = tokstart;
   yylval.sval.length = namelen;

@@ -1,4 +1,7 @@
 /* Support routines for building symbol tables in GDB's internal format.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -86,6 +89,7 @@
 #include "cp-support.h"
 #include "dictionary.h"
 #include "addrmap.h"
+#include "hashtab.h"
 
 /* Ask buildsym.h to define the vars it normally declares `extern'.  */
 #define	EXTERN
@@ -111,6 +115,10 @@ struct buildsym_compunit
      This is important mostly for the language determination hacks we use,
      which iterate over previously added files.  */
   struct subfile *subfiles;
+
+  /* Hash table of all subfiles found in SUBFILES, used to speed up subfile
+     lookup.  */
+  htab_t subfiles_map;
 
   /* The subfile of the main source file.  */
   struct subfile *main_subfile;
@@ -164,22 +172,6 @@ static int pending_addrmap_interesting;
 
 static struct obstack pending_block_obstack;
 
-/* List of blocks already made (lexical contexts already closed).
-   This is used at the end to make the blockvector.  */
-
-struct pending_block
-  {
-    struct pending_block *next;
-    struct block *block;
-  };
-
-/* Pointer to the head of a linked list of symbol blocks which have
-   already been finalized (lexical contexts already closed) and which
-   are just waiting to be built into a blockvector when finalizing the
-   associated symtab.  */
-
-static struct pending_block *pending_blocks;
-
 struct subfile_stack
   {
     struct subfile_stack *next;
@@ -199,6 +191,69 @@ static int compare_line_numbers (const void *ln1p, const void *ln2p);
 static void record_pending_block (struct objfile *objfile,
 				  struct block *block,
 				  struct pending_block *opblock);
+
+static void
+htab_free_ptr (PTR p)
+{
+  free(p);
+}
+
+static PTR
+htab_alloc_ptr (size_t t1, size_t t2)
+{
+  return xcalloc (t1, t2);
+}
+
+static char *
+subfile_fullname (const struct subfile *subfile)
+{
+  const char *dirname = subfile->buildsym_compunit->comp_dir;
+
+  if (!IS_ABSOLUTE_PATH (subfile->name) && dirname != NULL)
+    return concat (dirname,
+		   SLASH_STRING,
+		   subfile->name,
+		   (char *) NULL);
+  else
+    return xstrdup (subfile->name);
+}
+
+static int
+htab_eq_subfile(const void* s, const void* t)
+{
+  int ret;
+
+  /* emulate strcmp() return values extended to handle null values, so
+	 s, t both null => s == t => return 0
+	 s null, t not null => s < t => return -1
+	 s not null, t null => s > t => return +1 */
+  if (!s)
+      ret = t ? -1 : 0;
+  else if (!t)
+    ret = 1;
+  else
+    {
+      char *fullname1 = subfile_fullname ((const struct subfile *) s);
+      char *fullname2 = subfile_fullname ((const struct subfile *) t);
+      simplify_path (fullname1);
+      simplify_path (fullname2);
+      ret = !strcmp (fullname1, fullname2);
+      xfree (fullname1);
+      xfree (fullname2);
+    }
+  return ret;
+}
+
+static hashval_t
+htab_hash_subfile (const void *p)
+{
+  char *fullname = subfile_fullname ((const struct subfile *) p);
+  hashval_t ret;
+  simplify_path (fullname);
+  ret = htab_hash_string (fullname);
+  xfree (fullname);
+  return ret;
+}
 
 /* Initial sizes of data structures.  These are realloc'd larger if
    needed, and realloc'd down to the size actually used, when
@@ -478,7 +533,8 @@ finish_block_internal (struct symbol *symbol,
 	     Skip blocks which correspond to a function; they're not
 	     physically nested inside this other blocks, only
 	     lexically nested.  */
-	  if (BLOCK_FUNCTION (pblock->block) == NULL
+	  if ((BLOCK_FUNCTION (pblock->block) == NULL
+	       || (!symbol && !old_blocks))
 	      && (BLOCK_START (pblock->block) < BLOCK_START (block)
 		  || BLOCK_END (pblock->block) > BLOCK_END (block)))
 	    {
@@ -499,9 +555,9 @@ finish_block_internal (struct symbol *symbol,
 			     paddress (gdbarch, BLOCK_END (block)));
 		}
 	      if (BLOCK_START (pblock->block) < BLOCK_START (block))
-		BLOCK_START (pblock->block) = BLOCK_START (block);
+		BLOCK_START (block) = BLOCK_START (pblock->block);
 	      if (BLOCK_END (pblock->block) > BLOCK_END (block))
-		BLOCK_END (pblock->block) = BLOCK_END (block);
+		BLOCK_END (block) = BLOCK_END (pblock->block);
 	    }
 	  BLOCK_SUPERBLOCK (pblock->block) = block;
 	}
@@ -564,6 +620,21 @@ record_pending_block (struct objfile *objfile, struct block *block,
     }
 }
 
+static unsigned int
+block_depth (const struct block *b)
+{
+  unsigned int result;
+  for (result = 0; b != NULL; ++result, b = b->superblock);
+  return result;
+}
+
+static int
+block_has_precedence (void *a1, void *a2)
+{
+  const struct block  *b1 = (struct block *)a1,
+                      *b2 = (struct block *)a2;
+  return block_depth (b1) >= block_depth (b2);
+}
 
 /* Record that the range of addresses from START to END_INCLUSIVE
    (inclusive, like it says) belongs to BLOCK.  BLOCK's start and end
@@ -592,6 +663,7 @@ record_block_range (struct block *block,
       pending_addrmap = addrmap_create_mutable (&pending_addrmap_obstack);
     }
 
+  addrmap_assign_precedence_fn (pending_addrmap, &block_has_precedence);
   addrmap_set_empty (pending_addrmap, start, end_inclusive, block);
 }
 
@@ -661,6 +733,23 @@ make_blockvector (void)
   return (blockvector);
 }
 
+
+struct subfile *
+find_subfile (const char *name, const char *dirname)
+{
+  struct subfile dummy = {0};
+  struct subfile *subfile;
+
+  if (buildsym_compunit->subfiles_map == NULL)
+    return NULL;
+
+  dummy.name = (char*) name;
+  dummy.buildsym_compunit = buildsym_compunit;
+  if ((subfile = (struct subfile *) htab_find (buildsym_compunit->subfiles_map, &dummy)))
+    return subfile;
+  return NULL;
+}
+
 /* Start recording information about source code that came from an
    included (or otherwise merged-in) source file with a different
    name.  NAME is the name of the file (cannot be NULL).  */
@@ -670,36 +759,22 @@ start_subfile (const char *name)
 {
   const char *subfile_dirname;
   struct subfile *subfile;
+  PTR *htab_slot;
 
   gdb_assert (buildsym_compunit != NULL);
 
   subfile_dirname = buildsym_compunit->comp_dir;
 
+  if (buildsym_compunit->subfiles_map == NULL)
+    buildsym_compunit->subfiles_map =
+      htab_create_alloc (100, htab_hash_subfile, htab_eq_subfile,
+			 NULL, htab_alloc_ptr, htab_free_ptr);
+
   /* See if this subfile is already registered.  */
-
-  for (subfile = buildsym_compunit->subfiles; subfile; subfile = subfile->next)
+  if ((subfile = find_subfile (name, subfile_dirname)) != NULL)
     {
-      char *subfile_name;
-
-      /* If NAME is an absolute path, and this subfile is not, then
-	 attempt to create an absolute path to compare.  */
-      if (IS_ABSOLUTE_PATH (name)
-	  && !IS_ABSOLUTE_PATH (subfile->name)
-	  && subfile_dirname != NULL)
-	subfile_name = concat (subfile_dirname, SLASH_STRING,
-			       subfile->name, (char *) NULL);
-      else
-	subfile_name = subfile->name;
-
-      if (FILENAME_CMP (subfile_name, name) == 0)
-	{
-	  current_subfile = subfile;
-	  if (subfile_name != subfile->name)
-	    xfree (subfile_name);
-	  return;
-	}
-      if (subfile_name != subfile->name)
-	xfree (subfile_name);
+      current_subfile = subfile;
+      return;
     }
 
   /* This subfile is not known.  Add an entry for it.  */
@@ -760,6 +835,10 @@ start_subfile (const char *name)
     {
       subfile->language = subfile->next->language;
     }
+
+  htab_slot =
+    htab_find_slot (buildsym_compunit->subfiles_map, subfile, INSERT);
+  *htab_slot = subfile;
 }
 
 /* Start recording information about a primary source file (IOW, not an
@@ -806,6 +885,8 @@ free_buildsym_compunit (void)
       xfree (subfile->line_vector);
       xfree (subfile);
     }
+  if (buildsym_compunit->subfiles_map)
+    htab_delete (buildsym_compunit->subfiles_map);
   xfree (buildsym_compunit->comp_dir);
   xfree (buildsym_compunit);
   buildsym_compunit = NULL;
@@ -1159,6 +1240,7 @@ watch_main_source_file_lossage (void)
 	    buildsym_compunit->subfiles = mainsub_alias->next;
 	  else
 	    prev_mainsub_alias->next = mainsub_alias->next;
+	  htab_remove_elt (buildsym_compunit->subfiles_map, mainsub_alias);
 	  xfree (mainsub_alias->name);
 	  xfree (mainsub_alias);
 	}
@@ -1375,6 +1457,13 @@ end_symtab_with_blockvector (struct block *static_block,
       if (subfile->symtab == NULL)
 	subfile->symtab = allocate_symtab (cu, subfile->name);
       symtab = subfile->symtab;
+
+      if (strcmp (symtab->filename, subfile->name) != 0
+	  && IS_ABSOLUTE_PATH (subfile->name)
+	  && !IS_ABSOLUTE_PATH (symtab->filename))
+	symtab->filename
+	  = (const char *) bcache (subfile->name, strlen (subfile->name) + 1,
+				   objfile->per_bfd->filename_cache);
 
       /* Fill in its components.  */
 

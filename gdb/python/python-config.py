@@ -58,12 +58,12 @@ for opt in opt_flags:
         print (to_unix_path(' '.join(flags)))
 
     elif opt in ('--libs', '--ldflags'):
-        libs = []
+        libs = ['-L' + getvar('LIBDIR')]
+        libs.append('-lpython'+pyver + abiflags)
         if getvar('LIBS') is not None:
             libs.extend(getvar('LIBS').split())
         if getvar('SYSLIBS') is not None:
             libs.extend(getvar('SYSLIBS').split())
-        libs.append('-lpython'+pyver + abiflags)
         # add the prefix/lib/pythonX.Y/config dir, but only if there is no
         # shared library in prefix/lib/.
         if opt == '--ldflags':
@@ -72,7 +72,5 @@ for opt in opt_flags:
                     libs.insert(0, '-L' + getvar('LIBPL'))
                 elif os.name == 'nt':
                     libs.insert(0, '-L' + sysconfig.PREFIX + '/libs')
-            if getvar('LINKFORSHARED') is not None:
-                libs.extend(getvar('LINKFORSHARED').split())
         print (to_unix_path(' '.join(libs)))
 

@@ -1,5 +1,8 @@
 /* addrmap.c --- implementation of address map data structure.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -43,6 +46,11 @@ struct addrmap_funcs
 struct addrmap
 {
   const struct addrmap_funcs *funcs;
+  /* A predecate to determine whether argument 1 should overwrite
+     argument 2 in a call to addrmap_mutable_set_empty.  This field is
+     NULL by default.  Returns 1 if argument 1 has precedence over
+     argument 2, returns 0 otherwise.  */
+  int (*precedence_fn) (void *, void *);
 };
 
 
@@ -82,6 +90,13 @@ int
 addrmap_foreach (struct addrmap *map, addrmap_foreach_fn fn, void *data)
 {
   return map->funcs->foreach (map, fn, data);
+}
+
+void addrmap_assign_precedence_fn (struct addrmap *map,
+                                   int (*fn) (void *, void *))
+{
+  if (! map->precedence_fn)
+    map->precedence_fn = fn;
 }
 
 /* Fixed address maps.  */
@@ -360,7 +375,9 @@ addrmap_mutable_set_empty (struct addrmap *self,
        n && addrmap_node_key (n) <= end_inclusive;
        n = addrmap_splay_tree_successor (map, addrmap_node_key (n)))
     {
-      if (! addrmap_node_value (n))
+      if (! addrmap_node_value (n)
+          || (self->precedence_fn
+              && self->precedence_fn (obj, addrmap_node_value (n))))
         addrmap_node_set_value (n, obj);
     }
 
@@ -441,6 +458,7 @@ addrmap_mutable_create_fixed (struct addrmap *self, struct obstack *obstack)
 	      + (num_transitions * sizeof (fixed->transitions[0]));
   fixed = (struct addrmap_fixed *) obstack_alloc (obstack, alloc_len);
   fixed->addrmap.funcs = &addrmap_fixed_funcs;
+  fixed->addrmap.precedence_fn = NULL;
   fixed->num_transitions = 1;
   fixed->transitions[0].addr = 0;
   fixed->transitions[0].value = NULL;
@@ -571,6 +589,7 @@ addrmap_create_mutable (struct obstack *obstack)
   struct addrmap_mutable *map = XOBNEW (obstack, struct addrmap_mutable);
 
   map->addrmap.funcs = &addrmap_mutable_funcs;
+  map->addrmap.precedence_fn = NULL;
   map->obstack = obstack;
 
   /* splay_tree_new_with_allocator uses the provided allocation

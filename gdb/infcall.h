@@ -1,5 +1,8 @@
 /* Perform an inferior function call, for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -49,5 +52,8 @@ extern struct value *
 			       struct value **args,
 			       dummy_frame_dtor_ftype *dummy_dtor,
 			       void *dummy_dtor_data);
+
+extern struct value *
+call_function_by_hand_ex (struct value *function, enum language lang, int nargs, struct value **args);
 
 #endif

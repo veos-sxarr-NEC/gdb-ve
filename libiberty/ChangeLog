@@ -1,3 +1,4 @@
+Note: this software has been modified by Arm.
 2016-07-29  Aldy Hernandez  <aldyh@redhat.com>
 
 	* make-relative-prefix.c (make_relative_prefix_1): Fall back to

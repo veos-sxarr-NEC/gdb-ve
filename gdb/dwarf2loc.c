@@ -1,5 +1,8 @@
 /* DWARF 2 location expression support for GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
    Contributed by Daniel Jacobowitz, MontaVista Software, Inc.
@@ -48,7 +51,8 @@ static struct value *dwarf2_evaluate_loc_desc_full (struct type *type,
 						    const gdb_byte *data,
 						    size_t size,
 						    struct dwarf2_per_cu_data *per_cu,
-						    LONGEST byte_offset);
+						    LONGEST byte_offset,
+						    CORE_ADDR push_obj);
 
 /* Until these have formal names, we define these here.
    ref: http://gcc.gnu.org/wiki/DebugFission
@@ -306,10 +310,17 @@ struct dwarf_expr_baton
 {
   struct frame_info *frame;
   struct dwarf2_per_cu_data *per_cu;
-  CORE_ADDR obj_address;
+  CORE_ADDR obj_address; /* for DW_OP_push_object_address*/   
 };
 
 /* Helper functions for dwarf2_evaluate_loc_desc.  */
+
+static CORE_ADDR 
+dwarf_get_obj_addr(void* baton)
+{
+  struct dwarf_expr_baton* b = (struct dwarf_expr_baton*) baton;
+  return b->obj_address; 
+}
 
 /* Using the frame specified in BATON, return the value of register
    REGNUM, treated as a pointer.  */
@@ -367,7 +378,12 @@ dwarf_expr_frame_base (void *baton, const gdb_byte **start, size_t * length)
   /* If we found a frame-relative symbol then it was certainly within
      some function associated with a frame. If we can't find the frame,
      something has gone wrong.  */
-  gdb_assert (framefunc != NULL);
+  if  (framefunc == NULL) 
+      {
+          error (_("Could not find the function pointer for frame baton %p"),
+                 debaton );
+          return;
+      }
 
   func_get_frame_base_dwarf_block (framefunc,
 				   get_frame_address_in_block (debaton->frame),
@@ -413,7 +429,8 @@ locexpr_get_frame_base (struct symbol *framefunc, struct frame_info *frame)
   SYMBOL_BLOCK_OPS (framefunc)->find_frame_base_location
     (framefunc, get_frame_pc (frame), &start, &length);
   result = dwarf2_evaluate_loc_desc (type, frame, start, length,
-				     dlbaton->per_cu);
+				     dlbaton->per_cu,
+				     /* FIXME: What should be passed for object address here? */ 0);
 
   /* The DW_AT_frame_base attribute contains a location description which
      computes the base address itself.  However, the call to
@@ -470,7 +487,8 @@ loclist_get_frame_base (struct symbol *framefunc, struct frame_info *frame)
   SYMBOL_BLOCK_OPS (framefunc)->find_frame_base_location
     (framefunc, get_frame_pc (frame), &start, &length);
   result = dwarf2_evaluate_loc_desc (type, frame, start, length,
-				     dlbaton->per_cu);
+				     dlbaton->per_cu,
+				     /* FIXME: What should be passed for object address here? */ 0);
 
   /* The DW_AT_frame_base attribute contains a location description which
      computes the base address itself.  However, the call to
@@ -649,7 +667,8 @@ call_site_to_target_addr (struct gdbarch *call_site_gdbarch,
 	caller_core_addr_type = builtin_type (caller_arch)->builtin_func_ptr;
 	val = dwarf2_evaluate_loc_desc (caller_core_addr_type, caller_frame,
 					dwarf_block->data, dwarf_block->size,
-					dwarf_block->per_cu);
+					dwarf_block->per_cu,
+					/* FIXME: What should be passed for object address here? */ 0);
 	/* DW_AT_GNU_call_site_target is a DWARF expression, not a DWARF
 	   location.  */
 	if (VALUE_LVAL (val) == lval_memory)
@@ -1245,7 +1264,8 @@ dwarf_entry_parameter_to_value (struct call_site_parameter *parameter,
   memcpy (data, data_src, size);
   data[size] = DW_OP_stack_value;
 
-  return dwarf2_evaluate_loc_desc (type, caller_frame, data, size + 1, per_cu);
+  return dwarf2_evaluate_loc_desc (type, caller_frame, data, size + 1, per_cu,
+    				 /* FIXME: What should be passed for object address here? */ 0);
 }
 
 /* Execute DWARF block of call_site_parameter which matches KIND and KIND_U.
@@ -1317,6 +1337,7 @@ dwarf_expr_get_addr_index (void *baton, unsigned int index)
   return dwarf2_read_addr_index (debaton->per_cu, index);
 }
 
+#if 0
 /* Callback function for get_object_address. Return the address of the VLA
    object.  */
 
@@ -1327,11 +1348,12 @@ dwarf_expr_get_obj_addr (void *baton)
 
   gdb_assert (debaton != NULL);
 
-  if (debaton->obj_address == 0)
+  if (debaton->object_address == 0)
     error (_("Location address is not set."));
 
-  return debaton->obj_address;
+  return debaton->object_address;
 }
+#endif
 
 /* VALUE must be of type lval_computed with entry_data_value_funcs.  Perform
    the indirect method on it, that is use its stored target value, the sole
@@ -1694,7 +1716,7 @@ read_pieced_value (struct value *v)
   struct piece_closure *c
     = (struct piece_closure *) value_computed_closure (v);
   struct frame_info *frame = frame_find_by_id (VALUE_FRAME_ID (v));
-  size_t type_len;
+  size_t type_len, value_len;
   size_t buffer_size = 0;
   gdb_byte *buffer = NULL;
   struct cleanup *cleanup;
@@ -1717,6 +1739,7 @@ read_pieced_value (struct value *v)
     }
   else
     type_len = 8 * TYPE_LENGTH (value_type (v));
+  value_len = 8 * value_length (v);
 
   for (i = 0; i < c->n_pieces && offset < type_len; i++)
     {
@@ -1747,6 +1770,11 @@ read_pieced_value (struct value *v)
 	}
       if (this_size_bits > type_len - offset)
 	this_size_bits = type_len - offset;
+
+      if (dest_offset_bits >= value_len)
+          break;
+      if (dest_offset_bits + this_size_bits > value_len)
+          this_size_bits = value_len - dest_offset_bits;
 
       this_size = (this_size_bits + source_offset_bits % 8 + 7) / 8;
       source_offset = source_offset_bits / 8;
@@ -2115,7 +2143,8 @@ indirect_synthetic_pointer (sect_offset die, LONGEST byte_offset,
   if (baton.data != NULL)
     return dwarf2_evaluate_loc_desc_full (TYPE_TARGET_TYPE (type), frame,
 					  baton.data, baton.size, baton.per_cu,
-					  byte_offset);
+					  byte_offset,
+					  /* FIXME: What should be passed for object address here? */ 0);
   else
     return fetch_const_value_from_synthetic_pointer (die, byte_offset, per_cu,
 						     type);
@@ -2286,7 +2315,7 @@ const struct dwarf_expr_context_funcs dwarf_expr_ctx_funcs =
   dwarf_expr_get_base_type,
   dwarf_expr_push_dwarf_reg_entry_value,
   dwarf_expr_get_addr_index,
-  dwarf_expr_get_obj_addr
+  dwarf_get_obj_addr
 };
 
 /* Evaluate a location description, starting at DATA and with length
@@ -2295,10 +2324,11 @@ const struct dwarf_expr_context_funcs dwarf_expr_ctx_funcs =
    computed.  */
 
 static struct value *
-dwarf2_evaluate_loc_desc_full (struct type *type, struct frame_info *frame,
-			       const gdb_byte *data, size_t size,
-			       struct dwarf2_per_cu_data *per_cu,
-			       LONGEST byte_offset)
+dwarf2_evaluate_loc_desc_full_1 (struct type *type, struct frame_info *frame,
+				 const gdb_byte *data, size_t size,
+				 struct dwarf2_per_cu_data *per_cu,
+				 LONGEST byte_offset,
+				 CORE_ADDR push_obj)
 {
   struct value *retval;
   struct dwarf_expr_baton baton;
@@ -2309,12 +2339,20 @@ dwarf2_evaluate_loc_desc_full (struct type *type, struct frame_info *frame,
   if (byte_offset < 0)
     invalid_synthetic_pointer ();
 
+  if (TYPE_NFIELDS (type) == 2 && 
+      TYPE_CODE (type) == TYPE_CODE_ARRAY) {
+      /*
+        later in this function allocate_value is called.
+        which is bad if we haven't established array size yet.
+      */
+      TYPE_LENGTH (type) = sizeof(long long);
+  }
   if (size == 0)
     return allocate_optimized_out_value (type);
 
   baton.frame = frame;
   baton.per_cu = per_cu;
-  baton.obj_address = 0;
+  baton.obj_address = push_obj;
 
   ctx = new_dwarf_expr_context ();
   old_chain = make_cleanup_free_dwarf_expr_context (ctx);
@@ -2524,15 +2562,46 @@ dwarf2_evaluate_loc_desc_full (struct type *type, struct frame_info *frame,
   return retval;
 }
 
+static struct value *
+dwarf2_evaluate_loc_desc_full (struct type *type, struct frame_info *frame,
+			       const gdb_byte *data, size_t size,
+			       struct dwarf2_per_cu_data *per_cu,
+			       LONGEST byte_offset,
+			       CORE_ADDR push_obj)
+{
+  struct frame_info *old_frame;
+  struct value *answer;
+
+  answer = NULL;
+  old_frame = deprecated_safe_get_selected_frame ();
+  TRY
+    {
+      select_frame (frame);
+      answer = dwarf2_evaluate_loc_desc_full_1 (type, frame, data, size,
+						per_cu, byte_offset,
+						push_obj);
+    }
+  CATCH (e, RETURN_MASK_ERROR)
+    {
+      select_frame (old_frame);
+      throw_exception (e);
+    }
+  END_CATCH
+
+  select_frame (old_frame);
+  return answer;
+}
+
 /* The exported interface to dwarf2_evaluate_loc_desc_full; it always
    passes 0 as the byte_offset.  */
 
 struct value *
 dwarf2_evaluate_loc_desc (struct type *type, struct frame_info *frame,
 			  const gdb_byte *data, size_t size,
-			  struct dwarf2_per_cu_data *per_cu)
+			  struct dwarf2_per_cu_data *per_cu,
+			  CORE_ADDR push_obj)
 {
-  return dwarf2_evaluate_loc_desc_full (type, frame, data, size, per_cu, 0);
+  return dwarf2_evaluate_loc_desc_full (type, frame, data, size, per_cu, 0, push_obj);
 }
 
 /* Evaluates a dwarf expression and stores the result in VAL, expecting
@@ -2570,6 +2639,17 @@ dwarf2_locexpr_baton_eval (const struct dwarf2_locexpr_baton *dlbaton,
   ctx->offset = dwarf2_per_cu_text_offset (dlbaton->per_cu);
   ctx->funcs = &dwarf_expr_ctx_funcs;
   ctx->baton = &baton;
+  ctx->producer_is_pgi = dlbaton->producer_is_pgi;
+
+  if (ctx->producer_is_pgi)
+    {
+      /* This next push statement added to prevent underflow when finding
+	 array locations inside structure types created with the pgi
+	 compiler.  Reading the DWARF it seems like this might actually be
+	 correct behaviour, however, GCC produced binaries don't depend on
+	 it, and I'm nervous adding it in at a late stage.  */
+      dwarf_expr_push_address (ctx, addr, 0);
+    }
 
   dwarf_expr_eval (ctx, dlbaton->data, dlbaton->size);
 
@@ -2647,7 +2727,8 @@ dwarf2_evaluate_property (const struct dynamic_prop *prop,
 	if (data != NULL)
 	  {
 	    val = dwarf2_evaluate_loc_desc (baton->referenced_type, frame, data,
-					    size, baton->loclist.per_cu);
+					    size, baton->loclist.per_cu,
+					    /* FIXME: What should be passed for object address here? */ 0);
 	    if (!value_optimized_out (val))
 	      {
 		*value = value_as_address (val);
@@ -2836,6 +2917,7 @@ needs_get_addr_index (void *baton, unsigned int index)
   return 1;
 }
 
+#if 0
 /* DW_OP_push_object_address has a frame already passed through.  */
 
 static CORE_ADDR
@@ -2844,6 +2926,7 @@ needs_get_obj_addr (void *baton)
   /* Nothing to do.  */
   return 1;
 }
+#endif
 
 /* Virtual method table for dwarf2_loc_desc_get_symbol_read_needs
    below.  */
@@ -2861,7 +2944,7 @@ static const struct dwarf_expr_context_funcs symbol_needs_ctx_funcs =
   NULL,				/* get_base_type */
   needs_dwarf_reg_entry_value,
   needs_get_addr_index,
-  needs_get_obj_addr
+  NULL			/* get_object_address */
 };
 
 /* Compute the correct symbol_needs_kind value for the location
@@ -3724,7 +3807,8 @@ locexpr_read_variable (struct symbol *symbol, struct frame_info *frame)
   struct value *val;
 
   val = dwarf2_evaluate_loc_desc (SYMBOL_TYPE (symbol), frame, dlbaton->data,
-				  dlbaton->size, dlbaton->per_cu);
+				  dlbaton->size, dlbaton->per_cu,
+				  SYMBOL_VALUE_ADDRESS(symbol));
 
   return val;
 }
@@ -4507,7 +4591,7 @@ loclist_read_variable (struct symbol *symbol, struct frame_info *frame)
 
   data = dwarf2_find_location_expression (dlbaton, &size, pc);
   val = dwarf2_evaluate_loc_desc (SYMBOL_TYPE (symbol), frame, data, size,
-				  dlbaton->per_cu);
+				dlbaton->per_cu, SYMBOL_VALUE_ADDRESS(symbol));
 
   return val;
 }
@@ -4701,6 +4785,142 @@ const struct symbol_computed_ops dwarf2_loclist_funcs = {
   loclist_tracepoint_var_ref,
   loclist_generate_c_location
 };
+
+struct value *
+dwarf2_evaluate_int (struct type *type, void* locbaton,
+		     struct value *obj, void* frame)
+{
+  struct dwarf2_loclist_baton* b =
+    (struct dwarf2_loclist_baton*) locbaton;
+
+  LONGEST result;
+  struct value *retval;
+  struct dwarf_expr_baton baton;
+  struct dwarf_expr_context *ctx;
+  struct cleanup *old_chain, *value_chain;
+  CORE_ADDR push_obj;
+  struct objfile *objfile = dwarf2_per_cu_objfile (b->per_cu);
+  struct value *val;
+  struct gdbarch *gdbarch = get_objfile_arch (objfile);
+  enum bfd_endian byte_order;
+
+  if (type)
+    type = check_typedef (type);
+
+  push_obj = value_address (obj);
+
+  baton.frame = (struct frame_info*) frame;
+  baton.obj_address = push_obj;
+
+  ctx = new_dwarf_expr_context ();
+  old_chain = make_cleanup_free_dwarf_expr_context (ctx);
+  value_chain = make_cleanup_value_free_to_mark (value_mark ());
+  ctx->gdbarch = gdbarch;
+  ctx->addr_size = dwarf2_per_cu_addr_size (b->per_cu);
+  ctx->offset = dwarf2_per_cu_text_offset (b->per_cu);  
+  ctx->baton = &baton;
+  ctx->funcs = &dwarf_expr_ctx_funcs;
+
+  /* 
+     This next push statement added to prevent underflow when finding
+     array locations particularly PGI compiler inside structures/types
+     DW_OP_plus_uconst and others for example - seen in test_linear.
+     DWARF2 spec says it is fine to assume object base location is
+     already in stack - so we must allow it.
+     
+  */
+  dwarf_expr_push_address (ctx, push_obj, 0);
+
+  
+  dwarf_expr_eval (ctx, b->data, b->size);
+  val = dwarf_expr_fetch (ctx, 0);
+  if (TYPE_CODE (value_type (val)) != TYPE_CODE_INT
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_CHAR
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_BOOL
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_PTR)
+    error (_("integral type expected in DWARF expression"));
+  if (!type || TYPE_CODE (type) != TYPE_CODE_INT)
+    type = builtin_type (gdbarch)->builtin_int;
+  byte_order = gdbarch_byte_order (gdbarch);
+  result = extract_signed_integer (value_contents (val),
+				   TYPE_LENGTH (value_type (val)),
+				   byte_order);
+  do_cleanups(value_chain);
+
+  val = value_from_longest (type, result);
+
+  do_cleanups (old_chain);
+
+  return val;
+}
+
+struct value *
+dwarf2_evaluate_address (struct type *type, void* locbaton,
+			 struct value *obj, void* frame)
+{
+  struct dwarf2_loclist_baton* b =
+    (struct dwarf2_loclist_baton*) locbaton;
+
+  CORE_ADDR result;
+  struct value *retval;
+  struct dwarf_expr_baton baton;
+  struct dwarf_expr_context *ctx;
+  struct cleanup *old_chain, *value_chain;
+  CORE_ADDR push_obj;
+  struct objfile *objfile = dwarf2_per_cu_objfile (b->per_cu);
+  struct value *val;
+  struct gdbarch *gdbarch = get_objfile_arch (objfile);
+  enum bfd_endian byte_order;
+
+  if (type)
+    type = check_typedef (type);
+
+  push_obj = value_address (obj);
+
+  baton.frame = (struct frame_info*) frame;
+  baton.obj_address = push_obj;
+
+  ctx = new_dwarf_expr_context ();
+  old_chain = make_cleanup_free_dwarf_expr_context (ctx);
+  value_chain = make_cleanup_value_free_to_mark (value_mark ());
+  ctx->gdbarch = gdbarch;
+  ctx->addr_size = dwarf2_per_cu_addr_size (b->per_cu);
+  ctx->offset = dwarf2_per_cu_text_offset (b->per_cu);  
+  ctx->baton = &baton;
+  ctx->funcs = &dwarf_expr_ctx_funcs;
+
+  /* 
+     This next push statement added to prevent underflow when finding
+     array locations particularly PGI compiler inside structures/types
+     DW_OP_plus_uconst and others for example - seen in test_linear.
+     DWARF2 spec says it is fine to assume object base location is
+     already in stack - so we must allow it.
+     
+  */
+  dwarf_expr_push_address (ctx, push_obj, 0);
+
+  
+  dwarf_expr_eval (ctx, b->data, b->size);
+  val = dwarf_expr_fetch (ctx, 0);
+  if (TYPE_CODE (value_type (val)) != TYPE_CODE_INT
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_CHAR
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_BOOL
+      && TYPE_CODE (value_type (val)) != TYPE_CODE_PTR)
+    error (_("integral type expected in DWARF expression"));
+  if (!type || TYPE_CODE (type) != TYPE_CODE_PTR)
+    type = builtin_type (gdbarch)->builtin_data_ptr;
+  byte_order = gdbarch_byte_order (gdbarch);
+  result = extract_unsigned_integer (value_contents (val),
+				     TYPE_LENGTH (value_type (val)),
+				     byte_order);
+  do_cleanups(value_chain);
+
+  val = value_from_pointer (type, result);
+
+  do_cleanups (old_chain);
+
+  return val;
+}
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */
 extern initialize_file_ftype _initialize_dwarf2loc;

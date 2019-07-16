@@ -3888,6 +3888,29 @@ debug_insn_history_range (struct target_ops *self, ULONGEST arg1, ULONGEST arg2,
 }
 
 static void
+delegate_get_call_history_length (struct target_ops *self)
+{
+  self = self->beneath;
+  self->to_get_call_history_length (self);
+}
+
+static void
+tdefault_get_call_history_length (struct target_ops *self)
+{
+  tcomplain ();
+}
+
+static void
+debug_get_call_history_length (struct target_ops *self)
+{
+  fprintf_unfiltered (gdb_stdlog, "-> %s->to_get_call_history_length (...)\n", debug_target.to_shortname);
+  debug_target.to_get_call_history_length (&debug_target);
+  fprintf_unfiltered (gdb_stdlog, "<- %s->to_get_call_history_length (", debug_target.to_shortname);
+  target_debug_print_struct_target_ops_p (&debug_target);
+  fputs_unfiltered (")\n", gdb_stdlog);
+}
+
+static void
 delegate_call_history (struct target_ops *self, int arg1, int arg2)
 {
   self = self->beneath;
@@ -4388,6 +4411,8 @@ install_delegators (struct target_ops *ops)
     ops->to_insn_history_from = delegate_insn_history_from;
   if (ops->to_insn_history_range == NULL)
     ops->to_insn_history_range = delegate_insn_history_range;
+  if (ops->to_get_call_history_length == NULL)
+    ops->to_get_call_history_length = delegate_get_call_history_length;
   if (ops->to_call_history == NULL)
     ops->to_call_history = delegate_call_history;
   if (ops->to_call_history_from == NULL)
@@ -4553,6 +4578,7 @@ install_dummy_methods (struct target_ops *ops)
   ops->to_insn_history = tdefault_insn_history;
   ops->to_insn_history_from = tdefault_insn_history_from;
   ops->to_insn_history_range = tdefault_insn_history_range;
+  ops->to_get_call_history_length = tdefault_get_call_history_length;
   ops->to_call_history = tdefault_call_history;
   ops->to_call_history_from = tdefault_call_history_from;
   ops->to_call_history_range = tdefault_call_history_range;
@@ -4710,6 +4736,7 @@ init_debug_target (struct target_ops *ops)
   ops->to_insn_history = debug_insn_history;
   ops->to_insn_history_from = debug_insn_history_from;
   ops->to_insn_history_range = debug_insn_history_range;
+  ops->to_get_call_history_length = debug_get_call_history_length;
   ops->to_call_history = debug_call_history;
   ops->to_call_history_from = debug_call_history_from;
   ops->to_call_history_range = debug_call_history_range;

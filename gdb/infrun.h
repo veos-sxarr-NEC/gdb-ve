@@ -1,4 +1,7 @@
-/* Copyright (C) 1986-2017 Free Software Foundation, Inc.
+/* Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
+   Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -51,6 +54,13 @@ extern int step_stop_if_no_debug;
    events stop only the thread that had the event -- the other threads
    are kept running freely.  */
 extern int non_stop;
+
+/* If set, the inferior should be controlled in inferior-stop mode.  In
+   this mode, each inferior is controlled independently.  Execution
+   commands apply only to the the selected inferior by default, and stop
+   events stop only the inferior that had the event -- the other inferiors
+   are kept running freely.  */
+extern int inferior_stop;
 
 /* When set (default), the target should attempt to disable the
    operating system's address space randomization feature when
@@ -108,7 +118,7 @@ extern void get_last_target_status (ptid_t *ptid,
 				    struct target_waitstatus *status);
 
 extern void set_last_target_status (ptid_t ptid,
-				    struct target_waitstatus status);
+				    const struct target_waitstatus *status);
 
 /* Stop all threads.  Only returns after everything is halted.  */
 extern void stop_all_threads (void);

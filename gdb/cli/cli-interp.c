@@ -1,5 +1,8 @@
 /* CLI Definitions for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -29,6 +32,7 @@
 #include "observer.h"
 #include "gdbthread.h"
 #include "thread-fsm.h"
+#include "upc-thread.h"
 
 /* The console interpreter.  */
 struct cli_interp
@@ -166,7 +170,7 @@ cli_on_signal_exited (enum gdb_signal siggnal)
     {
       struct cli_interp *cli = as_cli_interp (top_level_interpreter ());
 
-      if (cli == NULL)
+      if (cli == NULL || upc_exit_code)
 	continue;
 
       print_signal_exited_reason (cli->cli_uiout, siggnal);
@@ -184,10 +188,10 @@ cli_on_exited (int exitstatus)
     {
       struct cli_interp *cli = as_cli_interp (top_level_interpreter ());
 
-      if (cli == NULL)
-	continue;
-
-      print_exited_reason (cli->cli_uiout, exitstatus);
+      if (cli != NULL && !upcmode)
+	print_exited_reason (cli->cli_uiout, exitstatus);
+      else if (!upc_exit_code)
+	upc_exit_code = exitstatus;
     }
 }
 

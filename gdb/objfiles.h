@@ -1,5 +1,8 @@
 /* Definitions for symbol file management in GDB.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1992-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -256,6 +259,11 @@ struct objfile_per_bfd_storage
 
   struct minimal_symbol *msymbol_hash[MINIMAL_SYMBOL_HASH_SIZE];
 
+  /* This is a hash table used to index the minimal symbols by lowercase
+     name.  */
+
+  struct minimal_symbol *msymbol_lowercase_hash[MINIMAL_SYMBOL_HASH_SIZE];
+
   /* This hash table is used to index the minimal symbols by their
      demangled names.  */
 
@@ -508,6 +516,9 @@ extern struct objfile *objfile_separate_debug_iterate (const struct objfile *,
 
 extern void put_objfile_before (struct objfile *, struct objfile *);
 
+
+extern void objfile_to_back (struct objfile *);
+
 extern void add_separate_debug_objfile (struct objfile *, struct objfile *);
 
 extern void unlink_objfile (struct objfile *);
@@ -646,6 +657,12 @@ extern void default_iterate_over_objfiles_in_search_order
 #define ALL_COMPUNITS(objfile, cu)	\
   ALL_OBJFILES (objfile)		\
     ALL_OBJFILE_COMPUNITS (objfile, cu)
+
+/* Traverse all symtabs in all compunits, in all object files, in the
+   single program space provided.  */
+#define ALL_PSPACE_SYMTABS(ps, of, cu, s)	\
+  ALL_PSPACE_OBJFILES (ps, of)		\
+      ALL_OBJFILE_FILETABS (of, cu, s)
 
 /* Traverse all minimal symbols in all objfiles in the current symbol
    space.  */

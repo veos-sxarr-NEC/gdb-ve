@@ -1,5 +1,8 @@
 /* Target-dependent code for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -1240,7 +1243,7 @@ ppc_deal_with_atomic_sequence (struct frame_info *frame)
 
 /* Limit the number of skipped non-prologue instructions, as the examining
    of the prologue is expensive.  */
-static int max_skip_non_prologue_insns = 10;
+static int max_skip_non_prologue_insns = 20;
 
 /* Return nonzero if the given instruction OP can be part of the prologue
    of a function and saves a parameter on the stack.  FRAMEP should be
@@ -1905,6 +1908,24 @@ skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc, CORE_ADDR lim_pc,
 	  fdata->frameless = 0;
 	  framep = 1;
 	  fdata->alloca_reg = (tdep->ppc_gp0_regnum + 29);
+	  continue;
+
+	  /* Another way to set up the frame pointer.  */
+	}
+      else if (op == 0x603d0000	/* oril r29, r1, 0x0 */)
+	{			
+	  fdata->frameless = 0;
+	  framep = 1;
+	  fdata->alloca_reg = (tdep->ppc_gp0_regnum + 29);
+	  continue;
+
+	  /* Another way to set up the frame pointer.  */
+	}
+      else if (op == 0x603e0000	/* oril r30, r1, 0x0 */)
+	{			
+	  fdata->frameless = 0;
+	  framep = 1;
+	  fdata->alloca_reg = (tdep->ppc_gp0_regnum + 30);
 	  continue;
 
 	  /* Another way to set up the frame pointer.  */
@@ -3426,7 +3447,7 @@ rs6000_frame_cache (struct frame_info *this_frame, void **this_cache)
   if (fdata.lr_offset != 0)
     cache->saved_regs[tdep->ppc_lr_regnum].addr
       = cache->base + fdata.lr_offset;
-  else if (fdata.lr_register != -1)
+  else if (fdata.lr_register != -1 && fdata.used_bl)
     cache->saved_regs[tdep->ppc_lr_regnum].realreg = fdata.lr_register;
   /* The PC is found in the link register.  */
   cache->saved_regs[gdbarch_pc_regnum (gdbarch)] =
@@ -5527,12 +5548,17 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Check word size.  If INFO is from a binary file, infer it from
      that, else choose a likely default.  */
+
+  mach = info.bfd_arch_info->mach;
+
   if (from_xcoff_exec)
     {
       if (bfd_xcoff_is_xcoff64 (info.abfd))
 	wordsize = 8;
       else
 	wordsize = 4;
+      mach = (wordsize==8)?bfd_mach_ppc64:bfd_mach_ppc;
+      
     }
   else if (from_elf_exec)
     {

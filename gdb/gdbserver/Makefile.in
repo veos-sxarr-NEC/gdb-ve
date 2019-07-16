@@ -1,3 +1,6 @@
+# Modified by Arm.
+
+# Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
 # Copyright (C) 1989-2017 Free Software Foundation, Inc.
 
 # This file is part of GDB.
@@ -183,6 +186,7 @@ SFILES=	$(srcdir)/gdbreplay.c $(srcdir)/inferiors.c $(srcdir)/dll.c \
 	$(srcdir)/common/common-debug.c $(srcdir)/common/cleanups.c \
 	$(srcdir)/common/common-exceptions.c $(srcdir)/symbol.c \
 	$(srcdir)/common/btrace-common.c \
+	$(srcdir)/common/common-myo.c $(srcdir)/myo.c \
 	$(srcdir)/common/fileio.c $(srcdir)/nat/linux-namespaces.c \
 	$(srcdir)/arch/arm.c $(srcdir)/common/common-regcache.c \
 	$(srcdir)/arch/arm-linux.c $(srcdir)/arch/arm-get-next-pcs.c
@@ -678,6 +682,9 @@ posix-strerror.o: ../common/posix-strerror.c
 	$(COMPILE) $<
 	$(POSTCOMPILE)
 mingw-strerror.o: ../common/mingw-strerror.c
+	$(COMPILE) $<
+	$(POSTCOMPILE)
+common-myo.o: ../common/common-myo.c
 	$(COMPILE) $<
 	$(POSTCOMPILE)
 vec.o: ../common/vec.c

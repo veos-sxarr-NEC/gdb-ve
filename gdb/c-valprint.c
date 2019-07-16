@@ -1,5 +1,8 @@
 /* Support for printing C values for GDB, the GNU debugger.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1986-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -25,6 +28,7 @@
 #include "valprint.h"
 #include "language.h"
 #include "c-lang.h"
+#include "upc-lang.h"
 #include "cp-abi.h"
 #include "target.h"
 #include "objfiles.h"
@@ -253,7 +257,9 @@ c_val_print_array (struct type *type, const gdb_byte *valaddr,
 	error (_("Could not determine the array high bound"));
 
       eltlen = TYPE_LENGTH (elttype);
-      len = high_bound - low_bound + 1;
+      len = original_value
+	? min (high_bound - low_bound + 1, value_length (original_value) / eltlen)
+	: (high_bound - low_bound + 1);
       if (options->prettyformat_arrays)
 	{
 	  print_spaces_filtered (2 + 2 * recurse, stream);
@@ -279,7 +285,7 @@ c_val_print_array (struct type *type, const gdb_byte *valaddr,
 
 	      for (temp_len = 0;
 		   (temp_len < len
-		    && temp_len < options->print_max
+		    && temp_len < options->print_smax
 		    && extract_unsigned_integer (valaddr
 						 + embedded_offset * unit_size
 						 + temp_len * eltlen,
@@ -290,7 +296,7 @@ c_val_print_array (struct type *type, const gdb_byte *valaddr,
 	      /* Force LA_PRINT_STRING to print ellipses if
 		 we've printed the maximum characters and
 		 the next character is not \000.  */
-	      if (temp_len == options->print_max && temp_len < len)
+	      if (temp_len == options->print_smax && temp_len < len)
 		{
 		  ULONGEST val
 		    = extract_unsigned_integer (valaddr
@@ -350,6 +356,14 @@ c_val_print_ptr (struct type *type, const gdb_byte *valaddr,
 {
   struct gdbarch *arch = get_type_arch (type);
   int unit_size = gdbarch_addressable_memory_unit_size (arch);
+  struct type *elttype;
+
+  elttype = check_typedef (TYPE_TARGET_TYPE (type));
+  if (upc_shared_type_p (elttype))
+    {
+      upc_print_pts (stream, options->format, elttype, valaddr);
+      return;
+    }
 
   if (options->format && options->format != 's')
     {
@@ -645,9 +659,21 @@ c_value_print (struct value *val, struct ui_file *stream,
       else
 	{
 	  /* normal case */
-	  fprintf_filtered (stream, "(");
-	  type_print (value_type (val), "", stream, -1);
-	  fprintf_filtered (stream, ") ");
+	  if (current_language->la_language != language_fortran)
+	    {
+	      fprintf_filtered (stream, "(");
+	      if (is_dynamic_type (TYPE_TARGET_TYPE (type)))
+		{
+		  struct value *v;
+
+		  v = value_ind (val);
+		  v = value_addr (v);
+		  type_print (value_type (v), "", stream, -1);
+		}
+	      else
+		type_print (value_type (val), "", stream, -1);
+	      fprintf_filtered (stream, ") ");
+	    }
 	}
     }
 

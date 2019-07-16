@@ -1,4 +1,7 @@
 /* Helper routines for C++ support in GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
@@ -1165,7 +1168,7 @@ overload_list_add_symbol (struct symbol *sym,
     return;
 
   /* skip symbols that cannot match */
-  if (strcmp (sym_name, oload_name) != 0)
+  if (strcmp_iw (sym_name, oload_name) != 0)
     {
       xfree (sym_name);
       return;

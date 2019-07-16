@@ -1,4 +1,7 @@
 /* OpenCL language support for GDB, the GNU debugger.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2010-2017 Free Software Foundation, Inc.
 
    Contributed by Ken Werner <ken.werner@de.ibm.com>.
@@ -344,7 +347,7 @@ create_value (struct gdbarch *gdbarch, struct value *val, enum noside noside,
       if (dst_type == NULL)
 	dst_type = init_vector_type (elm_type, n);
 
-      make_cv_type (TYPE_CONST (type), TYPE_VOLATILE (type), dst_type, NULL);
+      make_qual_variant_type (TYPE_QUALS (type), dst_type, NULL);
 
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	ret = allocate_value (dst_type);
@@ -1081,6 +1084,7 @@ const struct language_defn opencl_language_defn =
   opencl_language_arch_info,
   default_print_array_index,
   default_pass_by_reference,
+  default_return_by_reference,
   c_get_string,
   NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,

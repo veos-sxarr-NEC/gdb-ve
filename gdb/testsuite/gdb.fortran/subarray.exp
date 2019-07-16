@@ -19,6 +19,7 @@
 # Fortran subarray expression.
 
 if { [skip_fortran_tests] } { return -1 }
+load_lib "fortran.exp"
 
 standard_testfile .f
 
@@ -31,9 +32,9 @@ gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load ${binfile}
 
-if ![runto MAIN__] then {
-    perror "couldn't run to breakpoint MAIN__"
-    continue
+if ![fortran_gdb_start] {
+    untested "could not run to main in: $testfile"
+    return -1
 }
 
 # Try to set breakpoint at the last write statement.

@@ -395,7 +395,9 @@ if { ![skip_python_tests] } {
 	delete_breakpoints
 	gdb_breakpoint "thread_function1"
 
-	gdb_py_test_silent_cmd "python bp = gdb.breakpoints()\[0\]" \
+	# Change this to breakpoint #1 as the Intel GDB patch makes
+	# use of breakpoint #0 for its own purposes.
+	gdb_py_test_silent_cmd "python bp = gdb.breakpoints()\[1\]" \
 	    "get python breakpoint" 0
 	gdb_test "python bp.thread = 6" "thread = 6" \
 	    "make breakpoint thread-specific with python"

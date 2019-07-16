@@ -1,4 +1,7 @@
 /* Replay a remote debug session logfile for GDB.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 1996-2017 Free Software Foundation, Inc.
    Written by Fred Fish (fnf@cygnus.com) from pieces of gdbserver.
 
@@ -407,7 +410,7 @@ static void
 gdbreplay_version (void)
 {
   printf ("GNU gdbreplay %s%s\n"
-	  "Copyright (C) 2017 Free Software Foundation, Inc.\n"
+	  "Modified by Arm. Copyright (C) 2002-2019 Arm Limited (or its affiliates). All rights reserved.\nCopyright (C) 2017 Free Software Foundation, Inc; (C) 2016 Intel Corp.\n"
 	  "gdbreplay is free software, covered by "
 	  "the GNU General Public License.\n"
 	  "This gdbreplay was configured as \"%s\"\n",

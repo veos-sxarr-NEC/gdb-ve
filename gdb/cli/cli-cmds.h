@@ -1,4 +1,7 @@
 /* Header file for GDB CLI command implementation library.
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
@@ -96,6 +99,10 @@ extern struct cmd_list_element *showdebuglist;
 extern struct cmd_list_element *setchecklist;
 
 extern struct cmd_list_element *showchecklist;
+
+extern struct cmd_list_element *setsourcelist;
+
+extern struct cmd_list_element *showsourcelist;
 
 /* Exported to gdb/top.c */
 

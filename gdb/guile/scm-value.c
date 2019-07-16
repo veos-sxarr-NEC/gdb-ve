@@ -1,5 +1,8 @@
 /* Scheme interface to values.
 
+   Modified by Arm.
+
+   Copyright (C) 1995-2019 Arm Limited (or its affiliates). All rights reserved.
    Copyright (C) 2008-2017 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -379,7 +382,7 @@ gdbscm_make_lazy_value (SCM type_scm, SCM address_scm)
      and future-proofing we do.  */
   TRY
   {
-    value = value_from_contents_and_address (type, NULL, address);
+    value = value_from_contents_and_address (type, NULL, TYPE_LENGTH (type), address);
   }
   CATCH (except, RETURN_MASK_ALL)
     {
