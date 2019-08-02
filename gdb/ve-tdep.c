@@ -1309,6 +1309,9 @@ ve_vec_type (struct gdbarch *gdbarch)
       append_composite_type_field (t, "v256_double",
 				   init_vector_type (bt->builtin_double, 256));
 
+      append_composite_type_field(t, "v256_uint64",
+                                   init_vector_type(bt->builtin_uint64, 256));
+
       TYPE_VECTOR (t) = 1;
       TYPE_NAME (t) = "builtin_type_vec256d";
       tdep->ve_vec_type = t;
