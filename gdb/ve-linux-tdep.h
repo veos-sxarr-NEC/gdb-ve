@@ -33,8 +33,8 @@ struct regcache;
 
 #define VEGP_PSW_OFFSET		(0x1000)
 #define VEGP_SCALAR_OFFSET	(0x1400)
-#define VEFP_VMASK_OFFSET	(0x1800)
-#define VEFP_VECTOR_OFFSET	(0x40000)
+#define VEFP_VMASK_OFFSET	(0x0)
+#define VEFP_VECTOR_OFFSET	(0x3E800)
 
 void ve_linux_supply_gregset (const struct regset *regset,
 			      struct regcache *regcache,
