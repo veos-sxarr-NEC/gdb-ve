@@ -22,6 +22,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 /* This file contains functions that return things that are specific
    to languages.  Each function should examine current_language if necessary,
@@ -247,6 +248,7 @@ show_range_command (struct ui_file *file, int from_tty,
 static void
 set_range_command (char *ignore, int from_tty, struct cmd_list_element *c)
 {
+#ifndef VE_CUSTOMIZATION
   if (strcmp (range, "on") == 0)
     {
       range_check = range_check_on;
@@ -276,6 +278,7 @@ set_range_command (char *ignore, int from_tty, struct cmd_list_element *c)
   if (range_check != current_language->la_range_check)
     warning (_("the current range check setting "
 	       "does not match the language.\n"));
+#endif
 }
 
 /* Show command.  Display a warning if the case sensitivity setting does
@@ -600,10 +603,23 @@ add_language (const struct language_defn *lang)
 
   for (i = 0; i < languages_size; ++i)
     {
+#ifdef VE_CUSTOMIZATION
+      switch (languages[i]->la_language)
+	{
+	case language_c:
+	case language_cplus:
+	case language_asm:
+	case language_fortran:
+	  break;
+	default:
+	  continue;
+	}
+#else
       /* Already dealt with these above.  */
       if (languages[i]->la_language == language_unknown
 	  || languages[i]->la_language == language_auto)
 	continue;
+#endif
 
       /* FIXME: i18n: for now assume that the human-readable name
 	 is just a capitalization of the internal name.  */

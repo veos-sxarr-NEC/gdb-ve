@@ -21,6 +21,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2019 */
 
 #include <string.h>
 
@@ -868,5 +869,7 @@ char *upc_demangle (const char *mangled, int options)
 void
 _initialize_upc_language (void)
 {
+#ifndef VE_CUSTOMIZATION
   add_com ("upc-init", no_class, upc_lang_init, _("Test: connect to UDA server"));
+#endif
 }

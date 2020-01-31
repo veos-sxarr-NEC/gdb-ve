@@ -21,6 +21,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2019 */
 
 #include "defs.h"
 #include <ctype.h>
@@ -43,8 +44,10 @@ static int debug_uda = 0;
 
 extern void _initialize_uda_rmt_utils (void);
 static void uda_rmt_be_cvt (gdb_byte *, const gdb_byte *, const size_t);
+#ifndef VE_CUSTOMIZATION
 static void show_debug_uda (struct ui_file *file, int from_tty,
 		            struct cmd_list_element *c, const char *value);
+#endif
 
 
 void
@@ -976,16 +979,19 @@ uda_rmt_init (FILE *rmt_in, FILE *rmt_out,
   add_file_handler (fileno (uda_rmt_in), uda_rmt_async_callback, NULL);
 }
 
+#ifndef VE_CUSTOMIZATION
 static void
 show_debug_uda (struct ui_file *file, int from_tty,
 		struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file, _("UDA debugging is %s.\n"), value);
 }
+#endif
 
 void
 _initialize_uda_rmt_utils (void)
 {
+#ifndef VE_CUSTOMIZATION
   add_setshow_zinteger_cmd ("uda", class_maintenance, &debug_uda, _("\
 Set UPC Debugger Assistant (UDA) protocol debugging."), _("\
 Show UPC Debugger Assistant (UDA) protocol debugging."), _("\
@@ -993,4 +999,5 @@ When non-zero, UPC Debugger Assistant (UDA) protocol debugging is enabled."),
 			    NULL,
 			    show_debug_uda,
 			    &setdebuglist, &showdebuglist);
+#endif
 }

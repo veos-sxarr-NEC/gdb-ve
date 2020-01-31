@@ -1,0 +1,24 @@
+#!/bin/bash
+#!/bin/bash
+
+# This script called when ALLINEA_CUSTOM_DEBUGGER_PATH was set
+
+if [ -n "${ALLINEA_FORGE_PATH}" ]; then
+    GDB_X86="${ALLINEA_FORGE_PATH}/libexec/gdb"
+else
+    GDB_X86="/usr/bin/gdb"
+fi
+
+GDB_VE="/opt/nec/ve/bin/gdb"
+
+
+GDB="${GDB_X86}"
+
+if [ -z "${VE_NODE_NUMBER}" ]; then
+        GDB="${GDB_VE}"
+
+elif [ ${VE_NODE_NUMBER} -ge 0 ] 2>/dev/null; then
+        GDB="${GDB_VE}"
+fi
+
+exec "${GDB}" "$@"

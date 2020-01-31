@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 #include "defs.h"
 #include "symtab.h"
@@ -110,6 +111,11 @@ void _initialize_valprint (void);
 
 #define PRINT_MAX_DEFAULT 200	/* Start print_max off at this value.  */
 #define PRINT_MAX_DEPTH_DEFAULT 20	/* Start print_max_depth off at this value. */
+
+#ifdef VE_CUSTOMIZATION
+#undef PRINT_MAX_DEFAULT
+#define PRINT_MAX_DEFAULT 256	/* Start print_max off at this value.  */
+#endif
 
 struct value_print_options user_print_options =
 {
@@ -3203,6 +3209,19 @@ show_print_raw (char *args, int from_tty)
   cmd_show_list (showprintrawlist, from_tty, "");
 }
 
+#ifdef VE_CUSTOMIZATION
+static void
+set_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  user_print_options.prettyformat_structs = 0;
+}
+
+#define VE_SET_FUNC set_dummy_func
+#else
+#define VE_SET_FUNC NULL
+#endif
+
 
 void
 _initialize_valprint (void)
@@ -3227,6 +3246,7 @@ Generic command for setting what things to print in \"raw\" mode."),
   add_prefix_cmd ("raw", no_class, show_print_raw,
 		  _("Generic command for showing \"print raw\" settings."),
 		  &showprintrawlist, "show print raw ", 0, &showprintlist);
+#ifndef VE_CUSTOMIZATION
 
   add_setshow_uinteger_cmd ("elements", no_class,
 			    &user_print_options.print_max, _("\
@@ -3236,7 +3256,7 @@ Show limit on array elements to print."), _("\
 			    NULL,
 			    show_print_max,
 			    &setprintlist, &showprintlist);
-
+#endif
   add_setshow_uinteger_cmd ("characters", no_class,
 			    &user_print_options.print_smax, _("\
 Set limit on string chars to print."), _("\
@@ -3267,7 +3287,7 @@ Show threshold for repeated print elements."), _("\
 			   &user_print_options.prettyformat_structs, _("\
 Set pretty formatting of structures."), _("\
 Show pretty formatting of structures."), NULL,
-			   NULL,
+			   VE_SET_FUNC,
 			   show_prettyformat_structs,
 			   &setprintlist, &showprintlist);
 

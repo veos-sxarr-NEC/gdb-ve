@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 #include "defs.h"
 #include <ctype.h>
@@ -1793,4 +1794,7 @@ When non-zero, debugging output for files of 'set auto-load ...'\n\
 is displayed."),
 			    NULL, show_debug_auto_load,
 			    &setdebuglist, &showdebuglist);
+#ifdef VE_CUSTOMIZATION
+add_auto_load_safe_path (LIBTHREAD_DB_SEARCH_PATH, 0);
+#endif
 }

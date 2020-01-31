@@ -115,6 +115,12 @@ proc do_test { cond_bp_target detach_on_fork displaced } {
     set fork_count 0
     set ok 0
 
+  if {[istarget "ve-nec-linux*"]} {
+    unsupported "set non-stop on and inferior is unsupport"
+    set ok 1
+    pass $test
+    gdb_test "info threads" "\\\* 1 .*"
+  } else {
     with_timeout_factor 10 {
         set test "inferior 1 exited"
         gdb_test_multiple "" $test {
@@ -140,6 +146,7 @@ proc do_test { cond_bp_target detach_on_fork displaced } {
 
     gdb_test "info threads" "No threads\." \
 	"no threads left"
+  }
 
     gdb_test "info inferiors" \
 	"Num\[ \t\]+Description\[ \t\]+Executable\[ \t\]+\r\n\\* 1 \[^\r\n\]+" \

@@ -21,6 +21,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2019 */
 
 #include "defs.h"
 #include <signal.h>
@@ -94,6 +95,7 @@ struct cmd_list_element *upc_thread_cmd_list = NULL;
 extern void prune_threads ();
 extern void upc_lang_init (char *cmd, int from_tty);
 
+#ifndef VE_CUSTOMIZATION
 static void upc_thread_attach (struct thread_info *t);
 
 /* Print a debug trace if debug_upc_thread is set (its value is adjusted
@@ -113,6 +115,7 @@ debug (char *format, ...)
       va_end (args);
     }
 }
+#endif
 
 /* Return true if TP is an active thread. */
 static int
@@ -248,6 +251,7 @@ upc_read_thread_sym (char *sym_name)
   return (-1);
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Activate thread support if appropriate.  Do nothing if thread
    support is already active.  */
 
@@ -301,6 +305,7 @@ upc_thread_new_objfile (struct objfile *objfile)
   if (objfile)
     upc_enable_thread_debug ();
 }
+#endif
 
 static char *
 upc_thread_pid_to_str (struct target_ops *ops, ptid_t ptid)
@@ -328,6 +333,7 @@ upc_thread_pid_to_str (struct target_ops *ops, ptid_t ptid)
   return ret;
 }
 
+#ifndef VE_CUSTOMIZATION
 /* upc_thread_attach
      Called whenever new thread is being created. */
 static void
@@ -471,6 +477,7 @@ upc_thread_exit (struct thread_info *t, int silent)
   if (t == upc_thread0)
     upc_thread0 = NULL;
 }
+#endif
 
 /* Cleanup after re-run (target kill) */
 void
@@ -584,6 +591,7 @@ upc_thread_restore (int upc_thr_num)
     }
 }
 
+#ifndef VE_CUSTOMIZATION
 /* Synchronize UPC threads.
      - stop all threads
      - lift the debugging gate
@@ -727,6 +735,7 @@ upc_thread_sync_command (char *arg, int from_tty)
     }
 
 }
+#endif
 
 /* Show UPC mode - on or off
    In 'upcmode' some commands that work on all
@@ -747,6 +756,9 @@ set_upcmode (char *args, int from_tty, struct cmd_list_element *c)
 {
   struct ui_out *uiout = current_uiout;
 
+#ifdef VE_CUSTOMIZATION
+  upcmode = 0;
+#endif
   /* TODO: it would be nice to use push/pop_prompt. However,
      pop does not restore old prompt - see event-top.c */
   if (upcmode && !upc_prompt_stack)
@@ -769,17 +781,20 @@ set_upcmode (char *args, int from_tty, struct cmd_list_element *c)
 
 extern void _initialize_upc_thread (void);
 
+#ifndef VE_CUSTOMIZATION
 static void
 show_upcsingle (struct ui_file *file, int from_tty,
 		    struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file, _("UPC single process mode is %s.\n"), value);
 }
+#endif
 
 void
 _initialize_upc_thread (void)
 {
   init_upc_thread_ops ();
+#ifndef VE_CUSTOMIZATION
   add_target (&upc_thread_ops);
 
   /* upc commands */
@@ -797,12 +812,14 @@ _initialize_upc_thread (void)
   add_setshow_boolean_cmd ("upcstartgate", class_support, &upcstartgate, _("\
 Set UPC startup sync mode."), _("\
 Show UPC startup sync mode."), NULL, NULL, NULL, &setlist, &showlist);
+#endif
 
   /* turn on/off UPC thread display mode */
   add_setshow_boolean_cmd ("upcmode", class_support, &upcmode, _("\
 Set UPC mode thread comamnds."), _("\
 Show UPC mode thread commands."), NULL, set_upcmode, show_upcmode, &setlist, &showlist);
   
+#ifndef VE_CUSTOMIZATION
   /* turn on/off standalone process mode */
   add_setshow_boolean_cmd ("upcsingle", class_support, &upcsingle, _("\
 Set UPC single process mode."), _("\
@@ -827,5 +844,6 @@ Show UPC single process mode."), NULL, NULL, show_upcsingle, &setlist, &showlist
 
   /* add observer for thread exit */
   observer_attach_thread_exit (upc_thread_exit);
+#endif
 
 }

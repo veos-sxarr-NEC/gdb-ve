@@ -27,6 +27,9 @@ void *thread_function(void *arg); /* Pointer to function executed by each thread
 #define NUM 5
 
 unsigned int args[NUM+1];
+#ifdef VEOS
+int allready = 0;
+#endif
 
 int main() {
     int res;
@@ -73,6 +76,9 @@ void *thread_function(void *arg) {
     while (*myp > 0)
       {
 	(*myp) ++;  /* Loop increment.  */
+#ifdef VEOS
+	if (allready) break;
+#endif
       }
 
     pthread_exit(NULL);

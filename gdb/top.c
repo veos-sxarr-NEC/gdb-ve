@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 #include "defs.h"
 #include "gdbcmd.h"
@@ -1353,6 +1354,9 @@ print_gdb_version (struct ui_file *stream)
   /* Second line is a copyright notice.  */
 
   fprintf_filtered (stream,
+#ifdef VE_CUSTOMIZATION
+		    "Modified by NEC Corporation for the VE port, 2017-2019\n"
+#endif
 		    "Modified by Arm. Copyright (C) 2002-2019 Arm Limited (or its affiliates). All rights reserved.\nCopyright (C) 2017 Free Software Foundation, Inc.\n");
 
   /* Following the copyright is a brief statement that the program is
@@ -2077,6 +2081,19 @@ set_history_filename (char *args, int from_tty, struct cmd_list_element *c)
 				 history_filename, (char *) NULL);
 }
 
+#ifdef VE_CUSTOMIZATION
+static void
+set_dummy_func (char *args, int from_tty,
+		struct cmd_list_element *c)
+{
+  exec_done_display_p = 0;
+}
+
+#define VE_SET_FUNC set_dummy_func
+#else
+#define VE_SET_FUNC NULL
+#endif
+
 static void
 init_main (void)
 {
@@ -2193,7 +2210,7 @@ Show annotation_level."), _("\
 Set notification of completion for asynchronous execution commands."), _("\
 Show notification of completion for asynchronous execution commands."), _("\
 Use \"on\" to enable the notification, and \"off\" to disable it."),
-			   NULL,
+			   VE_SET_FUNC,
 			   show_exec_done_display_p,
 			   &setlist, &showlist);
 

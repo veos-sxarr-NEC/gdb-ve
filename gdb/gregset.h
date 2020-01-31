@@ -15,9 +15,14 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 #ifndef GREGSET_H
 #define GREGSET_H
+
+#ifdef VE_CUSTOMIZATION
+#include "arch/ve.h"
+#endif
 
 #ifdef HAVE_SYS_PROCFS_H
 #include <sys/procfs.h>

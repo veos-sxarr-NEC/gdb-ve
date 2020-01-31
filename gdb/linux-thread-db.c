@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2019 */
 
 #include "defs.h"
 #include <dlfcn.h>
@@ -702,7 +703,11 @@ try_thread_db_load (const char *library, int check_auto_load_safe)
 			library);
 
    /* MPC BEGIN */
+#ifdef VE_CUSTOMIZATION
+  dlopen_path = (char *)library;
+#else
   dlopen_path = LIBTHREAD_DB_SO;
+#endif
   if ((env = getenv("GDB_LIBTHREAD_DB")) != NULL) 
   {
     if (env != NULL) 
@@ -1780,8 +1785,8 @@ static void tdb_thread_fetch_registers (struct target_ops *ops, struct regcache 
   td_err_e val;
   prgregset_t gregset;
   prfpregset_t fpregset;
-  gdb_gregset_t *gregset_p = &gregset;
-  gdb_fpregset_t *fpregset_p = &fpregset;
+  gdb_gregset_t *gregset_p = (gdb_gregset_t *)&gregset;
+  gdb_fpregset_t *fpregset_p = (gdb_fpregset_t *)&fpregset;
   struct target_ops *target_beneath;
   struct thread_db_info *info;
   info = get_thread_db_info (ptid_get_pid (inferior_ptid));
