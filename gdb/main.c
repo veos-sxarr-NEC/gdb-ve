@@ -95,6 +95,11 @@ int batch_silent = 0;
 int return_child_result = 0;
 int return_child_result_value = -1;
 
+#ifdef VE_CUSTOMIZATION
+/* Support for the --no-set-sid option.  */
+int no_setsid = 0;
+
+#endif
 
 /* GDB as it has been invoked from the command line (i.e. argv[0]).  */
 static char *gdb_program_name;
@@ -678,6 +683,9 @@ captured_main (void *data)
       {"args", no_argument, &set_args, 1},
       {"l", required_argument, 0, 'l'},
       {"return-child-result", no_argument, &return_child_result, 1},
+#ifdef VE_CUSTOMIZATION
+      {"no-set-sid", no_argument, &no_setsid, 1},
+#endif
       {0, no_argument, 0, 0}
     };
 

@@ -635,6 +635,9 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
    become debugger target processes.  This actually switches to
    the terminal specified in the NEW_TTY_PREFORK call.  */
 
+#ifdef VE_CUSTOMIZATION
+extern int no_setsid;
+#endif
 void
 new_tty_prefork (const char *ttyname)
 {
@@ -704,6 +707,9 @@ new_tty (void)
     }
 
 #ifdef TIOCSCTTY
+#ifdef VE_CUSTOMIZATION
+  if (no_setsid == 0)
+#endif
   /* Make tty our new controlling terminal.  */
   if (ioctl (tty, TIOCSCTTY, 0) == -1)
     /* Mention GDB in warning because it will appear in the inferior's
@@ -797,6 +803,11 @@ create_tty_session (void)
   if (!job_control || inferior_thisrun_terminal == 0)
     return 0;
 
+#ifdef VE_CUSTOMIZATION
+  if (no_setsid)
+    return 0;
+
+#endif
   ret = setsid ();
   if (ret == -1)
     warning (_("Failed to create new terminal session: setsid: %s"),
