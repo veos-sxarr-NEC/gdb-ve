@@ -33,10 +33,10 @@ class info_tsx_abort_reason (gdb.Command):
         return gdb.parse_and_eval (parameter)
 
     def print_reason (self, reason, val, nested, retry):
-        print "%s%s%s[0x%x]." % (reason, retry, nested, val)
+        print( "%s%s%s[0x%x]." % (reason, retry, nested, val))
 
     def print_xaborted (self, xabort, val):
-        print "xabort %u, [0x%x]." % (xabort, val)
+        print( "xabort %u, [0x%x]." % (xabort, val) )
 
     def decode_xabort (self, val):
         xabort = val << 31

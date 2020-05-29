@@ -962,10 +962,12 @@ apply_val_child (struct value *object,
       /* Manufacture a dummy Python frame to work around Python 2.4 bug,
 	where it insists on having a non-NULL tstate->frame when
 	a generator is called.  */
+#ifndef IS_PY3K
       frame = push_dummy_python_frame ();
       if (!frame)
 	goto done;
       make_cleanup_py_decref (frame);
+#endif
       if (is_map)
 	{
 	  int found;

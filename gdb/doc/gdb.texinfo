@@ -107,7 +107,7 @@ Version @value{GDBVN}.
 {\parskip=0pt
 \hfill (Send bugs and comments on @value{GDBN} to Intel's @uref{http://software.intel.com/forums/debug-solutions, Debug Solutions User Forum}.)\par
 \hfill {@xref{GDB Bugs, How to report Bugs}, for details on how to report bugs.}\par
-@sp 1
+
 \hfill {\it Debugging with @value{GDBN}}\par
 \hfill \TeX{}info \texinfoversion\par
 }
