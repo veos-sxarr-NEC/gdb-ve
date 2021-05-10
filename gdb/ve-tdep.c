@@ -16,7 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #include "defs.h"
 
@@ -1307,6 +1307,9 @@ ve_vec_type (struct gdbarch *gdbarch)
 			       "__gdb_builtin_type_vec256d", TYPE_CODE_UNION);
       append_composite_type_field (t, "v256_double",
 				   init_vector_type (bt->builtin_double, 256));
+
+      append_composite_type_field (t, "v256_uint64",
+				   init_vector_type (bt->builtin_uint64, 256));
 
       TYPE_VECTOR (t) = 1;
       TYPE_NAME (t) = "builtin_type_vec256d";

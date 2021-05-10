@@ -1,6 +1,6 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: ve.xml */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #include "defs.h"
 #include "osabi.h"
@@ -28,9 +28,14 @@ initialize_tdesc_ve (void)
   field_type = tdesc_named_type (feature, "ieee_double");
   tdesc_create_vector (feature, "v256d", field_type, 256);
 
+  field_type = tdesc_named_type (feature, "uint64");
+  tdesc_create_vector (feature, "v256l", field_type, 256);
+
   type = tdesc_create_union (feature, "vec64");
   field_type = tdesc_named_type (feature, "v256d");
   tdesc_add_field (type, "v256_double", field_type);
+  field_type = tdesc_named_type (feature, "v256l");
+  tdesc_add_field (type, "v256_uint64", field_type);
 
   tdesc_create_reg (feature, "usrcc", 0, 1, NULL, 64, "uint64");
   tdesc_create_reg (feature, "pmc0", 1, 1, NULL, 64, "uint64");

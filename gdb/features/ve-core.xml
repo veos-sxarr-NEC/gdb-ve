@@ -4,7 +4,7 @@
      Copying and distribution of this file, with or without modification,
      are permitted in any medium without royalty provided the copyright
      notice and this notice are preserved.  -->
-<!-- Changes by NEC Corporation for the VE port, 2017-2019 -->
+<!-- Changes by NEC Corporation for the VE port, 2017-2021 -->
 
 <!DOCTYPE feature SYSTEM "gdb-target.dtd">
 <feature name="org.gnu.gdb.ve.core">
@@ -124,7 +124,9 @@
   <reg name="vm15" bitsize="256" type="v4u64"/>
 
   <vector id="v256d" type="ieee_double" count="256"/>
+  <vector id="v256l" type="uint64" count="256"/>
   <union id="vec64">
+    <field name="v256_uint64" type="v256l"/>
     <field name="v256_double" type="v256d"/>
   </union>
   <reg name="v0" bitsize="16384" type="vec64"/>
