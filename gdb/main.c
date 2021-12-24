@@ -579,8 +579,13 @@ captured_main (void *data)
       gdb_sysroot = xstrdup (TARGET_SYSROOT_PREFIX);
     }
 
+#ifdef	VE_CUSTOMIZATION
+  debug_file_directory = relocate_gdb_directory (DEBUGDIR ":/usr/lib/debug",
+						 DEBUGDIR_RELOCATABLE);
+#else
   debug_file_directory = relocate_gdb_directory (DEBUGDIR,
 						 DEBUGDIR_RELOCATABLE);
+#endif
 
   gdb_datadir = relocate_gdb_directory (GDB_DATADIR,
 					GDB_DATADIR_RELOCATABLE);
