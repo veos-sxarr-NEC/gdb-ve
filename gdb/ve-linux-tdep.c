@@ -76,6 +76,7 @@
 			 + VE_UCONTEXT_CORE_USER_REG_OFFSET)
 #define	VE_IC_OFFSET	(VE_REG_OFFSET + VE_CORE_USER_REG_IC_OFFSET)
 #define	VE_SR_OFFSET	(VE_REG_OFFSET + VE_CORE_USER_REG_S0_OFFSET)
+#define	VE_LOWEST_PC	0x600000000000
 
 /* See following;
  * setup_ve_frame() in veos/psm/task_signal.c
@@ -291,7 +292,7 @@ ve_linux_init_abi (struct gdbarch_info info,
 
   linux_init_abi (info, gdbarch);
 
-  tdep->lowest_pc = 0x8000;
+  tdep->lowest_pc = VE_LOWEST_PC;
 
   set_solib_svr4_fetch_link_map_offsets (gdbarch,
 					svr4_lp64_fetch_link_map_offsets);

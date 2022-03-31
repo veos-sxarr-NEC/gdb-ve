@@ -2891,6 +2891,9 @@ map_command (char *arg, int from_tty)
   struct value_print_options opts;  
   int histindex;
   
+  if (arg == NULL || *arg == '\0')
+    error(_("No argument specified."));
+
   function = strstr (arg, " function ");
   if (function == NULL)
       error (_("Missing function argument"));

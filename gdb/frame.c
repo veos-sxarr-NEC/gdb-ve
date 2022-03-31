@@ -297,7 +297,11 @@ show_backtrace_past_entry (struct ui_file *file, int from_tty,
 		    value);
 }
 
+#ifdef VE_CUSTOMIZATION
+static int backtrace_exclude_start_thread = 0;
+#else
 static int backtrace_exclude_start_thread = 1;
+#endif
 static void
 show_backtrace_exclude_start_thread (struct ui_file *file, int from_tty,
 				  struct cmd_list_element *c, const char *value)
@@ -2363,14 +2367,23 @@ get_prev_frame (struct frame_info *this_frame)
       if (inside_func(prev_frame, "start_thread", NULL))
 	{
 	  struct frame_info *prev_prev_frame = get_prev_frame_always (prev_frame);
+#ifdef VE_CUSTOMIZATION
+	  if (prev_prev_frame
+	      && inside_func(prev_prev_frame, "__clone", NULL))
+#else
 	  if (prev_prev_frame
 	      && inside_func(prev_prev_frame, "clone", NULL))
+#endif
 	    {
 	      frame_debug_got_null_frame (this_frame, "prev frame is start_thread");
 	      return NULL;
 	    }
 	}
+#ifdef VE_CUSTOMIZATION
+      else if (inside_func(prev_frame, "__clone", NULL))
+#else
       else if (inside_func(prev_frame, "clone", NULL))
+#endif
 	{
 	  struct frame_info *prev_prev_frame = get_prev_frame_always (prev_frame);
 	  if (prev_prev_frame

@@ -2777,7 +2777,12 @@ show_debug_timestamp (struct ui_file *file, int from_tty,
 static void
 sleep_command (char *arg, int from_tty)
 {
-  int n = atoi(arg);
+  int n;
+
+  if (arg == NULL || *arg == '\0')
+    error(_("No argument specified."));
+
+  n = atoi(arg);
   if (n)
     sleep (n);
 }

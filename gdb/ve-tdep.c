@@ -699,6 +699,28 @@ ve_make_prologue_cache (struct frame_info *this_frame)
   return cache;
 }
 
+enum unwind_stop_reason
+ve_prologue_unwind_stop_reason (struct frame_info *this_frame,
+				  void **this_cache)
+{
+  struct ve_prologue_cache *cache = ve_make_prologue_cache(this_frame);
+  CORE_ADDR caller_pc, lowest_pc;
+
+  lowest_pc = gdbarch_tdep (get_frame_arch (this_frame))->lowest_pc;
+  caller_pc = frame_unwind_caller_pc(this_frame);
+
+  /* If the calling "pc" is lower than the lowest address of VE process,
+     return outermost not to unwind. */
+  if (caller_pc < lowest_pc)
+    return UNWIND_OUTERMOST;
+
+  if (cache->prev_sp == 0)
+    return UNWIND_OUTERMOST;
+
+  return UNWIND_NO_REASON;
+}
+
+
 /* Our frame ID for a normal frame is the current function's starting PC
    and the caller's SP when we were called.  */
 
@@ -774,7 +796,7 @@ ve_prologue_prev_register (struct frame_info *this_frame,
 
 struct frame_unwind ve_prologue_unwind = {
   NORMAL_FRAME,
-  default_frame_unwind_stop_reason,
+  ve_prologue_unwind_stop_reason,
   ve_prologue_this_id,
   ve_prologue_prev_register,
   NULL,
@@ -1148,6 +1170,7 @@ ve_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
       int len;
       struct type *arg_type;
       const bfd_byte *val;
+      const bfd_byte *upper, *lower;
       int align;
       int total_len;
 
@@ -1166,11 +1189,10 @@ ve_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	  si = push_stack_item (si, val, INT_REGISTER_SIZE);
 	  nstack += INT_REGISTER_SIZE;
 	}
-      
       /* Doubleword aligned quantities must go in even register pairs.  */
       if (argreg <= VE_LAST_ARG_REGNUM
 	  && align > INT_REGISTER_SIZE
-	  && !(argreg & 1))
+	  && (argreg & 1))
 	argreg++;
 
       /* Copy the argument to general registers or the stack in
@@ -1193,16 +1215,38 @@ ve_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	      len = INT_REGISTER_SIZE;
 	      partial_len = INT_REGISTER_SIZE;
 	    }
-
-	  if (TYPE_CODE_FLT == TYPE_CODE (arg_type)
-	      && total_len == VE_FLOAT_SIZE)
+	  else if (TYPE_CODE (arg_type) == TYPE_CODE_FLT)
 	    {
-	      CORE_ADDR tmp = regval;
-	      regval = ((tmp << (total_len * 8)) | (tmp >> (total_len * 8)));
-	      len = INT_REGISTER_SIZE;
-	      partial_len = INT_REGISTER_SIZE;
+	      /* float & __float16 */
+	      if (len < INT_REGISTER_SIZE)
+		{
+		  CORE_ADDR tmp = regval;
+		  regval = tmp << ((INT_REGISTER_SIZE - total_len) * 8);
+		  len = INT_REGISTER_SIZE;
+		  partial_len = INT_REGISTER_SIZE;
+		}
+	      else if (total_len > INT_REGISTER_SIZE)
+		{
+		  /* long double reverses the order of lower and upper
+		   *         Stack
+		   * +----------------------+
+		   * | Lower of long double |
+		   * +----------------------+
+		   * | Upper of long double |
+		   * +----------------------+
+		   */
+		  if (len > INT_REGISTER_SIZE)
+		    {
+		      upper = val + INT_REGISTER_SIZE;
+		      lower = val;
+		      regval = extract_unsigned_integer (upper, partial_len, byte_order);
+		    }
+		  else
+		    {
+		      regval = extract_unsigned_integer (lower, partial_len, byte_order);
+		    }
+		}
 	    }
-
 	  if (argreg <= VE_LAST_ARG_REGNUM)
 	    {
 	      /* The argument is being passed in a general purpose
@@ -1552,13 +1596,11 @@ ve_store_return_value (struct type *type, struct regcache *regs,
 	    int len = TYPE_LENGTH (type);
 	    int regno = VE_A1_REGNUM;
 
-	    if (len <= VE_FLOAT_SIZE)
+	    if (len < INT_REGISTER_SIZE)
 	      {
 		bfd_byte tmpbuf[INT_REGISTER_SIZE];
-		ULONGEST val = unpack_long (type, valbuf);
-
-		store_unsigned_integer (tmpbuf, INT_REGISTER_SIZE, byte_order,
-					(val << (len * 8)));
+		memset (tmpbuf, 0x0, INT_REGISTER_SIZE - len);
+		memcpy (tmpbuf+(INT_REGISTER_SIZE - len), valbuf, len);
 		regcache_cooked_write (regs, regno, tmpbuf);
 	      }
 	    else
@@ -1957,10 +1999,8 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Floating point sizes and format.  */
   set_gdbarch_float_format (gdbarch, floatformats_ieee_single);
-    {
-      set_gdbarch_double_format (gdbarch, floatformats_ieee_double);
-      set_gdbarch_long_double_format (gdbarch, floatformats_ieee_double);
-    }
+  set_gdbarch_double_format (gdbarch, floatformats_ieee_double);
+  set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
 
   if (tdesc_data)
     {
