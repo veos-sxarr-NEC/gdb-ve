@@ -65,9 +65,15 @@ struct exception_names
    indexed by exception_event_kind.  */
 static const struct exception_names exception_functions[] =
 {
+#ifdef VE_CUSTOMIZATION
+  { "-probe-stap libstdcxx:throw", "__throw" },
+  { "-probe-stap libstdcxx:rethrow", "__rethrow" },
+  { "-probe-stap libstdcxx:catch", "__exception_caught" }
+#else
   { "-probe-stap libstdcxx:throw", "__cxa_throw" },
   { "-probe-stap libstdcxx:rethrow", "__cxa_rethrow" },
   { "-probe-stap libstdcxx:catch", "__cxa_begin_catch" }
+#endif
 };
 
 static struct breakpoint_ops gnu_v3_exception_catchpoint_ops;

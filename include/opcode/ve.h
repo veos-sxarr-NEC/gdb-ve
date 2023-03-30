@@ -21,7 +21,9 @@
 #define __OPCODES_VE_H__
 
 /* Bit flags */
-#define VE_PF_ALL	0
+#define VE_PF_ALL	0x00FF /* use 8bit */
+#define VE_PF_1		0x0001 /* VE1 */
+#define VE_PF_3		0x0002 /* VE3 */
 
 typedef struct ve_opcode {
   char *name;			/* mnemonic */
@@ -222,8 +224,20 @@ struct ve_instr_cf {
 
 /* RVM type */
 struct ve_instr_rvm {
-  unsigned char vw;
-  unsigned char _dummy;
+  union {
+    unsigned char vw;
+    struct {
+      unsigned char pk:1;
+      unsigned char f16:1;
+      unsigned char _dummy:6;
+    } bitvw;
+  } vw;
+  union {
+    struct {
+      unsigned char va:1;
+      unsigned char _dummy:7;
+    } bitvz;
+  } vz;
   unsigned char vy;
   unsigned char vx;
   union {
@@ -244,7 +258,7 @@ struct ve_instr_rvm {
     unsigned char x;
     struct {
       unsigned char m:4;
-      unsigned char _dummy:1;
+      unsigned char vsw:1;
       unsigned char cs:1;
       unsigned char vc:1;
       unsigned char cx:1;
@@ -262,7 +276,8 @@ struct ve_instr_rv {
   union {
     unsigned char z;
     struct {
-      unsigned char rz:7;
+      unsigned char rz:6;
+      unsigned char ycp:1;
       unsigned char cz:1;
     } bitz;
   } z;
@@ -311,7 +326,7 @@ typedef unsigned char Opcode;
 #define O_LD2B          0x04	/* load 2 byte */
 #define O_LD1B          0x05	/* load 1 byte */
 #define O_LEA           0x06	/* load effective address */
-#define O_DUMMY07	0x07
+#define O_ADDI		0x07	/* integer add immediate */
 #define O_BSIC          0x08	/* branch and save IC */
 #define O_DLDS          0x09	/* dismissable load scalar */
 #define O_DLDU          0x0A	/* dismissable load scalar upper (0-31) bits */
@@ -334,7 +349,7 @@ typedef unsigned char Opcode;
 #define O_BCS           0x1B	/* branch on condition 4 byte */
 #define O_BCF           0x1C	/* branch on condition floating point */
 #define O_DUMMY1D	0x1D
-#define O_DUMMY1E       0x1E
+#define O_CVH           0x1E    /* conversion single to IEEE fp16 */
 #define O_CVS           0x1F	/* convert to single */
 #define O_FENCE         0x20	/* fence */
 #define O_LHM		0x21	/* load host memory */
@@ -448,7 +463,7 @@ typedef unsigned char Opcode;
 #define O_VCP           0x8D	/* vector compress */
 #define O_LSV           0x8E	/* load scalar to vector */
 #define O_VCVD          0x8F	/* vector convert to double */
-#define O_DUMMY90	0x90
+#define O_VST2B		0x90	/* vector store 2B, packed supported */
 #define O_VST           0x91	/* vector store */
 #define O_VSTU          0x92	/* vector store upper */
 #define O_VSTL          0x93	/* vector store lower */
@@ -473,12 +488,12 @@ typedef unsigned char Opcode;
 #define O_TOVM          0xA6	/* trailing one of vector mask */
 #define O_SVM           0xA7	/* save vector mask */
 #define O_VFIXX         0xA8	/* vector convert to 8 byte */
-#define O_DUMMYA9	0xA9
+#define O_VRSC          0xA9	/* vector register indexed-scatter */
 #define O_VSUMX         0xAA	/* vector sum 8 byte */
 #define O_VMAXX         0xAB	/* vector Max/Min 8 byte */
 #define O_VPCNT         0xAC	/* vector population count */
 #define O_VFMAX         0xAD	/* vector floating point Max/Min */
-#define O_DUMMYAE	0xAE
+#define O_VCVH		0xAE	/* vector conversion single to IEEE fp16, packed supporetd */
 #define O_LVIX          0xAF	/* load vector data index */
 #define O_DUMMYB0	0xB0
 #define O_VSC           0xB1	/* vector scatter */
@@ -553,7 +568,7 @@ typedef unsigned char Opcode;
 #define O_VSRA          0xF6	/* vector shift right arithmetic 4 byte */
 #define O_VBRV          0xF7	/* vector bit reverse */
 #define O_VFLT          0xF8	/* vector convert from 4 byte */
-#define O_DUMMYF9	0xF9
+#define O_VEST		0xF9	/* vector element-wise shift 8B/4B */
 #define O_VCPS          0xFA	/* vector compare 4 byte */
 #define O_VDVX          0xFB	/* vector divide 8 byte */
 #define O_VFCP          0xFC	/* vector floating point compare */
@@ -589,6 +604,7 @@ typedef unsigned char Opcode;
 #define FM_XZYWM 0xb00	/* X, Z, Y, W, M */
 #define FM_XWYZM 0xc00	/* X, W, Y, Z, M */
 #define FM_SPREG 0xd00	/* special reg implicit in opcode */
+#define FM_XYD   0xe00	/* X, Y, D */
 
 /* VE opcode arguments (operands) format */
 #define VE_OA_FMT(x)	((x) & 0xf00)
@@ -632,10 +648,18 @@ typedef unsigned char Opcode;
 # define VC_ON	 CX2_ON
 #define CS_ON	 0x0004
 #define CT_ON    CS_ON
+#define CDM_ON   CS_ON
+#define CH_ON    CS_ON
 #define CS2_ON   0x0008
 #define CM_ON    CS2_ON
+# define VSW_ON  CS2_ON
 #define CW_ON	 0x0010
 #define CW2_ON	 0x0020
+#define VA_ON    0x0040
+#define MOD_ON   0x0080
+#define PK_ON    MOD_ON
+#define F16_ON   CW_ON
+#define YCP_ON   CW2_ON
 
 #define DS_MASK  0x3000
 #define DS_SHFT  12

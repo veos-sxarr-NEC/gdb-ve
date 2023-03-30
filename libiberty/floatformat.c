@@ -17,6 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 /* This is needed to pick up the NAN macro on some systems.  */
 #ifndef _GNU_SOURCE
@@ -390,6 +391,25 @@ const struct floatformat floatformat_ibm_long_double_little =
   floatformat_ibm_long_double_is_valid,
   &floatformat_ieee_double_little
 };
+#ifdef VE_CUSTOMIZATION
+const struct floatformat floatformat_bfloat16_big =
+{
+  floatformat_big, 16, 0, 1, 8, 127, 255, 9, 7,
+  floatformat_intbit_no,
+  "floatformat_bfloat16_big",
+  floatformat_always_valid,
+  NULL
+};
+
+const struct floatformat floatformat_bfloat16_little =
+{
+  floatformat_little, 16, 0, 1, 8, 127, 255, 9, 7,
+  floatformat_intbit_no,
+  "floatformat_bfloat16_little",
+  floatformat_always_valid,
+  NULL
+};
+#endif
 
 
 #ifndef min

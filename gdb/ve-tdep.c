@@ -58,7 +58,7 @@
 #include "record.h"
 #include "record-full.h"
 
-#include "features/ve.c"
+#include "features/ve3.c"
 
 /* for ve_gdb_waitpid() */
 #include <signal.h>
@@ -67,6 +67,13 @@
 #include "inf-ptrace.h"
 #include "ve-ptrace.h"
 #include "nat/linux-nat.h"
+
+/* for ve_arch_number_sysfs() */
+#include <dirent.h>
+
+/* for ve_arch_number_hwcap() */
+#include "auxv.h"
+#include "elf/common.h"
 
 static int ve_debug;
 
@@ -103,6 +110,7 @@ struct ve_per_objfile
 
 /* A variable that can be configured by the user.  */
 static enum ve_float_model ve_fp_model = VE_FLOAT_AUTO;
+static enum ve_float_16_model ve_fp16_model = VE_FLOAT_16_NONE;
 
 /* A variable that can be configured by the user.  */
 static enum ve_abi_kind ve_abi_global = VE_ABI_AUTO;
@@ -117,25 +125,25 @@ static const struct
   int regnum;
 } ve_register_aliases[] = {
   /* Basic register numbers.  */
-  { "s8", 37 },
-  { "s9", 38 },
-  { "s10", 39 },
-  { "s11", 40 },
-  { "s14", 43 },
-  { "s15", 44 },
-  { "s16", 45 },
+  { "s8", 44 },		/* sl */
+  { "s9", 45 },		/* fp */
+  { "s10", 46 },	/* lr */
+  { "s11", 47 },	/* sp */
+  { "s14", 50 },	/* tp */
+  { "s15", 51 },	/* got */
+  { "s16", 52 },	/* plt */
   /* Synonyms (argument and variable registers).  */
-  { "a1", 29 },
-  { "a2", 30 },
-  { "a3", 31 },
-  { "a4", 32 },
-  { "a5", 33 },
-  { "a6", 34 },
-  { "a7", 35 },
-  { "a8", 36 },
+  { "a1", 36 },		/* s0 */
+  { "a2", 37 },		/* s1 */
+  { "a3", 38 },		/* s2 */
+  { "a4", 39 },		/* s3 */
+  { "a5", 40 },		/* s4 */
+  { "a6", 41 },		/* s5 */
+  { "a7", 42 },		/* s6 */
+  { "a8", 43 },		/* s7 */
   /* Special names.  */
-  { "ip", 19 },
-  { "pc", 19 },
+  { "ip", 24 },		/* ic */
+  { "pc", 24 },		/* ic */
   /* Names used by Compiler  */
 };
 
@@ -144,46 +152,60 @@ static const char *const ve_register_names[] =
  "pmc3", "pmc4", "pmc5", "pmc6",
  "pmc7", "pmc8", "pmc9", "pmc10",
  "pmc11", "pmc12", "pmc13", "pmc14",
- "pmc15", "psw", "exs", "ic",
- "ice", "vixr", "vl", "sar",
- "pmmr", "pmcr0", "pmcr1", "pmcr2",
- "pmcr3", "s0",  "s1",  "s2",
- "s3", "s4",  "s5",  "s6",
- "s7", "sl",  "fp",  "lr",
- "sp", "s12", "s13", "tp",
- "got", "plt", "s17", "s18",
- "s19", "s20", "s21", "s22",
- "s23", "s24", "s25", "s26",
- "s27", "s28", "s29", "s30",
- "s31", "s32", "s33", "s34",
- "s35", "s36", "s37", "s38",
- "s39", "s40", "s41", "s42",
- "s43", "s44", "s45", "s46",
- "s47", "s48", "s49", "s50",
- "s51", "s52", "s53", "s54",
- "s55", "s56", "s57", "s58",
- "s59", "s60", "s61", "s62",
- "s63", "vm0", "vm1", "vm2",
- "vm3", "vm4", "vm5", "vm6",
- "vm7", "vm8", "vm9", "vm10",
- "vm11", "vm12", "vm13", "vm14",
- "vm15", "v0", "v1", "v2",
- "v3", "v4", "v5", "v6",
- "v7", "v8", "v9", "v10",
- "v11", "v12", "v13", "v14",
- "v15", "v16", "v17", "v18",
- "v19", "v20", "v21", "v22",
- "v23", "v24", "v25", "v26",
- "v27", "v28", "v29", "v30",
- "v31", "v32", "v33", "v34",
- "v35", "v36", "v37", "v38",
- "v39", "v40", "v41", "v42",
- "v43", "v44", "v45", "v46",
- "v47", "v48", "v49", "v50",
- "v51", "v52", "v53", "v54",
- "v55", "v56", "v57", "v58",
- "v59", "v60", "v61", "v62",
- "v63" };
+ "pmc15", "pmc16", "pmc17", "pmc18",
+ "pmc19", "pmc20", "psw", "exs",
+ "ic", "ice", "vixr", "vl",
+ "sar", "pmmr", "pmcr0", "pmcr1",
+ "pmcr2", "pmcr3", "pvl32", "pvl16",
+ "s0", "s1",  "s2", "s3",
+ "s4", "s5",  "s6", "s7",
+ "sl", "fp",  "lr", "sp",
+ "s12", "s13", "tp", "got",
+ "plt", "s17", "s18", "s19",
+ "s20", "s21", "s22", "s23",
+ "s24", "s25", "s26", "s27",
+ "s28", "s29", "s30", "s31",
+ "s32", "s33", "s34", "s35",
+ "s36", "s37", "s38", "s39",
+ "s40", "s41", "s42", "s43",
+ "s44", "s45", "s46", "s47",
+ "s48", "s49", "s50", "s51",
+ "s52", "s53", "s54", "s55",
+ "s56", "s57", "s58", "s59",
+ "s60", "s61", "s62", "s63",
+ "vm0", "vm1", "vm2", "vm3",
+ "vm4", "vm5", "vm6", "vm7",
+ "vm8", "vm9", "vm10", "vm11",
+ "vm12", "vm13", "vm14", "vm15",
+ "v0", "v1", "v2", "v3",
+ "v4", "v5", "v6", "v7",
+ "v8", "v9", "v10", "v11",
+ "v12", "v13", "v14", "v15",
+ "v16", "v17", "v18", "v19",
+ "v20", "v21", "v22", "v23",
+ "v24", "v25", "v26", "v27",
+ "v28", "v29", "v30", "v31",
+ "v32", "v33", "v34", "v35",
+ "v36", "v37", "v38", "v39",
+ "v40", "v41", "v42", "v43",
+ "v44", "v45", "v46", "v47",
+ "v48", "v49", "v50", "v51",
+ "v52", "v53", "v54", "v55",
+ "v56", "v57", "v58", "v59",
+ "v60", "v61", "v62", "v63" };
+
+/* Ignored registers */
+/* for VE1 */
+static const int ign_ve1_regnum[] =
+{
+17,		/* pmc16 */
+18,		/* pmc17 */
+19,		/* pmc18 */
+20,		/* pmc19 */
+21,		/* pmc20 */
+34,		/* pvl32 */
+35,		/* pvl16 */
+};
 
 struct ve_prologue_cache
 {
@@ -454,7 +476,14 @@ ve_analyze_prologue (struct gdbarch *gdbarch,
 	  regs[VE_SP_REGNUM] = pv_add_constant (regs[VE_FP_REGNUM], stack_size);
 	  continue;
 	}
-#if 1  /* for new instruction */
+      /* for VE3 instruction */
+      else if (bits (insn, 32, 63) == 0x070d0000)	/* addi %s13,0,0x0(0,0) */
+	{
+	  long d = (long)((int)bits (insn, 0, 31));
+	  regs[VE_S0_REGNUM + 13] = pv_add_constant (regs[VE_S0_REGNUM + 13], d);
+	  continue;
+	}
+      /* for new instruction */
       else if (bits (insn, 32, 63) == 0x060d0000)	/* lea %s13,0x0(0,0) */
 	{
 	  long d = (long)((int)bits (insn, 0, 31));
@@ -475,7 +504,6 @@ ve_analyze_prologue (struct gdbarch *gdbarch,
 	  regs[VE_SP_REGNUM] = pv_add_constant (regs[VE_SP_REGNUM], (d << 32));
 	  continue;
 	}
-#endif
       else if (bits (insn, 32, 63) == 0x063f0000)
 							/* lea %s63, 0x13b */
 	{
@@ -1105,6 +1133,7 @@ ve_type_align (struct type *t)
 }
 
 /* Floating-point size */
+#define VE_HALF_SIZE		2
 #define VE_FLOAT_SIZE		4
 #define VE_DOUBLE_SIZE		8
 #define VE_LONG_DOUBLE_SIZE	16
@@ -1506,9 +1535,10 @@ ve_extract_return_value (struct type *type, struct regcache *regs,
 	    regcache_cooked_read_unsigned (regs, regno, &tmp);
 	    switch (len)
 	      {
+	      case VE_HALF_SIZE:
 	      case VE_FLOAT_SIZE:
 		store_unsigned_integer (valbuf, len, byte_order,
-					(tmp >> (len * 8)));
+					tmp >> ((INT_REGISTER_SIZE - len) * 8));
 		break;
 	      case VE_LONG_DOUBLE_SIZE:
 		store_unsigned_integer (valbuf, len, byte_order, tmp);
@@ -1785,6 +1815,7 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   struct gdbarch_list *best_arch;
   enum ve_abi_kind ve_abi = ve_abi_global;
   enum ve_float_model fp_model = ve_fp_model;
+  enum ve_float_16_model fp16_model = ve_fp16_model;
   struct tdesc_arch_data *tdesc_data = NULL;
   int i;
   const struct target_desc *tdesc = info.target_desc;
@@ -1794,8 +1825,47 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   if (ve_abi == VE_ABI_AUTO && info.abfd != NULL)
     {
+      int e_flags = elf_elfheader (info.abfd)->e_flags;
+      int eabi_ver = EF_VE_ABI_VERSION (e_flags);
+
+      if (ve_debug)
+        printf_unfiltered(_("abi_ver(%d, 0x%x)\n"), (eabi_ver >> 16), e_flags);
       switch (bfd_get_flavour (info.abfd))
 	{
+	case bfd_target_elf_flavour:
+
+	  switch (eabi_ver)
+	    {
+	      case EF_VE_ABI_VER1:
+	        ve_abi = VE_ABI_VER1;
+	        break;
+
+	      case EF_VE_ABI_VER2:
+		int efp_model = EF_VE_FP16_MODEL (e_flags);
+
+		if (ve_debug)
+		  printf_unfiltered(_("fp16_model(%d, 0x%x)\n"), (efp_model >> 29), e_flags);
+
+		switch (efp_model)
+		  {
+		  case EF_VE_FP16_NONE:
+		    fp16_model = VE_FLOAT_16_NONE;
+		    break;
+		  case EF_VE_FP16_IEEE:
+		    fp16_model = VE_FLOAT_16_IEEE;
+		    break;
+		  case EF_VE_FP16_BFLOAT:
+		    fp16_model = VE_FLOAT_16_BFLOAT;
+		    break;
+		  default:
+		    /* Leave it as "none".  */
+		    break;
+		  }
+	        ve_abi = VE_ABI_VER2;
+	        break;
+	    }
+	  break;
+
 	default:
 	  /* Leave it as "auto".  */
 	  break;
@@ -1803,19 +1873,15 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     }
 
   /* Check any target description for validity.  */
+  tdesc = tdesc_ve3;
   if (tdesc_has_registers (tdesc))
     {
       /* For most registers we require GDB's default names; but also allow
 	 the numeric names for sp / lr / pc, as a convenience.  */
-      static const char *const ve_sp_names[] = { "s11", "sp", NULL };
-      static const char *const ve_lr_names[] = { "s10", "lr", NULL };
-      static const char *const ve_pc_names[] = { "ic", "pc", NULL };
-
       const struct tdesc_feature *feature;
       int valid_p;
 
-      feature = tdesc_find_feature (tdesc,
-				    "org.gnu.gdb.ve.core");
+      feature = tdesc_find_feature (tdesc, "org.gnu.gdb.ve3.core");
       if (feature == NULL)
 	return NULL;
 
@@ -1825,16 +1891,6 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       for (i = 0; i < VE_NUM_REGS; i++)
 	valid_p &= tdesc_numbered_register (feature, tdesc_data, i,
 					    ve_register_names[i]);
-      valid_p &= tdesc_numbered_register_choices (feature, tdesc_data,
-						  VE_SP_REGNUM,
-						  ve_sp_names);
-      valid_p &= tdesc_numbered_register_choices (feature, tdesc_data,
-						  VE_LR_REGNUM,
-						  ve_lr_names);
-      valid_p &= tdesc_numbered_register_choices (feature, tdesc_data,
-						  VE_PC_REGNUM,
-						  ve_pc_names);
-
       if (!valid_p)
 	{
 	  tdesc_data_cleanup (tdesc_data);
@@ -1842,7 +1898,6 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	}
 
     }
-
 
   /* If there is already a candidate, use it.  */
   for (best_arch = gdbarch_list_lookup_by_info (arches, &info);
@@ -1871,6 +1926,7 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
      These are gdbarch discriminators, like the OSABI.  */
   tdep->ve_abi = ve_abi;
   tdep->fp_model = fp_model;
+  tdep->fp16_model = fp16_model;
 
   /* Breakpoints.  */
   switch (info.byte_order_for_code)
@@ -1899,6 +1955,8 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_int_bit (gdbarch, 4 * TARGET_CHAR_BIT);
   set_gdbarch_long_bit (gdbarch, 8 * TARGET_CHAR_BIT);
   set_gdbarch_long_long_bit (gdbarch, 8 * TARGET_CHAR_BIT);
+  set_gdbarch_half_bit (gdbarch, 2 * TARGET_CHAR_BIT);
+  set_gdbarch_bfloat16_bit (gdbarch, 2 * TARGET_CHAR_BIT);
   set_gdbarch_float_bit (gdbarch, 4 * TARGET_CHAR_BIT);
   set_gdbarch_double_bit (gdbarch, 8 * TARGET_CHAR_BIT);
   set_gdbarch_long_double_bit (gdbarch, 16 * TARGET_CHAR_BIT);
@@ -1971,6 +2029,7 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_vbit_in_delta (gdbarch, 1);
 
   /* Hook in the ABI-specific overrides, if they have been registered.  */
+  info.target_desc = tdesc;
   gdbarch_init_osabi (info, gdbarch);
 
   dwarf2_frame_set_init_reg (gdbarch, ve_dwarf2_frame_init_reg);
@@ -1982,10 +2041,10 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Now we have tuned the configuration, set a few final things,
      based on what the OS ABI has told us.  */
 
-  /* If the ABI is not otherwise marked, assume the old VER 0 draft copy .  EABI
+  /* If the ABI is not otherwise marked, assume the old VER 2 draft copy .  EABI
      binaries are always marked.  */
   if (tdep->ve_abi == VE_ABI_AUTO)
-    tdep->ve_abi = VE_ABI_VER0;
+    tdep->ve_abi = VE_ABI_VER2;
 
   /* Watchpoints are not steppable.  */
   set_gdbarch_have_nonsteppable_watchpoint (gdbarch, 1);
@@ -1998,6 +2057,8 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     set_gdbarch_get_longjmp_target (gdbarch, ve_get_longjmp_target);
 
   /* Floating point sizes and format.  */
+  set_gdbarch_half_format (gdbarch, floatformats_ieee_half);
+  set_gdbarch_bfloat16_format (gdbarch, floatformats_bfloat16);
   set_gdbarch_float_format (gdbarch, floatformats_ieee_single);
   set_gdbarch_double_format (gdbarch, floatformats_ieee_double);
   set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
@@ -2023,6 +2084,35 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   return gdbarch;
 }
 
+int
+ve_fp16_none(struct gdbarch *gdbarch)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep(gdbarch);
+
+  if (tdep->fp16_model == VE_FLOAT_16_NONE)
+    return 1;
+  return 0;
+}
+
+int
+ve_fp16_ieee(struct gdbarch *gdbarch)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep(gdbarch);
+
+  if (tdep->fp16_model == VE_FLOAT_16_IEEE)
+    return 1;
+  return 0;
+}
+
+int
+ve_fp16_bfloat(struct gdbarch *gdbarch)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep(gdbarch);
+
+  if (tdep->fp16_model == VE_FLOAT_16_BFLOAT)
+    return 1;
+  return 0;
+}
 
 static void
 ve_dump_tdep (struct gdbarch *gdbarch, struct ui_file *file)
@@ -2034,6 +2124,194 @@ ve_dump_tdep (struct gdbarch *gdbarch, struct ui_file *file)
 
   fprintf_unfiltered (file, _("ve_dump_tdep: Lowest pc = 0x%lx"),
 		      (unsigned long) tdep->lowest_pc);
+}
+
+/* VE arch number */
+static int ve_arch_num = -1;
+
+int
+get_ve_arch_number(void)
+{
+  if (ve_arch_num == -1)
+    ve_arch_number_sysfs();
+
+  return ve_arch_num;
+}
+
+static void
+set_ve_arch_number(int num)
+{
+  ve_arch_num = num;
+}
+
+/* ve_arch_number_sysfs()
+ * return VE arch number from /sys/class/ve/veN/ve_arch_class
+ * -1: error
+ */
+static int
+get_num_from_vestr(const char *str)
+{
+  char *endp;
+  int num;
+
+  if (strncmp(str, "ve", 2) != 0)
+    return -1;
+  num = (int)strtol(str+2, &endp, 10);
+  if (*endp != '\0' && *endp != '\n')
+    return -1;
+
+  return num;
+}
+
+int
+ve_arch_number_sysfs(void)
+{
+  int fd;
+  char arch_path[ARCH_PATH_BSIZE];
+  char buf[ARCH_FILE_BSIZE];
+  DIR *dp;
+  struct dirent *dent;
+  int ve = -1;
+  int num = -1;
+
+  dp = opendir(CLASS_VE);
+  if (dp == NULL) {
+    if (ve_debug)
+      fprintf_unfiltered(gdb_stdlog, "ve_arch_number_sysfs:opendir error:%s\n", CLASS_VE);
+    goto err;
+  }
+  while ((dent = readdir(dp)) != NULL) {
+    ve = get_num_from_vestr(dent->d_name);
+    if (ve != -1)
+      break;
+  }
+  closedir(dp);
+  if (ve == -1) {
+    if (ve_debug)
+      fprintf_unfiltered(gdb_stdlog, "ve_arch_number_sysfs:%s/veN dir is not found\n" ,CLASS_VE);
+    goto err;
+  }
+
+  snprintf(arch_path,ARCH_PATH_BSIZE, CLASS_VE "/ve%d/" ARCH_FILE, ve);
+  if (ve_debug)
+    fprintf_unfiltered(gdb_stdlog, "ve_arch_number_sysfs:path=%s\n", arch_path);
+  fd = open(arch_path, O_RDONLY);
+  if (fd == -1) {
+    if (errno == ENOENT) {
+      num = 1;
+      set_ve_arch_number(num);	/* VE1 if there is no "ve_arch_class" file. */
+    }
+    goto err;
+  }
+  if (read(fd, buf, ARCH_FILE_BSIZE) == -1) {
+    if (ve_debug)
+      fprintf_unfiltered(gdb_stdlog, "ve_arch_number_sysfs:read error(%d) %s\n", errno, strerror(errno));
+    close(fd);
+    goto err;
+  }
+  close(fd);
+
+  /*
+   * "ve[0-9]+\n"
+  */
+  num = get_num_from_vestr(buf);
+  set_ve_arch_number(num);
+
+err:
+
+  return num;
+}
+
+/*
+ * Set and Return VE arch number from core file each time core_target->to_open() in core_file_command() is called.
+ * -1: error
+ */
+int
+ve_arch_number_hwcap(void)
+{
+  CORE_ADDR hwcap;
+  int num = -1;
+
+  if (target_auxv_search(&current_target, AT_HWCAP, &hwcap) == -1)
+    {
+      if (ve_debug)
+        fprintf_unfiltered(gdb_stdlog, "ve_arch_number_hwcap:HWCAP is not found.\n");
+    }
+  switch (hwcap & HWCAP_VE_MASK)
+    {
+    case HWCAP_VE_VE1:
+      num = 1;
+      break;
+    case HWCAP_VE_VE3:
+      num = 3;
+      break;
+    default:
+      if (ve_debug)
+        fprintf_unfiltered(gdb_stdlog, "ve_arch_number_hwcap:HWCAP number is invalid.\n");
+      break;
+    }
+
+  if (num != -1)
+    set_ve_arch_number(num);
+
+  return num;
+}
+
+/*
+ * If regnum should be ignored, return 1
+ */
+int
+ve_ignore_registers(int regnum)
+{
+  int i;
+  int ign = 0;
+
+  if (IS_VE1())
+    {
+      for (i = 0;i < ARRAY_SIZE(ign_ve1_regnum);i++)
+        {
+          if (ign_ve1_regnum[i] == regnum)
+            {
+              ign = 1;
+	      break;
+            }
+        }
+    }
+  else if (IS_VE3())
+    {
+      ;
+    }
+
+  return ign;
+}
+
+/*
+ * Check PVL32/PVL16 consistency
+ * return 0: OK
+ * return -1: FAIL
+ */
+int
+ve_reg_consistency(void)
+{
+	struct regcache * regcache;
+	reg_t pvl32, vl;
+	long tid;
+
+	if (IS_VE1())
+		return 0;
+	/* VE3 */
+	/* check if registers can be aqcuired */
+	tid = ptid_get_lwp (inferior_ptid);
+	if (tid == 0)
+		return 0;
+	regcache = get_current_regcache();
+	if (regcache_raw_read_unsigned(regcache, VE_PVL32_REGNUM, &pvl32) == REG_VALID) {
+		regcache_raw_read_unsigned(regcache, VE_VL_REGNUM, &vl);
+		if (vl != (pvl32 + 1)/2)
+			return -1;
+	}
+
+	return 0;
 }
 
 extern initialize_file_ftype _initialize_ve_tdep; /* -Wmissing-prototypes */
@@ -2048,7 +2326,7 @@ _initialize_ve_tdep (void)
   gdbarch_register (bfd_arch_ve, ve_gdbarch_init, ve_dump_tdep);
 
   /* Initialize the standard target descriptions.  */
-  initialize_tdesc_ve ();
+  initialize_tdesc_ve3 ();
 
   /* Debugging flag.  */
   add_setshow_boolean_cmd ("ve", class_maintenance, &ve_debug,

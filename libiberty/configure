@@ -8,6 +8,9 @@
 #
 # This configure script is free software; the Free Software Foundation
 # gives unlimited permission to copy, distribute and modify it.
+#
+# Changes by NEC Corporation for the VE port, 2021
+#
 ## -------------------- ##
 ## M4sh Initialization. ##
 ## -------------------- ##
@@ -2302,6 +2305,14 @@ cat >>confdefs.h <<_ACEOF
 #define PACKAGE_URL "$PACKAGE_URL"
 _ACEOF
 
+# VE defines
+case "${target}" in
+        ve*-*-linux*)
+cat >>confdefs.h <<_ACEOF
+#define VE_CUSTOMIZATION        1
+_ACEOF
+        ;;
+esac
 
 # Let the site file select an alternate cache file if it wants to.
 # Prefer an explicitly selected file to automatically selected ones.

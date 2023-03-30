@@ -53,6 +53,9 @@
 #include "source.h"
 #include "objfiles.h"
 #include "user-regs.h"
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* Standard set of definitions for printing, dumping, prefixifying,
  * and evaluating expressions.  */
@@ -1425,9 +1428,38 @@ parse_c_float (struct gdbarch *gdbarch, const char *p, int len,
 	*t = builtin_types->builtin_float;
       else if (tolower (*suffix) == 'l')
 	*t = builtin_types->builtin_long_double;
+#ifdef	VE_CUSTOMIZATION
+      else if (tolower (*suffix) == 'h')
+        {
+          if (ve_fp16_bfloat(gdbarch))
+	    *t = builtin_types->builtin_bfloat16;
+	  else if (ve_fp16_ieee(gdbarch))
+	    *t = builtin_types->builtin_half;
+	  else	/* VE_FLOAT_16_NONE */
+            return 0;
+	}
+#endif
       else
 	return 0;
     }
+#ifdef	VE_CUSTOMIZATION
+  else if (suffix_len == 3)
+    {
+      /* "f16" */
+      if (tolower (suffix[0]) == 'f' &&
+		      suffix[1] == '1' && suffix[2] == '6')
+        {
+          if (ve_fp16_bfloat(gdbarch))
+	    *t = builtin_types->builtin_bfloat16;
+	  else if (ve_fp16_ieee(gdbarch))
+	    *t = builtin_types->builtin_half;
+	  else	/* VE_FLOAT_16_NONE */
+            return 0;
+	}
+      else
+        return 0;
+    }
+#endif
   else
     return 0;
 

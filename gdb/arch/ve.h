@@ -15,7 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #ifndef VE_H
 #define VE_H
@@ -23,15 +23,17 @@
 /* Register numbers of various important registers.  */
 
 enum gdb_regnum {
-  VE_SP_REGNUM = 40,		/* Contains address of top of stack */
-  VE_FP_REGNUM = 38,		/* Frame pointer register */
-  VE_LR_REGNUM = 39,		/* address to return to from a function call */
-  VE_ARG0_REGNUM = 29,		/* first integer-like argument */
-  VE_ARG7_REGNUM = 36,		/* last integer-like argument */
-  VE_PC_REGNUM = 19,		/* Contains program counter(IC) */
-  VE_PS_REGNUM = 17,		/* Contains processor status(PSW) */
+  VE_SP_REGNUM = 47,		/* Contains address of top of stack */
+  VE_FP_REGNUM = 45,		/* Frame pointer register */
+  VE_LR_REGNUM = 46,		/* address to return to from a function call */
+  VE_ARG0_REGNUM = 36,		/* first integer-like argument */
+  VE_ARG7_REGNUM = 43,		/* last integer-like argument */
+  VE_PC_REGNUM = 24,		/* Contains program counter(IC) */
+  VE_PS_REGNUM = 22,		/* Contains processor status(PSW) */
+  VE_PVL32_REGNUM = 34,		/* Packed Vector Length 32bit */
+  VE_VL_REGNUM = 27,		/* Vector Length */
 
-  VE_S0_REGNUM = 29,		/* Top of scalar registers */
+  VE_S0_REGNUM = 36,		/* Top of scalar registers */
   VE_S63_REGNUM = VE_S0_REGNUM + 63,
   VE_VM0_REGNUM,		/* Top of vector mask registers */
   VE_VM15_REGNUM = VE_VM0_REGNUM + 15,
@@ -113,11 +115,11 @@ typedef uint64_t ve_elf_greg_t;
 typedef struct {
 	/* Performance Counters */
 	reg_t USRCC;                    /*     0x0 -     0x7 */
-	reg_t PMC[16];                  /*     0x8 -    0x87 */
-	uint8_t pad0[0x1000 - 0x88];    /*    0x88 -   0xFFF */
+	reg_t PMC[21 + 3];              /*     0x8 -    0xC7 */
+	uint8_t pad0[0x1000 - 0xC8];    /*    0xC8 -   0xFFF */
 	/* Control Registers */
 	reg_t PSW;                      /*  0x1000 -  0x1007 */
-	reg_t EXS;                      /*  0x1008 -  0x100F */
+	reg_t EXS;                      /*     0x0 -     0x8 in BAR4 */
 	reg_t IC;                       /*  0x1010 -  0x1017 */
 	reg_t ICE;                      /*  0x1018 -  0x101F */
 	reg_t VIXR;                     /*  0x1020 -  0x1027 */
@@ -125,7 +127,9 @@ typedef struct {
 	reg_t SAR;                      /*  0x1030 -  0x1047 */
 	reg_t PMMR;                     /*  0x1038 -  0x103F */
 	reg_t PMCR[4];                  /*  0x1040 -  0x105F */
-	uint8_t pad1[0x1400 - 0x1060];  /*  0x1060 -  0x13FF */
+	reg_t PVL32;                    /*  0x1060 -  0x1067 */
+	reg_t PVL16;                    /*  0x1068 -  0x106F */
+	uint8_t pad1[0x1400 - 0x1070];  /*  0x1070 -  0x13FF */
 	/* Scalar Registers */
 	reg_t SR[SR_NUM];               /*  0x1400 -  0x15FF */
 	uint8_t pad2[0x1800 - 0x1600];  /*  0x1600 -  0x17FF */
@@ -137,11 +141,11 @@ typedef uint64_t ve_elf_fpreg_t;
  */
 typedef struct {
 	/* Vector Mask Registers */
-	reg_t VMR[16][4];               /*  0x0 -  0x1FF */
-	uint8_t pad3[0x40000 - 0x1A00]; /*  0x200 - 0x3E7FE */
+	reg_t VMR[16][4];               /*  0x1800 -  0x19FF */
+	uint8_t pad3[0x40000 - 0x1A00]; /*  0x1A00 - 0x3FFFF */
 	/* Vector Registers */
-	reg_t VR[VR_NUM][AUR_MVL];      /* 0x3E800 - 0x5FFFF */
-	uint8_t pad4[0x80000 - 0x60000];/* 0x5E800 - 0x7E7FF */
+	reg_t VR[VR_NUM][AUR_MVL];      /* 0x40000 - 0x5FFFF */
+	uint8_t pad4[0x80000 - 0x60000];/* 0x60000 - 0x7FFFF */
 } ve_elf_fpregset_t;
 
 #ifndef GDB_GREGSET_T

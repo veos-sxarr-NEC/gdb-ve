@@ -21,7 +21,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #include "defs.h"
 #include "bfd.h"
@@ -45,6 +45,9 @@
 #include "gdbcore.h"
 #include "upc-thread.h"
 #include "exceptions.h"
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* Initialize BADNESS constants.  */
 
@@ -118,6 +121,12 @@ const struct floatformat *floatformats_ibm_long_double[BFD_ENDIAN_UNKNOWN] = {
   &floatformat_ibm_long_double_big,
   &floatformat_ibm_long_double_little
 };
+#ifdef	VE_CUSTOMIZATION
+const struct floatformat *floatformats_bfloat16[BFD_ENDIAN_UNKNOWN] = {
+  &floatformat_bfloat16_big,
+  &floatformat_bfloat16_little
+};
+#endif
 
 struct type_quals null_type_quals;
 
@@ -5340,6 +5349,14 @@ gdbtypes_post_init (struct gdbarch *gdbarch)
   builtin_type->builtin_unsigned_long_long
     = arch_integer_type (gdbarch, gdbarch_long_long_bit (gdbarch),
 			 1, "unsigned long long");
+#ifdef	VE_CUSTOMIZATION
+  builtin_type->builtin_half
+    = arch_float_type (gdbarch, gdbarch_half_bit (gdbarch),
+		       "__float16", gdbarch_half_format (gdbarch));
+  builtin_type->builtin_bfloat16
+    = arch_float_type (gdbarch, gdbarch_bfloat16_bit (gdbarch),
+		       "__float16", gdbarch_bfloat16_format (gdbarch));
+#endif
   builtin_type->builtin_float
     = arch_float_type (gdbarch, gdbarch_float_bit (gdbarch),
 		       "float", gdbarch_float_format (gdbarch));
@@ -5502,7 +5519,6 @@ objfile_type (struct objfile *objfile)
     = init_type (TYPE_CODE_INT,
 		 gdbarch_long_long_bit (gdbarch) / TARGET_CHAR_BIT,
 		 TYPE_FLAG_UNSIGNED, "unsigned long long", objfile);
-
   objfile_type->builtin_float
     = init_type (TYPE_CODE_FLT,
 		 gdbarch_float_bit (gdbarch) / TARGET_CHAR_BIT,

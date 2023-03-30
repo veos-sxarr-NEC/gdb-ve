@@ -253,4 +253,8 @@ extern void all_uis_check_sync_execution_done (void);
    started or re-started).  */
 extern void all_uis_on_sync_execution_starting (void);
 
+#ifdef VE_CUSTOMIZATION
+extern void recover_step_over(void);
+#endif
+
 #endif /* INFRUN_H */

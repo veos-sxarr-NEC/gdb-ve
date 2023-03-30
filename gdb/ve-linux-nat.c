@@ -15,7 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 
 #include "defs.h"
@@ -575,13 +575,23 @@ ve_gdb_ptrace(int request, int pid,
 	PTRACE_TYPE_ARG3 addr, PTRACE_TYPE_ARG4 data)
 {
   long ret;
+  int save_errno;
 
   ret = ve_ptrace(request, pid, (void *)addr, (void *)data);
+  save_errno = errno;
   if (ret == -1) {
     if (errno == ESRCH) {
       ptrace(PT_CONTINUE, pid, 0, 0);
+    } else if (errno == EIO) {
+      if (IS_VE3()) {
+	if (ve_reg_consistency() != 0) {
+	  recover_step_over();
+          perror_with_name (_("ptrace error:VL/PVL registers are inconsistent"));
+        }
+      }
     }
   }
+  errno = save_errno;
 
   return ret;
 }

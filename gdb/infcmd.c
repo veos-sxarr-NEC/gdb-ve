@@ -19,7 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #include "defs.h"
 #include "arch-utils.h"
@@ -698,6 +698,10 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
 
 #ifdef VE_CUSTOMIZATION
   ve_wrapper_and_args = build_ve_wrapper_and_ve_args();
+  /*
+   * Set VE arch number
+   */
+  ve_arch_number_sysfs();
 #endif
   if (from_tty)
     {
@@ -2558,6 +2562,11 @@ default_print_registers_info (struct gdbarch *gdbarch,
 
   for (i = 0; i < numregs; i++)
     {
+#ifdef VE_CUSTOMIZATION
+      /* skip registers */
+      if (ve_ignore_registers(i))
+        continue;
+#endif
       /* Decide between printing all regs, non-float / vector regs, or
          specific reg.  */
       if (regnum == -1)
@@ -3016,16 +3025,21 @@ attach_command (char *args, int from_tty)
 
 #ifdef	VE_CUSTOMIZATION
   if (get_exec_file(0) == NULL ||
-	strcmp(VE_EXEC, basename(exec_filename)) == 0) {
-    if (args == NULL)
-      error (_("Argument required (process-id to attach)."));
-    pid = strtoul(args,NULL, 10);
-    cmd_path = ve_linux_proc_pid_to_exec_file(pid);
-    if (cmd_path == NULL)
-      error (_("unkown command file path"));
-    /* set from_tty = 0 to avoid confirming to loading symbols */
-    file_command(cmd_path, 0);
-  }
+      strcmp(VE_EXEC, basename(exec_filename)) == 0)
+    {
+      if (args == NULL)
+        error (_("Argument required (process-id to attach)."));
+      pid = strtoul(args,NULL, 10);
+      cmd_path = ve_linux_proc_pid_to_exec_file(pid);
+      if (cmd_path == NULL)
+        error (_("unkown command file path"));
+      /* set from_tty = 0 to avoid confirming to loading symbols */
+      file_command(cmd_path, 0);
+    }
+  /*
+   * Set VE arch number
+   */
+  ve_arch_number_sysfs();
 #endif
 
   attach_target = find_attach_target ();

@@ -1,5 +1,5 @@
 /* VE specific support for 64-bit ELF
-   Copyright (C) 2014-2016 NEC Corporation.
+   Copyright (C) 2014-2021 NEC Corporation.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -29,6 +29,7 @@
 #include "elf-bfd.h"
 
 #include "elf/ve.h"
+#include "elf64-ve.h"
 
 #define TCB_OFFSET	0x30
 
@@ -573,6 +574,37 @@ static reloc_howto_type elf64_ve_howto_table[] = {
          0,			/* src_mask */
          0xFFFFFFFF,		/* dst_mask */
          FALSE),		/* pcrel_offset */
+
+  /* CALL_HI32 */
+  HOWTO (R_VE_CALL_HI32,	/* type */
+         32,			/* rightshift */
+         2,			/* size (0 = byte, 1 = short, 2 = long) */
+         32,			/* bitsize */
+         FALSE,			/* pc_relative */
+         0,			/* bitpos */
+         complain_overflow_dont,	/* complain_on_overflow */
+         bfd_elf_generic_reloc,	/* special_function */
+         "R_VE_CALL_HI32",	/* name */
+         FALSE,			/* partial_inplace */
+         0,			/* src_mask */
+         0xFFFFFFFF,		/* dst_mask */
+         FALSE),		/* pcrel_offset */
+
+  /* CALL_LO32 */
+  HOWTO (R_VE_CALL_LO32,	/* type */
+         0,			/* rightshift */
+         2,			/* size (0 = byte, 1 = short, 2 = long) */
+         32,			/* bitsize */
+         FALSE,			/* pc_relative */
+         0,			/* bitpos */
+         complain_overflow_dont,	/* complain_on_overflow */
+         bfd_elf_generic_reloc,	/* special_function */
+         "R_VE_CALL_LO32",	/* name */
+         FALSE,			/* partial_inplace */
+         0,			/* src_mask */
+         0xFFFFFFFF,		/* dst_mask */
+         FALSE),		/* pcrel_offset */
+
 };
 
 #define IS_VE_PCREL_TYPE(TYPE) \
@@ -624,6 +656,8 @@ static const struct elf_reloc_map elf64_ve_reloc_map[] =
   { BFD_RELOC_VE_TPOFF_HI32, R_VE_TPOFF_HI32 },
   { BFD_RELOC_VE_TPOFF_LO32, R_VE_TPOFF_LO32 },
   { BFD_RELOC_VE_TPOFF32, R_VE_TPOFF32 },
+  { BFD_RELOC_VE_CALL_HI32, R_VE_CALL_HI32 },
+  { BFD_RELOC_VE_CALL_LO32, R_VE_CALL_LO32 },
 };
 
 static reloc_howto_type *
@@ -748,7 +782,7 @@ elf_ve_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
 
 /* The name of the dynamic interpreter. This is put in the .interp
    section. */
-#define ELF_DYNAMIC_INTERPRETER		"/opt/nec/ve/lib/ld.so.1"
+#define ELF_DYNAMIC_INTERPRETER		"/opt/nec/ve/lib/ld-linux-ve.so.1"
 
 /* If ELIMINATE_COPY_RELOCS is non-zero, the linker will try to avoid
    copying dynamic variables from a shared lib into an app's dynbss
@@ -762,12 +796,26 @@ elf_ve_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
 /* The size in bytes of an entry in the procedure linkage table. */
 #define PLT_ENTRY_SIZE			8*8
 
+/* The address of GOT is passed to dynamic linker by %s62 so as not
+   to change %got */
 static const unsigned long elf_ve_plt0_entry[PLT_ENTRY_SIZE / 8] =
 {
-  0x060f000000000000,	/* lea %got,_GLOBAL_OFFSET_TABLE_@LO */
-  0x440f8f6000000000,	/* and %got,%got,(32)0 */
-  0x068f008f00000000,	/* lea.sl %got,_GLOBAL_OFFSET_TABLE_@HI(,%got) */
-  0x013f008f00000008,	/* ld %s63,0x8(0,%got) */
+  0x063e000000000000,	/* lea %s62,_GLOBAL_OFFSET_TABLE_@LO */
+  0x443ebe6000000000,	/* and %s62,%s62,(32)0 */
+  0x06be00be00000000,	/* lea.sl %s62,_GLOBAL_OFFSET_TABLE_@HI(,%s62) */
+  0x013f00be00000008,	/* ld %s63,0x8(0,%s62) */
+  0x193f00bf00000000,	/* b.l.t 0x0(,%s63) */
+  0x7900000000000000,	/* nop */
+  0x7900000000000000,	/* nop */
+  0x7900000000000000 	/* nop */
+};
+
+static const unsigned long elf_ve_plt0_entry_abiv2[PLT_ENTRY_SIZE / 8] =
+{
+  0x073e000000000000,	/* addi %s62,0,_GLOBAL_OFFSET_TABLE_@LO */
+  0x7900000000000000,	/* nop */
+  0x06be00be00000000,	/* lea.sl %s62,_GLOBAL_OFFSET_TABLE_@HI(,%s62) */
+  0x013f00be00000008,	/* ld %s63,0x8(0,%s62) */
   0x193f00bf00000000,	/* b.l.t 0x0(,%s63) */
   0x7900000000000000,	/* nop */
   0x7900000000000000,	/* nop */
@@ -776,9 +824,9 @@ static const unsigned long elf_ve_plt0_entry[PLT_ENTRY_SIZE / 8] =
 
 static const unsigned long elf_ve_plt0_entry_pic[PLT_ENTRY_SIZE / 8] =
 {
+  0x453e008f00000000,  /* or %s62,0,%got */
   0x013f008f00000008,  /* ld %s63,0x8(0,%got) */
   0x193f00bf00000000,  /* b.l.t 0x0(,%s63) */
-  0x7900000000000000,  /* nop */
   0x7900000000000000,  /* nop */
   0x7900000000000000,  /* nop */
   0x7900000000000000,  /* nop */
@@ -791,8 +839,24 @@ static const unsigned long elf_ve_plt_entry[PLT_ENTRY_SIZE / 8] =
   0x060d000000000000,	/* lea %s13,funcN@GOT_LO or LO */
   0x440d8d6000000000,	/* and %s13,%s13,(32)0 */
   0x068d8f8d00000000,	/* lea.sl %s13,funcN@GOT_HI(%s13,%got) or HI(,%s13) */
-  0x010d008d00000000,	/* ld  %s13,(,%s13) */
-  0x193f008d00000000,	/* b.l.t (,%s13) */
+  0x010c008d00000000,	/* ld  %s12,(,%s13) */
+  0x193f008c00000000,	/* b.l.t (,%s12) */
+  0x060d000000000000,	/* lea %s13, N */
+#if 1
+  0x183f000000000000,	/* br.l.t _PROCEDURE_LINKAGE_TABLE_ */
+#else
+  0x193f009000000000,	/* b.l.t (,%s16) */
+#endif
+  0x7900000000000000 	/* nop */
+};
+
+static const unsigned long elf_ve_plt_entry_abiv2[PLT_ENTRY_SIZE / 8] =
+{
+  0x070d000000000000,	/* addi %s13,0,funcN@GOT_LO or LO */
+  0x7900000000000000, 	/* nop */
+  0x068d8f8d00000000,	/* lea.sl %s13,funcN@GOT_HI(%s13,%got) or HI(,%s13) */
+  0x010c008d00000000,	/* ld  %s12,(,%s13) */
+  0x193f008c00000000,	/* b.l.t (,%s12) */
   0x060d000000000000,	/* lea %s13, N */
 #if 1
   0x183f000000000000,	/* br.l.t _PROCEDURE_LINKAGE_TABLE_ */
@@ -851,6 +915,9 @@ struct elf_ve_obj_tdata
   /* GOTPLT entries for TLS descriptors. */
   bfd_vma *local_tlsdesc_gotent;
 
+  /* allow mixing of ieee and bfloat16 */
+  bfd_boolean fp16_allow_mixed;
+
   /* TODO */
 };
 
@@ -862,6 +929,9 @@ struct elf_ve_obj_tdata
 
 #define elf_ve_local_tlsdesc_gotent(abfd) \
 	(elf_ve_tdata(abfd)->local_tlsdesc_gotent)
+
+#define elf_ve_fp16_allow_mixed(abfd) \
+	(elf_ve_tdata(abfd)->fp16_allow_mixed)
 
 static bfd_boolean
 elf_ve_mkobject(bfd *abfd)
@@ -1137,7 +1207,7 @@ elf_ve_copy_private_bfd_data(bfd *ibfd, bfd *obfd)
 static bfd_boolean
 elf_ve_merge_private_bfd_data(bfd *ibfd, bfd *obfd)
 {
-  flagword in_flags, out_flags;
+  flagword in_flags, out_flags, new_flags;
   asection *sec;
 
   /* Check if the same endianess. */
@@ -1145,18 +1215,70 @@ elf_ve_merge_private_bfd_data(bfd *ibfd, bfd *obfd)
     return FALSE;
 
   in_flags = elf_elfheader(ibfd)->e_flags;
-  out_flags = elf_elfheader(ibfd)->e_flags;
+  out_flags = elf_elfheader(obfd)->e_flags;
+
+  if (bfd_get_arch_info(obfd)->mach == bfd_mach_ve)
+    {
+      if ((in_flags & EF_VE_ARCH_MASK) != EF_VE_ARCH_VE1)
+        {
+          (*_bfd_error_handler) (_("%B: Architecture mismatch"), ibfd);
+          return FALSE;
+        }
+      if ((in_flags & EF_VE_ABI_MASK) != EF_VE_ABI_VER1)
+        {
+          (*_bfd_error_handler) (_("%B: ABI version mismatch"), ibfd);
+          return FALSE;
+        }
+      if ((in_flags & EF_VE_FP16_MASK) != EF_VE_FP16_NONE)
+        {
+          (*_bfd_error_handler) (_("%B: half-precision floating point number "
+                                   "format mismatch"), ibfd);
+          return FALSE;
+        }
+      new_flags = in_flags;
+    }
+  else
+    {
+      new_flags = EF_VE_ARCH_VE3;
+
+      if ((in_flags & EF_VE_ABI_MASK) > (out_flags & EF_VE_ABI_MASK))
+        new_flags |= (in_flags & EF_VE_ABI_MASK);
+      else
+        new_flags |= (out_flags & EF_VE_ABI_MASK);
+
+      if ((in_flags & EF_VE_FP16_MASK) == EF_VE_FP16_NONE)
+        new_flags |= (out_flags & EF_VE_FP16_MASK);
+      else if ((out_flags & EF_VE_FP16_MASK) == EF_VE_FP16_NONE)
+        new_flags |= (in_flags & EF_VE_FP16_MASK);
+      else if ((in_flags & EF_VE_FP16_MASK) == (out_flags & EF_VE_FP16_MASK))
+        new_flags |= (out_flags & EF_VE_FP16_MASK);
+      else
+        {
+          if (elf_ve_fp16_allow_mixed(obfd))
+            {
+              new_flags |= EF_VE_FP16_MIXED;
+            }
+          else
+            {
+              (*_bfd_error_handler) (_("%B: half-precision floating point "
+                                       "number format mismatch"), ibfd);
+              return FALSE;
+            }
+        }
+    }
 
   if (!elf_flags_init(obfd))
     {
       elf_flags_init(obfd) = TRUE;
-      elf_elfheader(obfd)->e_flags = in_flags;
+      elf_elfheader(obfd)->e_flags = new_flags;
 
       return TRUE;
     }
 
-  if (in_flags == out_flags)
+  if (new_flags == out_flags)
     return TRUE;
+  else
+    elf_elfheader(obfd)->e_flags = new_flags;
 
   if (!(ibfd->flags & DYNAMIC))
     {
@@ -1324,9 +1446,19 @@ elf_ve_copy_indirect_symbol(struct bfd_link_info *info,
 }
 
 static bfd_boolean
-elf_ve_elf_object_p(bfd *abfd ATTRIBUTE_UNUSED)
+elf_ve_elf_object_p(bfd *abfd)
 {
-  /* TODO */
+  int e_flags = elf_elfheader(abfd)->e_flags;
+
+  switch(e_flags & EF_VE_ARCH_MASK)
+    {
+      case EF_VE_ARCH_VE1:	/* bfd_arch_ve & bfd_mach_ve are already set */
+        break;
+      case EF_VE_ARCH_VE3:
+	bfd_default_set_arch_mach (abfd, bfd_arch_ve, bfd_mach_ve3);
+        break;
+    }
+
   return TRUE;
 }
 
@@ -1428,7 +1560,9 @@ elf_ve_tls_transition(struct bfd_link_info *info,
       if (bfd_link_executable(info))
         {
           if (h == NULL ||
-              (h->def_regular && h->ref_regular))
+              ((h->def_regular || h->root.type == bfd_link_hash_common ||
+                h->root.type == bfd_link_hash_defined) && h->ref_regular &&
+                !h->dynamic_def && !h->def_dynamic))
             to_type = (from_type == R_VE_TLS_GD_HI32) ?
                           R_VE_TPOFF_HI32 : R_VE_TPOFF_LO32;
           else
@@ -1757,12 +1891,15 @@ elf_ve_check_relocs(bfd *abfd, struct bfd_link_info *info,
         case R_VE_SREL32:
         case R_VE_PC_HI32:
         case R_VE_PC_LO32:
+        case R_VE_CALL_HI32:
+        case R_VE_CALL_LO32:
           if (h != NULL && bfd_link_executable(info))
             {
               h->non_got_ref = 1;
 
               h->plt.refcount += 1;
-              /* h->pointer_equality_needed = 1; */
+              if (r_type == R_VE_HI32 || r_type == R_VE_LO32)
+                h->pointer_equality_needed = 1;
             }
 
           size_reloc = FALSE;
@@ -2016,7 +2153,7 @@ elf_ve_allocate_dynrelocs(struct elf_link_hash_entry *h, void *inf)
      if it is defined and referenced in a non-shared object. */
   if (h->type == STT_GNU_IFUNC && h->def_regular)
     return _bfd_elf_allocate_ifunc_dyn_relocs(info, h, &eh->dyn_relocs,
-					      NULL,
+                                              NULL,
                                               plt_entry_size, plt_entry_size,
                                               GOT_ENTRY_SIZE,
 					      FALSE);
@@ -2642,6 +2779,8 @@ elf_ve_relocate_section(bfd *output_bfd,
             case R_VE_REFQUAD:
             case R_VE_HI32:
             case R_VE_LO32:
+            case R_VE_CALL_HI32:
+            case R_VE_CALL_LO32:
               if (rel->r_addend != 0)
                 {
                   if (h->root.root.string)
@@ -2894,6 +3033,8 @@ elf_ve_relocate_section(bfd *output_bfd,
         case R_VE_REFLONG:
         case R_VE_HI32:
         case R_VE_LO32:
+        case R_VE_CALL_HI32:
+        case R_VE_CALL_LO32:
           if ((input_section->flags & SEC_ALLOC) == 0)
             break;
 
@@ -2973,6 +3114,7 @@ elf_ve_relocate_section(bfd *output_bfd,
                             {
                               asection *oi = htab->root.text_index_section;
                               sindx = elf_section_data(oi)->dynindx;
+                              relocation -= oi->vma;
                             }
                         }
 
@@ -3016,38 +3158,71 @@ elf_ve_relocate_section(bfd *output_bfd,
 
               if (ELF64_R_TYPE(rel->r_info) == R_VE_TLS_GD_LO32)
                 {
-                  /* GD->LE transision. Change
-                       lea %s0,foo@TLS_GD_LO
-                       and %s0,%s0,(32)0
-                       lea.sl %s0,foo@TLS_GD_HI(%got,%s0)
-                       lea %s12,__tls_get_addr@PLT_LO(-24)
-                       and %s12,%s12,(32)0
-                       sic %lr
-                       lea.sl %s12,__tls_get_addr@PLT_HI(%s12,%lr)
-                       bsic %lr,(,%s12)
-                     into:
-                       lea %s0,foo@TPOFF_LO
-                       and %s0,%s0,(32)0
-                       lea.sl %s0,foo@TPOFF_HI(%tp,%s0)
-                       nop
-                       nop
-                       nop
-                       nop
-                       nop */
-                  memcpy(contents + roff,      "\x30\0\0\0\0\0\0\x06", 8);
-                  memcpy(contents + roff + 16, "\0\0\0\0\x80\x8e\x80\x06", 8);
-                  memcpy(contents + roff + 24, "\0\0\0\0\0\0\0\x79", 8);
-                  memcpy(contents + roff + 32, "\0\0\0\0\0\0\0\x79", 8);
-                  memcpy(contents + roff + 40, "\0\0\0\0\0\0\0\x79", 8);
-                  memcpy(contents + roff + 48, "\0\0\0\0\0\0\0\x79", 8);
-                  memcpy(contents + roff + 56, "\0\0\0\0\0\0\0\x79", 8);
+                  flagword flags = elf_elfheader(input_bfd)->e_flags;
+                  bfd_vma offset = 0;
+                  if ((flags & EF_VE_ARCH_MASK) == EF_VE_ARCH_VE1 ||
+                      (flags & EF_VE_ABI_MASK) == EF_VE_ABI_VER1)
+                    {
+                      /* GD->LE transision. Change
+                           lea %s0,foo@TLS_GD_LO
+                           and %s0,%s0,(32)0
+                           lea.sl %s0,foo@TLS_GD_HI(%got,%s0)
+                           lea %s12,__tls_get_addr@PLT_LO(-24)
+                           and %s12,%s12,(32)0
+                           sic %lr
+                           lea.sl %s12,__tls_get_addr@PLT_HI(%s12,%lr)
+                           bsic %lr,(,%s12)
+                         into:
+                           lea %s0,foo@TPOFF_LO
+                           and %s0,%s0,(32)0
+                           lea.sl %s0,foo@TPOFF_HI(%tp,%s0)
+                           nop
+                           nop
+                           nop
+                           nop
+                           nop */
+                      memcpy(contents + roff,      "\x30\0\0\0\0\0\0\x06", 8);
+                      memcpy(contents + roff + 16, "\0\0\0\0\x80\x8e\x80\x06", 8);
+                      memcpy(contents + roff + 24, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 32, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 40, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 48, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 56, "\0\0\0\0\0\0\0\x79", 8);
+
+                      offset = 16;
+                    }
+                  else
+                    {
+                      /* GD->LE transision. Change
+                           addi %s0,foo@TLS_GD_LO
+                           lea.sl %s0,foo@TLS_GD_HI(%got,%s0)
+                           addi %s12,-16,__tls_get_addr@PLT_LO
+                           sic %lr
+                           lea.sl %s12,__tls_get_addr@PLT_HI(%s12,%lr)
+                           bsic %lr,(,%s12)
+                         into:
+                           addi %s0,0,foo@TPOFF_LO
+                           lea.sl %s0,foo@TPOFF_HI(%tp,%s0)
+                           nop
+                           nop
+                           nop
+                           nop */
+                      memcpy(contents + roff,      "\x30\0\0\0\0\0\0\x07", 8);
+                      memcpy(contents + roff +  8, "\0\0\0\0\x80\x8e\x80\x06", 8);
+                      memcpy(contents + roff + 16, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 24, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 32, "\0\0\0\0\0\0\0\x79", 8);
+                      memcpy(contents + roff + 40, "\0\0\0\0\0\0\0\x79", 8);
+
+                      offset = 8;
+                    }
 
                   bfd_put_32(output_bfd,
                              (elf_ve_tpoff(info, relocation) << 32) >> 32,
                              contents + roff);
                   bfd_put_32(output_bfd,
                              elf_ve_tpoff(info, relocation) >> 32,
-                             contents + roff + 16);
+                             contents + roff + offset);
 
                   /* Skip R_VE_TLS_GD_HI/R_VE_PLT_LO/R_VE_PTL_HI */
                   rel += 3;
@@ -3130,6 +3305,14 @@ elf_ve_relocate_section(bfd *output_bfd,
             }
           break;
 
+        case R_VE_DTPOFF32:
+          if (!bfd_link_executable(info)
+              || (input_section->flags & SEC_CODE) == 0)
+            relocation -= elf_ve_dtpoff_base(info);
+          else
+            relocation = elf_ve_tpoff(info, relocation);
+          break;
+
         default:
           break;
         }
@@ -3173,7 +3356,7 @@ check_relocation_error:
             {
               (*info->callbacks->reloc_overflow)
                     (info, (h ? &h->root : NULL), name, howto->name,
-                    (bfd_vma) 0, input_bfd, input_section, rel->r_offset);
+                     (bfd_vma)0, input_bfd, input_section, rel->r_offset);
             }
           else
             {
@@ -3195,6 +3378,7 @@ elf_ve_finish_dynamic_symbol(bfd *output_bfd,
                                  Elf_Internal_Sym *sym)
 {
   struct elf_ve_link_hash_table *htab;
+
   htab = elf_ve_hash_table(info);
   if (htab == NULL)
     return FALSE;
@@ -3208,6 +3392,7 @@ elf_ve_finish_dynamic_symbol(bfd *output_bfd,
       asection *plt = NULL, *gotplt = NULL, *relplt = NULL;
       const struct elf_backend_data *bed;
       bfd_vma sym_addr = 0;
+      flagword flags = elf_elfheader(output_bfd)->e_flags;
 
       /* This symbol has an entry in the PLT. */
       if (htab->root.splt != NULL)
@@ -3238,8 +3423,17 @@ elf_ve_finish_dynamic_symbol(bfd *output_bfd,
         }
 
       /* Fill in the entry in the procedure linkage table. */
-      memcpy(plt->contents + h->plt.offset, elf_ve_plt_entry,
-             htab->plt_entry_size);
+      if ((flags & EF_VE_ARCH_MASK) == EF_VE_ARCH_VE1 ||
+          (flags & EF_VE_ABI_MASK) == EF_VE_ABI_VER1)
+        {
+          memcpy(plt->contents + h->plt.offset, elf_ve_plt_entry,
+                 htab->plt_entry_size);
+        }
+      else
+        {
+          memcpy(plt->contents + h->plt.offset, elf_ve_plt_entry_abiv2,
+                 htab->plt_entry_size);
+        }
 
       /* Insert the relocation positions of the PLT sections. */
 
@@ -3305,13 +3499,15 @@ elf_ve_finish_dynamic_symbol(bfd *output_bfd,
       bed = get_elf_backend_data(output_bfd);
       loc = relplt->contents + plt_index * bed->s->sizeof_rela;
       bed->s->swap_reloca_out(output_bfd, &rela, loc);
+    }
 
-      if (!h->def_regular)
-        {
-          sym->st_shndx = SHN_UNDEF;
-          if (!h->pointer_equality_needed)
-            sym->st_value = 0;
-        }
+  if (!h->def_regular
+      && (h->plt.offset != (bfd_vma) -1))
+/*          || eh->plt_got.offset != (bfd_vma) -1)) */
+    {
+      sym->st_shndx = SHN_UNDEF;
+      if (!h->pointer_equality_needed)
+        sym->st_value = 0;
     }
 
   if (h->got.offset != (bfd_vma)-1
@@ -3488,11 +3684,24 @@ elf_ve_finish_dynamic_sections(bfd *output_bfd, struct bfd_link_info *info)
   /* Fill in the special first entry in the procedure linkage table. */
   if (htab->root.splt && htab->root.splt->size > 0)
     {
+      flagword flags = elf_elfheader(output_bfd)->e_flags;
+
       /* Fill in the first entry in the procedure linkage table. */
-      memcpy(htab->root.splt->contents, 
-             bfd_link_pic(info)? elf_ve_plt0_entry_pic : 
-                                 elf_ve_plt0_entry,
-             htab->plt_header_size);
+      if ((flags & EF_VE_ARCH_MASK) == EF_VE_ARCH_VE1 ||
+          (flags & EF_VE_ABI_MASK) == EF_VE_ABI_VER1)
+        {
+          memcpy(htab->root.splt->contents, 
+                 bfd_link_pic(info)? elf_ve_plt0_entry_pic : 
+                                     elf_ve_plt0_entry,
+                 htab->plt_header_size);
+        }
+      else
+        {
+          memcpy(htab->root.splt->contents, 
+                 bfd_link_pic(info)? elf_ve_plt0_entry_pic : 
+                                     elf_ve_plt0_entry_abiv2,
+                 htab->plt_header_size);
+        }
 
       /* Insert the relocation positions */
       if (bfd_link_executable(info))
@@ -3572,6 +3781,13 @@ elf_ve_plt_sym_val(bfd_vma i, const asection *plt,
                        const arelent *rel ATTRIBUTE_UNUSED)
 {
   return plt->vma + (i + 1) * PLT_ENTRY_SIZE;	/* TODO */
+}
+
+void
+bfd_elf64_ve_set_fp16_allow_mixed (bfd *output_bfd,
+                                   bfd_boolean fp16_allow_mixed)
+{
+  elf_ve_fp16_allow_mixed(output_bfd) = fp16_allow_mixed;
 }
 
 #define TARGET_LITTLE_SYM		ve_elf64_vec
@@ -3662,3 +3878,24 @@ elf_ve_plt_sym_val(bfd_vma i, const asection *plt,
 #define elf_backend_static_tls_alignment	16
 
 #include "elf64-target.h"
+
+
+#undef TARGET_LITTLE_SYM
+#undef TARGET_LITTLE_NAME
+#undef elf64_bed
+
+#define TARGET_LITTLE_SYM		ve1_elf64_vec
+#define TARGET_LITTLE_NAME		"elf64-ve1"
+#define elf64_bed			elf64_ve1_bed
+#include "elf64-target.h"
+
+
+#undef TARGET_LITTLE_SYM
+#undef TARGET_LITTLE_NAME
+#undef elf64_bed
+
+#define TARGET_LITTLE_SYM		ve3_elf64_vec
+#define TARGET_LITTLE_NAME		"elf64-ve3"
+#define elf64_bed			elf64_ve3_bed
+#include "elf64-target.h"
+

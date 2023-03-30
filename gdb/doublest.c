@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 /* Support for converting target fp numbers into host DOUBLEST format.  */
 
@@ -31,6 +32,9 @@
 #include "floatformat.h"
 #include "gdbtypes.h"
 #include <math.h>		/* ldexp */
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* The odds that CHAR_BIT will be anything but 8 are low enough that I'm not
    going to bother with trying to muck around with whether it is defined in
@@ -816,8 +820,21 @@ floatformat_from_length (struct gdbarch *gdbarch, int len)
   const struct floatformat *format;
 
   if (len * TARGET_CHAR_BIT == gdbarch_half_bit (gdbarch))
+#ifdef	VE_CUSTOMIZATION
+    if (ve_fp16_bfloat(gdbarch))
+      {
+        format = gdbarch_bfloat16_format (gdbarch)
+	       [gdbarch_byte_order (gdbarch)];
+      }
+    else	/* VE_FLOAT_16_IEEE */
+      {
+        format = gdbarch_half_format (gdbarch)
+	       [gdbarch_byte_order (gdbarch)];
+      }
+#else
     format = gdbarch_half_format (gdbarch)
 	       [gdbarch_byte_order (gdbarch)];
+#endif
   else if (len * TARGET_CHAR_BIT == gdbarch_float_bit (gdbarch))
     format = gdbarch_float_format (gdbarch)
 	       [gdbarch_byte_order (gdbarch)];

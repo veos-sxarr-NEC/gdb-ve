@@ -5,10 +5,10 @@
      Copying and distribution of this file, with or without modification,
      are permitted in any medium without royalty provided the copyright
      notice and this notice are preserved.  -->
-<!-- Changes by NEC Corporation for the VE port, 2017-2019 -->
+<!-- Changes by NEC Corporation for the VE port, 2017-2021 -->
 
 <!DOCTYPE target SYSTEM "gdb-target.dtd">
 <target>
-  <architecture>ve</architecture>
-  <xi:include href="ve-core.xml"/>
+  <architecture>ve3</architecture>
+  <xi:include href="ve3-core.xml"/>
 </target>

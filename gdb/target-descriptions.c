@@ -18,6 +18,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #include "defs.h"
 #include "arch-utils.h"
@@ -34,6 +35,9 @@
 #include "gdb_obstack.h"
 #include "hashtab.h"
 #include "inferior.h"
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* Types.  */
 
@@ -113,10 +117,16 @@ enum tdesc_type_kind
   TDESC_TYPE_UINT128,
   TDESC_TYPE_CODE_PTR,
   TDESC_TYPE_DATA_PTR,
+#ifdef	VE_CUSTOMIZATION
+  TDESC_TYPE_IEEE_HALF,
+#endif
   TDESC_TYPE_IEEE_SINGLE,
   TDESC_TYPE_IEEE_DOUBLE,
   TDESC_TYPE_ARM_FPA_EXT,
   TDESC_TYPE_I387_EXT,
+#ifdef	VE_CUSTOMIZATION
+  TDESC_TYPE_BFLOAT16,
+#endif
 
   /* Types defined by a target feature.  */
   TDESC_TYPE_VECTOR,
@@ -531,10 +541,17 @@ static struct tdesc_type tdesc_predefined_types[] =
   { "uint128", TDESC_TYPE_UINT128 },
   { "code_ptr", TDESC_TYPE_CODE_PTR },
   { "data_ptr", TDESC_TYPE_DATA_PTR },
+#ifdef	VE_CUSTOMIZATION
+  { "ieee_half", TDESC_TYPE_IEEE_HALF },
+#endif
   { "ieee_single", TDESC_TYPE_IEEE_SINGLE },
   { "ieee_double", TDESC_TYPE_IEEE_DOUBLE },
   { "arm_fpa_ext", TDESC_TYPE_ARM_FPA_EXT },
-  { "i387_ext", TDESC_TYPE_I387_EXT }
+  { "i387_ext", TDESC_TYPE_I387_EXT },
+#ifdef	VE_CUSTOMIZATION
+  { "bfloat16", TDESC_TYPE_BFLOAT16 }
+#endif
+
 };
 
 /* Lookup a predefined type.  */
@@ -658,6 +675,11 @@ tdesc_gdb_type (struct gdbarch *gdbarch, struct tdesc_type *tdesc_type)
 
   switch (tdesc_type->kind)
     {
+#ifdef	VE_CUSTOMIZATION
+    case TDESC_TYPE_IEEE_HALF:
+      return arch_float_type (gdbarch, -1, "builtin_type_ieee_half",
+                                    floatformats_ieee_half);
+#endif
     case TDESC_TYPE_IEEE_SINGLE:
       return arch_float_type (gdbarch, -1, "builtin_type_ieee_single",
 			      floatformats_ieee_single);
@@ -673,6 +695,11 @@ tdesc_gdb_type (struct gdbarch *gdbarch, struct tdesc_type *tdesc_type)
     case TDESC_TYPE_I387_EXT:
       return arch_float_type (gdbarch, -1, "builtin_type_i387_ext",
 			      floatformats_i387_ext);
+#ifdef	VE_CUSTOMIZATION
+    case TDESC_TYPE_BFLOAT16:
+      return arch_float_type (gdbarch, -1, "builtin_type_bfloat16",
+                                    floatformats_bfloat16);
+#endif
 
     /* Types defined by a target feature.  */
     case TDESC_TYPE_VECTOR:
@@ -1028,6 +1055,18 @@ tdesc_register_type (struct gdbarch *gdbarch, int regno)
 	    arch_reg->type = builtin_type (gdbarch)->builtin_double;
 	  else if (reg->bitsize == gdbarch_long_double_bit (gdbarch))
 	    arch_reg->type = builtin_type (gdbarch)->builtin_long_double;
+#ifdef	VE_CUSTOMIZATION
+	  else if (reg->bitsize == gdbarch_half_bit (gdbarch))
+            {
+	      if (ve_fp16_ieee(gdbarch))
+	        arch_reg->type = builtin_type (gdbarch)->builtin_half;
+            }
+	  else if (reg->bitsize == gdbarch_bfloat16_bit (gdbarch))
+            {
+	      if (ve_fp16_bfloat(gdbarch))
+	        arch_reg->type = builtin_type (gdbarch)->builtin_bfloat16;
+            }
+#endif
 	  else
 	    {
 	      warning (_("Register \"%s\" has an unsupported size (%d bits)"),

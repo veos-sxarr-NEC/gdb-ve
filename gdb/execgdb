@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Changes by NEC Corporation for the VE port, 2019-2021
 # This script called when ALLINEA_CUSTOM_DEBUGGER_PATH was set
 
 if [ -n "${ALLINEA_FORGE_PATH}" ]; then
@@ -8,7 +9,7 @@ else
     GDB_X86="/usr/bin/gdb"
 fi
 
-GDB_VE="/opt/nec/ve/bin/gdb --no-set-sid"
+GDB_VE="/opt/nec/ve/bin/ve-gdb --no-set-sid"
 
 
 GDB="${GDB_X86}"

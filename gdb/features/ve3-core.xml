@@ -7,7 +7,7 @@
 <!-- Changes by NEC Corporation for the VE port, 2017-2021 -->
 
 <!DOCTYPE feature SYSTEM "gdb-target.dtd">
-<feature name="org.gnu.gdb.ve.core">
+<feature name="org.gnu.gdb.ve3.core">
   <reg name="usrcc" bitsize="64" type="uint64"/>
   <reg name="pmc0" bitsize="64" type="uint64"/>
   <reg name="pmc1" bitsize="64" type="uint64"/>
@@ -25,6 +25,11 @@
   <reg name="pmc13" bitsize="64" type="uint64"/>
   <reg name="pmc14" bitsize="64" type="uint64"/>
   <reg name="pmc15" bitsize="64" type="uint64"/>
+  <reg name="pmc16" bitsize="64" type="uint64"/>
+  <reg name="pmc17" bitsize="64" type="uint64"/>
+  <reg name="pmc18" bitsize="64" type="uint64"/>
+  <reg name="pmc19" bitsize="64" type="uint64"/>
+  <reg name="pmc20" bitsize="64" type="uint64"/>
   <reg name="psw" bitsize="64" type="uint64"/>
   <reg name="exs" bitsize="64" type="uint64"/>
   <reg name="ic" bitsize="64" type="code_ptr"/>
@@ -37,6 +42,8 @@
   <reg name="pmcr1" bitsize="64" type="uint64"/>
   <reg name="pmcr2" bitsize="64" type="uint64"/>
   <reg name="pmcr3" bitsize="64" type="uint64"/>
+  <reg name="pvl32" bitsize="64" type="uint64"/>
+  <reg name="pvl16" bitsize="64" type="uint64"/>
   <reg name="s0" bitsize="64" type="uint64"/>
   <reg name="s1" bitsize="64" type="uint64"/>
   <reg name="s2" bitsize="64" type="uint64"/>
@@ -45,15 +52,15 @@
   <reg name="s5" bitsize="64" type="uint64"/>
   <reg name="s6" bitsize="64" type="uint64"/>
   <reg name="s7" bitsize="64" type="uint64"/>
-  <reg name="s8" bitsize="64" type="uint64"/>
+  <reg name="sl" bitsize="64" type="uint64"/>
   <reg name="fp" bitsize="64" type="data_ptr"/>
-  <reg name="s10" bitsize="64" type="uint64"/>
+  <reg name="lr" bitsize="64" type="uint64"/>
   <reg name="sp" bitsize="64" type="data_ptr"/>
   <reg name="s12" bitsize="64" type="uint64"/>
   <reg name="s13" bitsize="64" type="uint64"/>
-  <reg name="s14" bitsize="64" type="uint64"/>
-  <reg name="s15" bitsize="64" type="uint64"/>
-  <reg name="s16" bitsize="64" type="uint64"/>
+  <reg name="tp" bitsize="64" type="uint64"/>
+  <reg name="got" bitsize="64" type="uint64"/>
+  <reg name="plt" bitsize="64" type="uint64"/>
   <reg name="s17" bitsize="64" type="uint64"/>
   <reg name="s18" bitsize="64" type="uint64"/>
   <reg name="s19" bitsize="64" type="uint64"/>

@@ -22,6 +22,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #if !defined (GDBTYPES_H)
 #define GDBTYPES_H 1
@@ -1597,6 +1598,10 @@ struct builtin_type
   struct type *builtin_unsigned_short;
   struct type *builtin_unsigned_int;
   struct type *builtin_unsigned_long;
+#ifdef	VE_CUSTOMIZATION
+  struct type *builtin_bfloat16;
+  struct type *builtin_half;
+#endif
   struct type *builtin_float;
   struct type *builtin_double;
   struct type *builtin_long_double;
@@ -1726,6 +1731,9 @@ extern const struct floatformat *floatformats_ia64_quad[BFD_ENDIAN_UNKNOWN];
 extern const struct floatformat *floatformats_vax_f[BFD_ENDIAN_UNKNOWN];
 extern const struct floatformat *floatformats_vax_d[BFD_ENDIAN_UNKNOWN];
 extern const struct floatformat *floatformats_ibm_long_double[BFD_ENDIAN_UNKNOWN];
+#ifdef	VE_CUSTOMIZATION
+extern const struct floatformat *floatformats_bfloat16[BFD_ENDIAN_UNKNOWN];
+#endif
 
 
 /* * Allocate space for storing data associated with a particular

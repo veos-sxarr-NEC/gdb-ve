@@ -19,7 +19,7 @@ dnl
 dnl You should have received a copy of the GNU General Public License
 dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
 dnl
-dnl  Changes by NEC Corporation for the VE port, 2017-2019
+dnl  Changes by NEC Corporation for the VE port, 2017-2021
 
 dnl Process this file with autoconf to produce a configure script.
 
@@ -298,7 +298,7 @@ case "${targ}" in
 	ve*-*-linux*)
 cat >>confdefs.h <<_ACEOF
 #define	VE_CUSTOMIZATION	1
-#define	LIBTHREAD_DB_SEARCH_PATH	"/opt/nec/ve/share/gdb/auto-load/lib64"
+#define	LIBTHREAD_DB_SEARCH_PATH	"/opt/nec/ve3/share/gdb/auto-load/lib64:/opt/nec/ve/share/gdb/auto-load/lib64"
 _ACEOF
 	;;
 esac

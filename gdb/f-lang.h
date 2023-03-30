@@ -22,6 +22,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 struct type_print_options;
 struct parser_state;
@@ -80,6 +81,9 @@ struct builtin_f_type
   struct type *builtin_complex_s16;
   struct type *builtin_complex_s32;
   struct type *builtin_void;
+#ifdef	VE_CUSTOMIZATION
+  struct type *builtin_real_s2;
+#endif
 };
 
 /* Return the Fortran type table for the specified architecture.  */

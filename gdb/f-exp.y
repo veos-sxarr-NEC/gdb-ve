@@ -22,6 +22,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 /* This was blantantly ripped off the C expression parser, please 
    be aware of that as you look at its basic structure -FMB */ 
@@ -769,14 +770,24 @@ typebase
 			  else if ($3.val == 8)
 				$$ = parse_f_type (pstate)->builtin_real_s8;
 			  else if ($3.val == 16)
-				$$ = parse_f_type (pstate)->builtin_real_s16; }
+				$$ = parse_f_type (pstate)->builtin_real_s16;
+#ifdef	VE_CUSTOMIZATION
+			  else if ($3.val == 2)
+				$$ = parse_f_type (pstate)->builtin_real_s2;
+#endif
+ 			}
 	|	REAL_KEYWORD KIND '=' INT ')'	%prec SIZE
 			{ if ($4.val == 4)
 				$$ = parse_f_type (pstate)->builtin_real;
 			  else if ($4.val == 8)
 				$$ = parse_f_type (pstate)->builtin_real_s8;
 			  else if ($4.val == 16)
-				$$ = parse_f_type (pstate)->builtin_real_s16; }
+				$$ = parse_f_type (pstate)->builtin_real_s16;
+#ifdef	VE_CUSTOMIZATION
+			  else if ($4.val == 2)
+				$$ = parse_f_type (pstate)->builtin_real_s2;
+#endif
+}
 	|       REAL_S8_KEYWORD
 			{ $$ = parse_f_type (pstate)->builtin_real_s8;}
 	|	REAL_S16_KEYWORD

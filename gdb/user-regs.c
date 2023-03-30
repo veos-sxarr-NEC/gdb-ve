@@ -18,6 +18,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #include "defs.h"
 #include "user-regs.h"
@@ -26,6 +27,10 @@
 #include "arch-utils.h"
 #include "command.h"
 #include "cli/cli-cmds.h"
+
+#ifdef VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* A table of user registers.
 
@@ -148,6 +153,10 @@ user_reg_map_name_to_regnum (struct gdbarch *gdbarch, const char *name,
 	if (regname != NULL && len == strlen (regname)
 	    && strncmp (regname, name, len) == 0)
 	  {
+#ifdef VE_CUSTOMIZATION
+            if (ve_ignore_registers(i))
+              return -1;
+#endif
 	    return i;
 	  }
       }

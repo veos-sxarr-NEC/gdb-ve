@@ -22,6 +22,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #include "defs.h"
 #include "symtab.h"
@@ -235,6 +236,9 @@ enum f_primitive_types {
   f_primitive_type_complex_s8,
   f_primitive_type_complex_s16,
   f_primitive_type_void,
+#ifdef	VE_CUSTOMIZATION
+  f_primitive_type_real_s2,
+#endif
   nr_f_primitive_types
 };
 
@@ -273,6 +277,10 @@ f_language_arch_info (struct gdbarch *gdbarch,
     = builtin->builtin_complex_s16;
   lai->primitive_type_vector [f_primitive_type_void]
     = builtin->builtin_void;
+#ifdef	VE_CUSTOMIZATION
+  lai->primitive_type_vector [f_primitive_type_real_s2]
+    = builtin->builtin_real_s2;
+#endif
 
   lai->bool_type_symbol = "logical";
   lai->bool_type_default = builtin->builtin_logical_s2;
@@ -440,6 +448,11 @@ build_fortran_types (struct gdbarch *gdbarch)
   builtin_f_type->builtin_complex_s32
     = arch_complex_type (gdbarch, "complex*32",
 			 builtin_f_type->builtin_real_s16);
+#ifdef	VE_CUSTOMIZATION
+  builtin_f_type->builtin_real_s2
+    = arch_float_type (gdbarch, gdbarch_half_bit (gdbarch),
+		       "real*2", NULL);
+#endif
 
   return builtin_f_type;
 }

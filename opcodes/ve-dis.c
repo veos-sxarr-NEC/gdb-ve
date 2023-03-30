@@ -94,15 +94,100 @@ ve_find_opc_index(ve_instr *inst)
     {
       flag |= inst->rv.vy << CF_SHFT;
     }
+  if (op == O_DIV  || op == O_DVX  || op == O_DVS)
+    {
+      if (inst->rr.w.w)
+        {
+          flag |= MOD_ON;
+        }
+    }
+  if (op == O_VDIV || op == O_VDVX || op == O_VDVS) 
+    {
+      if (inst->rv.vw)
+        {
+          flag |= MOD_ON;
+        }
+    }
+
+  if (op == O_CVS)
+    {
+      if (inst->rw.z.z)
+        {
+          flag |= CH_ON;
+        }
+    }
+  if (op == O_VCVS)
+    {
+      if (inst->rv.x.bitx.cs)
+        {
+          flag |= CH_ON;
+        }
+    }
+  if (op == O_VLD   || op == O_VLDU   || op == O_VLDL   ||
+      op == O_VLD2D || op == O_VLDU2D || op == O_VLDL2D ||
+      op == O_PFCHV)
+    {
+      if (inst->rvm.x.bitx.cs)
+        {
+          flag |= CDM_ON;
+        }
+    }
+  if (op == O_PFCHV)
+    {
+      if (inst->rvm.x.bitx.vsw)
+        {
+          flag |= VSW_ON;
+        }
+    }
+  if (op == O_VSC || op == O_VSCU)
+    {
+      if (inst->rvm.vz.bitvz.va)
+        {
+          flag |= VA_ON;
+        }
+    }
+  if (op == O_PFCHV || op == O_VST2B)
+    {
+      if (inst->rvm.vw.bitvw.f16)
+        {
+          flag |= F16_ON;
+        }
+    }
+  if (op == O_PFCHV || op == O_VLDU || op == O_VSTU ||
+      op == O_VST2B)
+    {
+      if (inst->rvm.vw.bitvw.pk)
+        {
+          flag |= PK_ON;
+        }
+    }
+  if (op == O_VBRD  || op == O_VADD   || op == O_VADS   ||
+      op == O_VSUB  || op == O_VSBS   || op == O_VCMP   ||
+      op == O_VCPS  || op == O_VCMS   || op == O_VAND   ||
+      op == O_VOR   || op == O_VXOR   || op == O_VEQV   ||
+      op == O_VSLL  || op == O_VSRL   || op == O_VSRA   ||
+      op == O_VFAD  || op == O_VFSB   || op == O_VFMP   ||
+      op == O_VFCP  || op == O_VFCM   || op == O_VFMAD  ||
+      op == O_VFMSB || op == O_VFNMAD || op == O_VFNMSB ||
+      op == O_VMRG  || op == O_VSLA)
+    {
+      if (inst->rv.z.bitz.ycp)
+        {
+          flag |= YCP_ON;
+        }
+    }
 
   /* Because these instructions have displacement fields, avoid them. */
+  /* And also avoid VFMA because they have Vw field. */
   if (op != O_LDS && op != O_LDU && op != O_LDL && op != O_LD2B &&
       op != O_LD1B && op != O_LEA && op != O_BSIC && op != O_DLDS &&
       op != O_DLDU && op != O_DLDL && op != O_PFCH && op != O_STS &&
       op != O_STU && op != O_STL && op != O_ST2B && op != O_ST1B &&
       op != O_BCR && op != O_BC && op != O_BCS && op != O_BCF &&
       op != O_LHM && op != O_SHM && op != O_TS1AM && op != O_TS2AM &&
-      op != O_TS3AM && op != O_ATMAM && op != O_CAS)
+      op != O_TS3AM && op != O_ATMAM && op != O_CAS &&
+      op != O_VFMAD && op != O_VFMSB && op != O_VFNMAD && op != O_VFNMSB &&
+      op != O_ADDI)
     {
       if (inst->gen.lower.w3.vw & 0x80)
         {
@@ -114,16 +199,17 @@ ve_find_opc_index(ve_instr *inst)
         }
     }
 
-  if (op == O_VBRD || op == O_VADD || op == O_VADS || op == O_VSUB ||
-      op == O_VSBS || op == O_VMPY || op == O_VMPS || op == O_VDIV ||
-      op == O_VDVS || op == O_VCMP || op == O_VCPS || op == O_VCMS ||
-      op == O_VAND || op == O_VOR || op == O_VXOR || op == O_VEQV ||
-      op == O_VLDZ || op == O_VPCNT || op == O_VBRV || op == O_VSEQ ||
-      op == O_VSLL || op == O_VSRL || op == O_VSLA || op == O_VSRA ||
-      op == O_VFAD || op == O_VFSB || op == O_VFMP || op == O_VFCP ||
-      op == O_VFCM || op == O_VFMAD || op == O_VFMSB || op == O_VFNMAD ||
-      op == O_VFNMSB || op == O_VRCP || op == O_VRSQRT || op == O_VFIX ||
-      op == O_VFLT || op == O_VMAXS || op == O_VFMF || op == O_VSUMS)
+  if (op == O_VBRD   || op == O_VADD  || op == O_VADS   || op == O_VSUB   ||
+      op == O_VSBS   || op == O_VMPY  || op == O_VMPS   || op == O_VDIV   ||
+      op == O_VDVS   || op == O_VCMP  || op == O_VCPS   || op == O_VCMS   ||
+      op == O_VAND   || op == O_VOR   || op == O_VXOR   || op == O_VEQV   ||
+      op == O_VLDZ   || op == O_VPCNT || op == O_VBRV   || op == O_VSEQ   ||
+      op == O_VSLL   || op == O_VSRL  || op == O_VSLA   || op == O_VSRA   ||
+      op == O_VFAD   || op == O_VFSB  || op == O_VFMP   || op == O_VFCP   ||
+      op == O_VFCM   || op == O_VFMAD || op == O_VFMSB  || op == O_VFNMAD ||
+      op == O_VFNMSB || op == O_VRCP  || op == O_VRSQRT || op == O_VFIX   ||
+      op == O_VFLT   || op == O_VMAXS || op == O_VFMF   || op == O_VSUMS  ||
+      op == O_VEST   || op == O_VCVS  || op == O_VCVH   || op == O_VST2B)
     {
       if (inst->rv.x.bitx.cx2)
         {
@@ -188,7 +274,7 @@ print_ve_reg(disassemble_info *info, unsigned short flag,
 */
 
 static void
-print_ve_literal(disassemble_info *info, unsigned short flag,
+print_ve_literal(disassemble_info *info, unsigned int flag,
                      unsigned char field)
 {
   if ((flag & TLIT_MASK) == TLI127)
@@ -578,6 +664,26 @@ print_scalar_operands(disassemble_info *info, ve_instr *ins,
                                  ins->gen.upper.w1.z, 0, ins->gen.lower.d);
         }
       break;
+    case FM_XYD:
+      /* format X, Y, D */
+      if (op->field.x)
+        {
+          print_ve_opc_field(info, op->opcode, op->field.x,
+                                 ins->gen.upper.w1.x, 0, ins->gen.lower.d);
+          (*info->fprintf_func)(info->stream, ",");
+        }
+      if (op->field.y)
+        {
+          print_ve_opc_field(info, op->opcode, op->field.y,
+                                 ins->gen.upper.w1.y, 0, ins->gen.lower.d);
+          (*info->fprintf_func)(info->stream, ",");
+        }
+      if (op->field.d)
+        {
+            print_ve_opc_field(info, op->opcode, op->field.d,
+                                   ins->gen.upper.w1.y, 0, ins->gen.lower.d);
+        }
+      break;
     }
 }
 
@@ -603,7 +709,12 @@ print_vector_operands(disassemble_info *info, ve_instr *ins,
             {
               (*info->fprintf_func)(info->stream, ",");
             }
-          if (ins->rv.x.bitx.cs ||
+          if (op->opcode == O_VCVS)
+            {
+              print_ve_vopc_field(info, op->opcode, op->field.y,
+                                      ins->gen.lower.w3.vy, FALSE);
+            }
+          else if (ins->rv.x.bitx.cs ||
               op->opcode == O_VMV || op->opcode == O_VBRD ||
               op->opcode == O_VSLD || op->opcode == O_VSRD ||
               op->opcode == O_VSFA || op->opcode == O_VFIM ||
@@ -616,7 +727,8 @@ print_vector_operands(disassemble_info *info, ve_instr *ins,
             }
           else if (op->opcode == O_VST || op->opcode == O_VSTU ||
                    op->opcode == O_VSTL || op->opcode == O_VST2D ||
-                   op->opcode == O_VSTU2D || op->opcode == O_VSTL2D)
+                   op->opcode == O_VSTU2D || op->opcode == O_VSTL2D ||
+                   op->opcode == O_VST2B)
             {
               print_ve_vopc_field(info, op->opcode, op->field.y,
                                       ins->gen.upper.w1.y, TRUE);
@@ -637,7 +749,8 @@ print_vector_operands(disassemble_info *info, ve_instr *ins,
             }
           if (op->opcode == O_VST || op->opcode == O_VSTU ||
               op->opcode == O_VSTL || op->opcode == O_VST2D ||
-              op->opcode == O_VSTU2D || op->opcode == O_VSTL2D)
+              op->opcode == O_VSTU2D || op->opcode == O_VSTL2D ||
+              op->opcode == O_VST2B)
             {
               print_ve_vopc_field(info, op->opcode, op->field.z,
                                       ins->gen.upper.w1.z, TRUE);
@@ -894,7 +1007,7 @@ print_vector_operands(disassemble_info *info, ve_instr *ins,
             if (ins->rvm.x.bitx.cs)
               {
                 print_ve_vopc_field(info, op->opcode, op->field.w,
-                                        ins->rvm.vw, FALSE);
+                                        ins->rvm.vw.vw, FALSE);
               }
             else
               {

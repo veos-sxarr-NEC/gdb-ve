@@ -1711,6 +1711,7 @@ case "${targ}" in
 
   ve*-*-*)
     targ_defvec=ve_elf64_vec
+    targ_selvecs="ve1_elf64_vec ve3_elf64_vec"
     want64=true
     ;;
 

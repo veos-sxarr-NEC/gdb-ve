@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #include "defs.h"
 #include "frame.h"
@@ -53,6 +54,9 @@
 
 #ifdef TUI
 #include "tui/tui.h"		/* For tui_active et al.   */
+#endif
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
 #endif
 
 /* Last specified output format.  */
@@ -345,6 +349,18 @@ float_type_from_length (struct type *type)
     type = builtin->builtin_double;
   else if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_long_double))
     type = builtin->builtin_long_double;
+#ifdef	VE_CUSTOMIZATION
+  else if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_half))
+    {
+      if (ve_fp16_ieee(gdbarch))
+        type = builtin->builtin_half;
+    }
+  else if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_bfloat16))
+    {
+      if (ve_fp16_bfloat(gdbarch))
+        type = builtin->builtin_bfloat16;
+    }
+#endif
 
   return type;
 }

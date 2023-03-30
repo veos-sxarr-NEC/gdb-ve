@@ -19,6 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #include "defs.h"
 #include "symtab.h"
@@ -38,6 +39,10 @@
 #include <ctype.h>
 #include "gdbcore.h"
 #include "upc-lang.h"
+
+#ifdef	VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 extern void _initialize_c_language (void);
 
@@ -789,6 +794,9 @@ enum c_primitive_types {
   c_primitive_type_decfloat,
   c_primitive_type_decdouble,
   c_primitive_type_declong,
+#ifdef	VE_CUSTOMIZATION
+  c_primitive_type_half,
+#endif
   nr_c_primitive_types
 };
 
@@ -822,6 +830,9 @@ c_language_arch_info (struct gdbarch *gdbarch,
   lai->primitive_type_vector [c_primitive_type_decfloat] = builtin->builtin_decfloat;
   lai->primitive_type_vector [c_primitive_type_decdouble] = builtin->builtin_decdouble;
   lai->primitive_type_vector [c_primitive_type_declong] = builtin->builtin_declong;
+#ifdef	VE_CUSTOMIZATION
+  lai->primitive_type_vector [c_primitive_type_half] = builtin->builtin_half;
+#endif
 
   lai->bool_type_default = builtin->builtin_int;
 }
@@ -963,6 +974,9 @@ enum cplus_primitive_types {
   cplus_primitive_type_decfloat,
   cplus_primitive_type_decdouble,
   cplus_primitive_type_declong,
+#ifdef	VE_CUSTOMIZATION
+  cplus_primitive_type_half,
+#endif
   nr_cplus_primitive_types
 };
 
@@ -1018,6 +1032,10 @@ cplus_language_arch_info (struct gdbarch *gdbarch,
     = builtin->builtin_decdouble;
   lai->primitive_type_vector [cplus_primitive_type_declong]
     = builtin->builtin_declong;
+#ifdef	VE_CUSTOMIZATION
+  lai->primitive_type_vector [cplus_primitive_type_half]
+    = builtin->builtin_half;
+#endif
 
   lai->bool_type_symbol = "bool";
   lai->bool_type_default = builtin->builtin_bool;

@@ -16,7 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #include "defs.h"
 #include <signal.h>
@@ -33,6 +33,10 @@
 #include "completer.h"
 #include "observer.h"
 #include "cli/cli-utils.h"
+
+#ifdef VE_CUSTOMIZATION
+#include "ve-tdep.h"
+#endif
 
 /* Local function declarations.  */
 
@@ -75,7 +79,12 @@ core_file_command (char *filename, int from_tty)
   if (!filename)
     (core_target->to_detach) (core_target, filename, from_tty);
   else
-    (core_target->to_open) (filename, from_tty);
+    {
+      (core_target->to_open) (filename, from_tty);
+#ifdef VE_CUSTOMIZATION
+      ve_arch_number_hwcap();
+#endif
+    }
 }
 
 

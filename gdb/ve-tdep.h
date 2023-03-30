@@ -15,7 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-/* Changes by NEC Corporation for the VE port, 2017-2019 */
+/* Changes by NEC Corporation for the VE port, 2017-2021 */
 
 #ifndef VE_TDEP_H
 #define VE_TDEP_H
@@ -67,12 +67,21 @@ enum ve_float_model
   VE_FLOAT_LAST		/* Keep at end.  */
 };
 
+enum ve_float_16_model
+{
+  VE_FLOAT_16_NONE,	/* Half-precision floating point number unused.  */
+  VE_FLOAT_16_IEEE,	/* binary16 available only on VE3 or later.  */
+  VE_FLOAT_16_BFLOAT,	/* bfloat16 available only on VE3 or later.  */
+};
+
 /* ABI used by the inferior.  */
 enum ve_abi_kind
 {
   VE_ABI_AUTO,
   VE_ABI_VER0,	/* The intial ABI document 
 		System V Application Binary Interface */
+  VE_ABI_VER1,
+  VE_ABI_VER2,
   VE_ABI_LAST
 };
 
@@ -92,7 +101,9 @@ struct gdbarch_tdep
   enum ve_abi_kind ve_abi;
 
   enum ve_float_model fp_model; /* Floating point calling conventions.  */
+  enum ve_float_16_model fp16_model;
 
+  int have_pvl_registers;	/* Does the target report the Packed Vector Length  registers?  */
   int have_vec_registers;	/* Does the target report the Vector registers?  */
   CORE_ADDR lowest_pc;		/* Lowest address at which instructions 
 				   will appear.  */
@@ -135,9 +146,32 @@ extern char *ve_exec_file;
 
 /* ve_exec launcher path */
 #define VE_EXEC		"ve_exec"
-#define VE_EXEC_PATH BINDIR "/" VE_EXEC
+#define VE_EXEC_PATH "/opt/nec/ve/bin/" VE_EXEC
 
 /* traceme option */
 #define	VE_OPT_TRACEME	"--traceme"
+
+/* check 16bit Floating-Point mode */
+extern int ve_fp16_none(struct gdbarch * );
+extern int ve_fp16_ieee(struct gdbarch * );
+extern int ve_fp16_bfloat(struct gdbarch * );
+
+/* Get VE arch number */
+extern int get_ve_arch_number(void);
+extern int ve_arch_number_sysfs(void);
+extern int ve_arch_number_hwcap(void);
+#define CLASS_VE	"/sys/class/ve"		/* Part #1 of ve_arch_class */
+#define ARCH_FILE	"ve_arch_class"		/* Part #2 of ve_arch_class */
+#define ARCH_FILE_BSIZE	16			/* buffer of contents in ve_arch_class */
+#define ARCH_PATH_BSIZE	64			/* buffer of "/sys/class/ve/ve#/ve_arch_class" */
+#define IS_VE1()	(get_ve_arch_number() == 1)
+#define IS_VE3()	(get_ve_arch_number() == 3)
+
+#define HWCAP_VE_MASK (0xFFFFFFFF)
+#define HWCAP_VE_VE1 (0x0)
+#define HWCAP_VE_VE3 (0x1)
+
+extern int ve_ignore_registers(int );
+extern int ve_reg_consistency(void);
 
 #endif /* ve-tdep.h */

@@ -1517,6 +1517,22 @@ step_over_info_valid_p (void)
 	  || stepping_past_nonsteppable_watchpoint ());
 }
 
+#ifdef VE_CUSTOMIZATION
+/*
+ * This function recovers some info when ptrace() fails in step over and
+ * do nothins in Not step over.
+ * Don't call resume_cleanups() to clean up of resume() or
+ * upper functions, which are finish_step_over() and etc..., on backtrace.
+ * It has to be called after finishing an event.
+ */
+void
+recover_step_over(void)
+{
+  if (step_over_info_valid_p ())
+    clear_step_over_info ();
+}
+#endif
+
 
 /* Displaced stepping.  */
 

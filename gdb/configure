@@ -12,7 +12,7 @@
 # This configure script is free software; the Free Software Foundation
 # gives unlimited permission to copy, distribute and modify it.
 #
-# Changes by NEC Corporation for the VE port, 2017-2019
+# Changes by NEC Corporation for the VE port, 2017-2021
 #
 ## -------------------- ##
 ## M4sh Initialization. ##
@@ -5749,7 +5749,7 @@ case "${targ}" in
 	ve*-*-linux*)
 cat >>confdefs.h <<_ACEOF
 #define	VE_CUSTOMIZATION	1
-#define	LIBTHREAD_DB_SEARCH_PATH	"/opt/nec/ve/share/gdb/auto-load/lib64"
+#define	LIBTHREAD_DB_SEARCH_PATH	"/opt/nec/ve3/share/gdb/auto-load/lib64:/opt/nec/ve/share/gdb/auto-load/lib64"
 _ACEOF
 	;;
 esac

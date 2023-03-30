@@ -2345,7 +2345,8 @@ enum bfd_architecture
   bfd_arch_visium,     /* Visium */
 #define bfd_mach_visium        1
   bfd_arch_ve,     /* NEC VE */
-#define bfd_mach_ve 0
+#define bfd_mach_ve    0
+#define bfd_mach_ve3   1
   bfd_arch_last
   };
 
@@ -6452,6 +6453,12 @@ assembler and not (currently) written to any object files.  */
 
 /* NEC VE - TPOFF32. */
   BFD_RELOC_VE_TPOFF32,
+
+/* NEC VE - CALL_HI32. */
+  BFD_RELOC_VE_CALL_HI32,
+
+/* NEC VE - CALL_LO32. */
+  BFD_RELOC_VE_CALL_LO32,
   BFD_RELOC_UNUSED };
 
 typedef enum bfd_reloc_code_real bfd_reloc_code_real_type;

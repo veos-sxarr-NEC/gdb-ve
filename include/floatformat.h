@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.  */
+/* Changes by NEC Corporation for the VE port, 2021 */
 
 #if !defined (FLOATFORMAT_H)
 #define FLOATFORMAT_H 1
@@ -133,6 +134,10 @@ extern const struct floatformat floatformat_ia64_quad_little;
 /* IBM long double (double+double).  */
 extern const struct floatformat floatformat_ibm_long_double_big;
 extern const struct floatformat floatformat_ibm_long_double_little;
+#ifdef	VE_CUSTOMIZATION
+extern const struct floatformat floatformat_bfloat16_big;
+extern const struct floatformat floatformat_bfloat16_little;
+#endif
 
 /* Convert from FMT to a double.
    FROM is the address of the extended float.

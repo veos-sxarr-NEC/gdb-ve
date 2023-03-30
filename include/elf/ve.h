@@ -64,7 +64,30 @@ START_RELOC_NUMBERS (elf_ve_reloc_type)
   RELOC_NUMBER (R_VE_TPOFF_HI32, 32)
   RELOC_NUMBER (R_VE_TPOFF_LO32, 33)
   RELOC_NUMBER (R_VE_TPOFF32, 34)
+  RELOC_NUMBER (R_VE_CALL_HI32, 35)
+  RELOC_NUMBER (R_VE_CALL_LO32, 36)
 
 END_RELOC_NUMBERS (R_VE_max)
+
+/* Processor specific flags for the ELF header e_flags field.  */
+/* VE architecture field.  */
+#define EF_VE_ARCH_MASK		0x0000000f
+#define EF_VE_ARCH_VE1		0x00000000
+#define EF_VE_ARCH_VE3		0x00000001
+
+/* VE ABI version field.  */
+#define EF_VE_ABI_MASK		0x000f0000
+#define EF_VE_ABI_VER1		0x00000000
+#define EF_VE_ABI_VER2		0x00010000
+
+/* VE Half-precision floating point number format field.  */
+#define EF_VE_FP16_MASK		0xC0000000
+#define EF_VE_FP16_NONE		0x00000000
+#define EF_VE_FP16_IEEE		0x80000000
+#define EF_VE_FP16_BFLOAT	0x40000000
+#define EF_VE_FP16_MIXED	0xC0000000
+
+#define EF_VE_ABI_VERSION(flags) ((flags) & EF_VE_ABI_MASK)
+#define EF_VE_FP16_MODEL(flags) ((flags) & EF_VE_FP16_MASK)
 
 #endif /* !__ELF_VE_H__ */
