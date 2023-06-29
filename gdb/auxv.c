@@ -79,7 +79,14 @@ procfs_xfer_auxv (gdb_byte *readbuf,
 
 /* This function handles access via ld.so's symbol `_dl_auxv'.  */
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+/*
+ * Get AUXV info when attaching to a process
+ */
+enum target_xfer_status
+#else
 static enum target_xfer_status
+#endif
 ld_so_xfer_auxv (gdb_byte *readbuf,
 		 const gdb_byte *writebuf,
 		 ULONGEST offset,
@@ -299,6 +306,7 @@ target_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
 /* Per-inferior data key for auxv.  */
 static const struct inferior_data *auxv_inferior_data;
 
+#ifndef	VE_CUSTOMIZATION && VE3_CODE_MOD
 /*  Auxiliary Vector information structure.  This is used by GDB
     for caching purposes for each inferior.  This helps reduce the
     overhead of transfering data from a remote target to the local host.  */
@@ -307,6 +315,7 @@ struct auxv_info
   LONGEST length;
   gdb_byte *data;
 };
+#endif
 
 /* Handles the cleanup of the auxv cache for inferior INF.  ARG is ignored.
    Frees whatever allocated space there is to be freed and sets INF's auxv cache
@@ -349,13 +358,32 @@ invalidate_auxv_cache (void)
    return a pointer to the cache.  If not, fetch the auxv object from the
    target and cache it.  This function always returns a valid INFO pointer.  */
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+/*
+ * This is called by ve_get_xtbl_adr_hdr()
+ */
+struct auxv_info *
+#else
 static struct auxv_info *
+#endif
 get_auxv_inferior_data (struct target_ops *ops)
 {
   struct auxv_info *info;
   struct inferior *inf = current_inferior ();
 
   info = (struct auxv_info *) inferior_data (inf, auxv_inferior_data);
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (info == NULL)
+    {
+      info = XCNEW (struct auxv_info);
+      info->length = target_read_alloc (ops, TARGET_OBJECT_AUXV,
+					NULL, &info->data);
+      set_inferior_data (inf, auxv_inferior_data, info);
+    } else if (info->length == -1) {	/* no data */
+      info->length = target_read_alloc (ops, TARGET_OBJECT_AUXV,
+					NULL, &info->data);
+    }
+#else
   if (info == NULL)
     {
       info = XCNEW (struct auxv_info);
@@ -363,6 +391,7 @@ get_auxv_inferior_data (struct target_ops *ops)
 					NULL, &info->data);
       set_inferior_data (inf, auxv_inferior_data, info);
     }
+#endif
 
   return info;
 }

@@ -49,6 +49,9 @@
 #include "thread-fsm.h"
 #include "tid-parse.h"
 #include "upc-thread.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* Definition of struct thread_info exported to gdbthread.h.  */
 
@@ -1199,8 +1202,31 @@ validate_registers_access (void)
 int
 pc_in_thread_step_range (CORE_ADDR pc, struct thread_info *thread)
 {
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+/* step_range_start and step_range_end have already been translated */
+  CORE_ADDR start, end;
+  if (ve_xtbl_org2mod(thread->control.step_range_start, &start) == 0) {
+    if (ve3_debug_code_mod) {
+           printf_unfiltered(_("%s: start 0x%lx -> 0x%lx\n"),
+                   __FUNCTION__, thread->control.step_range_start, start);
+    }
+  } else {
+    start = thread->control.step_range_start;
+  }
+  if (ve_xtbl_org2mod(thread->control.step_range_end, &end) == 0) {
+    if (ve3_debug_code_mod) {
+           printf_unfiltered(_("%s: end 0x%lx -> 0x%lx\n"),
+                   __FUNCTION__, thread->control.step_range_end, end);
+    }
+  } else {
+    end = thread->control.step_range_end;
+  }
+
+  return (pc >= start && pc < end);
+#else
   return (pc >= thread->control.step_range_start
 	  && pc < thread->control.step_range_end);
+#endif
 }
 
 /* Helper for print_thread_info.  Returns true if THR should be

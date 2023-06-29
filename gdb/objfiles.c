@@ -55,6 +55,9 @@
 #include "solist.h"
 #include "gdb_bfd.h"
 #include "btrace.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* Keep a registry of per-objfile data-pointers required by other GDB
    modules.  */
@@ -474,6 +477,26 @@ entry_point_address_query (CORE_ADDR *entry_p)
   if (symfile_objfile == NULL || !symfile_objfile->per_bfd->ei.entry_point_p)
     return 0;
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR entry_point, mod_entry_point;
+
+    entry_point = symfile_objfile->per_bfd->ei.entry_point;
+    if (ve_xtbl_org2mod((uint64_t)entry_point, &mod_entry_point) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+		__FUNCTION__, entry_point, mod_entry_point);
+      }
+      entry_point = mod_entry_point;
+     }
+     *entry_p = (entry_point
+	      + ANOFFSET (symfile_objfile->section_offsets,
+			  symfile_objfile->per_bfd->ei.the_bfd_section_index));
+  }
+
+  return 1;
+
+#endif
   *entry_p = (symfile_objfile->per_bfd->ei.entry_point
 	      + ANOFFSET (symfile_objfile->section_offsets,
 			  symfile_objfile->per_bfd->ei.the_bfd_section_index));
@@ -1461,6 +1484,17 @@ find_pc_section (CORE_ADDR pc)
 {
   struct objfile_pspace_info *pspace_info;
   struct obj_section *s, **sp;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_pc;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+#endif
 
   /* Check for mapped overlay section first.  */
   s = find_pc_mapped_section (pc);

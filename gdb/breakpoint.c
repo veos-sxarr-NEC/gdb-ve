@@ -77,6 +77,9 @@
 #include "thread-fsm.h"
 #include "tid-parse.h"
 #include "interps.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* readline include files */
 #include "readline/readline.h"
@@ -9273,6 +9276,22 @@ add_location_to_breakpoint (struct breakpoint *b,
   set_breakpoint_location_function (loc,
 				    sal->explicit_pc || sal->explicit_line);
 
+#ifdef VE_CUSTOMIZATION && VE3_CODE_MOD
+  /*
+   * Translate a breakpoint address
+   */
+  {
+    CORE_ADDR mod;
+
+    if (ve_xtbl_org2mod((uint64_t)loc->address, &mod) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+			__FUNCTION__, loc->address, mod);
+      }
+      loc->address = mod;
+    }
+  }
+#endif
   /* While by definition, permanent breakpoints are already present in the
      code, we don't mark the location as inserted.  Normally one would expect
      that GDB could rely on that breakpoint instruction to stop the program,
@@ -13605,8 +13624,30 @@ say_where (struct breakpoint *b)
       if (opts.addressprint || b->loc->symtab == NULL)
 	{
 	  printf_filtered (" at ");
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+	  /*
+	   * print translated a breakpoint address
+	   */
+	  {
+	    CORE_ADDR mod_pc;
+
+	    if (ve_xtbl_org2mod((uint64_t)b->loc->address, &mod_pc) == 0) {
+              if (ve3_debug_code_mod) {
+                printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+			__FUNCTION__, (uint64_t)b->loc->address, mod_pc);
+              }
+	      fputs_filtered (paddress (b->loc->gdbarch, (unsigned long)mod_pc),
+			  gdb_stdout);
+	    } else {
+	      fputs_filtered (paddress (b->loc->gdbarch, b->loc->address),
+			  gdb_stdout);
+	    }
+
+	  }
+#else
 	  fputs_filtered (paddress (b->loc->gdbarch, b->loc->address),
 			  gdb_stdout);
+#endif
 	}
       if (b->loc->symtab != NULL)
 	{

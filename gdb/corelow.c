@@ -72,7 +72,11 @@ static struct gdbarch *core_gdbarch = NULL;
    or shared library bfds.  The core bfd sections are an
    implementation detail of the core target, just like ptrace is for
    unix child targets.  */
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+struct target_section_table *core_data;
+#else
 static struct target_section_table *core_data;
+#endif
 
 static void core_files_info (struct target_ops *);
 

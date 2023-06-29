@@ -56,6 +56,10 @@
 #include "extension.h"
 #include "observer.h"
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
+
 /* The possible choices of "set print frame-arguments", and the value
    of this setting.  */
 
@@ -147,7 +151,24 @@ frame_show_address (struct frame_info *frame,
       return 0;
     }
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR org_pc, mod_pc;
+
+    mod_pc = get_frame_pc (frame);
+    if (ve_xtbl_mod2org((uint64_t)mod_pc, &org_pc) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, mod_pc, org_pc);
+      }
+    } else {
+      org_pc = mod_pc;
+    }
+    return org_pc != sal.pc;
+  }
+#else
   return get_frame_pc (frame) != sal.pc;
+#endif
 }
 
 /* See frame.h.  */
@@ -1199,9 +1220,26 @@ find_frame_funname (struct frame_info *frame, char **funname,
     {
       struct bound_minimal_symbol msymbol;
       CORE_ADDR pc;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      /*
+       * Translate an address to show the function name
+       *  at breakpoint stop
+       */
+      CORE_ADDR org_pc;
+#endif
 
       if (!get_frame_address_in_block_if_available (frame, &pc))
 	return;
+
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_mod2org((uint64_t)pc, (uint64_t *)&org_pc) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		  __FUNCTION__, pc, org_pc);
+        }
+        pc = org_pc;
+      }
+#endif
 
       msymbol = lookup_minimal_symbol_by_pc (pc);
       if (msymbol.minsym != NULL)

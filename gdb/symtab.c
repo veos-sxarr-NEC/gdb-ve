@@ -69,6 +69,9 @@
 
 #include "parser-defs.h"
 #include "completer.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 // ALL-2390 Efficient handling of C++ templates
 struct PCComparator {
@@ -3019,6 +3022,17 @@ find_pc_sect_compunit_symtab (CORE_ADDR pc, struct obj_section *section)
   struct objfile *objfile;
   CORE_ADDR distance = 0;
   struct bound_minimal_symbol msymbol;
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_pc;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+#endif
 
   /* If we know that this is not a text address, return failure.  This is
      necessary because we loop based on the block's high and low code
@@ -3456,7 +3470,17 @@ struct symtab_and_line
 find_pc_line (CORE_ADDR pc, int notcurrent)
 {
   struct obj_section *section;
+#ifdef VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_pc;
 
+  if (ve_xtbl_mod2org((uint64_t)pc, (uint64_t *)&org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+	      __FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+#endif
   section = find_pc_overlay (pc);
   if (pc_in_unmapped_range (pc, section))
     pc = overlay_mapped_address (pc, section);
@@ -3747,6 +3771,25 @@ find_pc_line_pc_range (CORE_ADDR pc, CORE_ADDR *startptr, CORE_ADDR *endptr)
   struct symtab_and_line sal;
 
   sal = find_pc_line (pc, 0);
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  /* PC and END in sal are translated */
+  CORE_ADDR mod_pc, mod_end;
+
+  if (ve_xtbl_org2mod((uint64_t)sal.pc, (uint64_t *)&mod_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s: (pc) : 0x%lx -> 0x%lx\n"),
+              __FUNCTION__, sal.pc, mod_pc);
+    }
+    sal.pc = mod_pc;
+  }
+  if (ve_xtbl_org2mod((uint64_t)sal.end, (uint64_t *)&mod_end) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s: (end) : 0x%lx -> 0x%lx\n"),
+              __FUNCTION__, sal.end, mod_end);
+    }
+    sal.end = mod_end;
+  }
+#endif
   *startptr = sal.pc;
   *endptr = sal.end;
   return sal.symtab != 0;
@@ -4048,10 +4091,33 @@ skip_prologue_using_sal (struct gdbarch *gdbarch, CORE_ADDR func_addr)
   CORE_ADDR start_pc;
   CORE_ADDR end_pc;
   const struct block *bl;
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_start_pc, org_end_pc;
+  CORE_ADDR save_start_pc, save_end_pc;
+  CORE_ADDR pc, mod_pc;
+#endif
 
   /* Get an initial range for the function.  */
   find_pc_partial_function (func_addr, NULL, &start_pc, &end_pc);
   start_pc += gdbarch_deprecated_function_start_offset (gdbarch);
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  save_start_pc = start_pc;
+  save_end_pc = end_pc;
+  if (ve_xtbl_mod2org((uint64_t)start_pc, &org_start_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, start_pc, org_start_pc);
+    }
+    start_pc = org_start_pc;
+  }
+  if (ve_xtbl_mod2org((uint64_t)end_pc, &org_end_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, end_pc, org_end_pc);
+    }
+    end_pc = org_end_pc;
+  }
+#endif
 
   prologue_sal = find_pc_line (start_pc, 0);
   if (prologue_sal.line != 0)
@@ -4085,7 +4151,11 @@ skip_prologue_using_sal (struct gdbarch *gdbarch, CORE_ADDR func_addr)
         if (item < last-1
 	      && (item+1)->line != 0
 	      && (item+1)->pc == start_pc)
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+	    return save_start_pc;	/* return modified address */
+#else
 	    return start_pc;
+#endif
 
 	}
 
@@ -4140,6 +4210,20 @@ skip_prologue_using_sal (struct gdbarch *gdbarch, CORE_ADDR func_addr)
 	}
     }
 
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (prologue_sal.end < end_pc)
+    pc = prologue_sal.end;
+  else
+    pc = prologue_sal.pc;
+  if (ve_xtbl_org2mod((uint64_t)pc, &mod_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc, mod_pc);
+    }
+    pc = mod_pc;
+  }
+  return pc;
+#else
   if (prologue_sal.end < end_pc)
     /* Return the end of this line, or zero if we could not find a
        line.  */
@@ -4147,6 +4231,7 @@ skip_prologue_using_sal (struct gdbarch *gdbarch, CORE_ADDR func_addr)
   else
     /* Don't return END_PC, which is past the end of the function.  */
     return prologue_sal.pc;
+#endif
 }
 
 /* If P is of the form "operator[ \t]+..." where `...' is

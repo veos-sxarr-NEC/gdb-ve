@@ -1045,5 +1045,8 @@
 #define AT_SUN_LDDATA   2016    /* Dynamic linker's data segment address.  */
 #define AT_SUN_AUXFLAGS	2017	/* AF_SUN_ flags passed from the kernel.  */
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#define	AT_VE_XTBL_ADR	1000	/* xtbl to avoid double booking */
+#endif
 
 #endif /* _ELF_COMMON_H */

@@ -34,6 +34,9 @@
 #include "gdbcmd.h"
 #include "block.h"
 #include "inline-frame.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* Return the innermost lexical block in execution in a specified
    stack frame.  The frame address is assumed valid.
@@ -135,7 +138,20 @@ get_frame_function (struct frame_info *frame)
 struct symbol *
 find_pc_sect_function (CORE_ADDR pc, struct obj_section *section)
 {
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  const struct block *b;
+  uint64_t org;
+  if (ve_xtbl_mod2org(pc, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:mod2org: pc 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, org);
+    }
+    pc = org;
+  }
+  b = block_for_pc_sect (pc, section);
+#else
   const struct block *b = block_for_pc_sect (pc, section);
+#endif
 
   if (b == 0)
     return 0;
@@ -149,6 +165,16 @@ find_pc_sect_function (CORE_ADDR pc, struct obj_section *section)
 struct symbol *
 find_pc_function (CORE_ADDR pc)
 {
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  uint64_t org;
+  if (ve_xtbl_mod2org(pc, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:mod2org: pc 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, org);
+    }
+    pc = org;
+  }
+#endif
   return find_pc_sect_function (pc, find_pc_mapped_section (pc));
 }
 
@@ -198,6 +224,18 @@ find_pc_partial_function_gnu_ifunc (CORE_ADDR pc, const char **name,
   struct compunit_symtab *compunit_symtab = NULL;
   struct objfile *objfile;
   CORE_ADDR mapped_pc;
+
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  uint64_t org, mod;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+		      __FUNCTION__, pc, org);
+    }
+    pc = org;
+  }
+#endif
 
   /* To ensure that the symbol returned belongs to the correct setion
      (and that the last [random] symbol from the previous section
@@ -286,6 +324,15 @@ find_pc_partial_function_gnu_ifunc (CORE_ADDR pc, const char **name,
 	*address = overlay_unmapped_address (cache_pc_function_low, section);
       else
 	*address = cache_pc_function_low;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)*address, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+		      __FUNCTION__, *address, mod);
+        }
+        *address = mod;
+      }
+#endif
     }
 
   if (name)
@@ -305,6 +352,15 @@ find_pc_partial_function_gnu_ifunc (CORE_ADDR pc, const char **name,
 	}
       else
 	*endaddr = cache_pc_function_high;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)*endaddr, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+		      __FUNCTION__, *endaddr, mod);
+        }
+        *endaddr = mod;
+      }
+#endif
     }
 
   if (is_gnu_ifunc_p)

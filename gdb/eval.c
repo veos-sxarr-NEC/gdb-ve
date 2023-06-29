@@ -45,6 +45,9 @@
 #include "python/python.h"
 #include <ctype.h>
 #include <math.h>
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* This is defined in valops.c */
 extern int overload_resolution;
@@ -2289,6 +2292,22 @@ evaluate_subexp_standard (struct type *expect_type,
 
       if (argvec[0] == NULL)
 	error (_("Cannot evaluate function -- may be inlined"));
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      {
+        CORE_ADDR address, mod_address;
+
+	/* get argvec[0]->location.address */
+	address = value_raw_address(argvec[0]);
+	if (ve_xtbl_org2mod((uint64_t)(address), &mod_address) == 0) {
+          if (ve3_debug_code_mod) {
+            printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+		__FUNCTION__, address, mod_address);
+          }
+	  /* set argvec[0]->location.address */
+	  set_value_address(argvec[0], mod_address);
+        }
+      }
+#endif
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	{
 	  /* If the return type doesn't look like a function type, call an

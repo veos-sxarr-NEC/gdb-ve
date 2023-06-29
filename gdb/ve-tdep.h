@@ -30,6 +30,10 @@ struct address_space;
 
 #include "arch/ve.h"
 
+#ifdef	VE3_CODE_MOD
+#include "target.h"
+#endif
+
 /* Say how long Vector Mask registers are.  Used for documentation
    purposes and code readability.  These are fixed at 64 * 4 bits.  */
 #define VM_REGISTER_SIZE        32
@@ -173,5 +177,73 @@ extern int ve_arch_number_hwcap(void);
 
 extern int ve_ignore_registers(int );
 extern int ve_reg_consistency(void);
+
+#ifdef	VE3_CODE_MOD
+extern enum target_xfer_status ve_memory_xfer_auxv(struct target_ops *,
+                  enum target_object , const char *, gdb_byte *,
+                  const gdb_byte *, ULONGEST , ULONGEST , ULONGEST *);
+
+/* double booking */
+
+#define		SIZE_2MB	(2*1024*1024)
+/* Caution: REVISIT
+ * 	Change the definitions of 'struct ve_xtbl_adr' and
+ * 	'struct ve_xtbl_adr_hdr' to comments.
+ * 	No changes to included files are required, because
+ * 	"ve-tdep.h" includes the file defines them.
+ */
+
+/*
+ * address xform table
+ * (member)
+ *	org:		start address of text section in original code
+ *	xtbl:		address of address xform table
+ *	xtbl_size:	sizeo of address xform table
+ * (range)
+ *   original address
+ * 	org <= [address] <= org + xtbl_size - sizeof(uint64_t)
+ *   modified address
+ *	xtbl[0] <= [address] <= xtbl[xtbl_size/sizeof(uint64_t) - 1]
+ */
+struct ve_xtbl_adr {
+	uint64_t	org;
+	uint64_t *	xtbl;
+	uint64_t	xtbl_size;
+};
+
+struct ve_xtbl_range {
+	uint64_t	start;
+	uint64_t	end;
+};
+
+struct ve_xtbl_adr_e {
+	uint64_t	org;
+	uint64_t *	xtbl;
+	uint64_t	xtbl_size;
+	ve_xtbl_range	range_o;	/* original address range */
+	ve_xtbl_range	range_x;	/* translated address range */
+};
+
+/*
+ * header of address xform table
+ * (member)
+ * 	num:	number of address xform table
+ * 	tbl:	array of address xform table
+ */
+struct ve_xtbl_adr_hdr {
+	uint64_t		num;
+	struct ve_xtbl_adr 	tbl[(SIZE_2MB-sizeof(uint64_t))/sizeof(struct ve_xtbl_adr)];
+};
+
+struct ve_xtbl_adr_hdr_e {
+	struct ve_xtbl_adr_hdr	hd;	/* original X header */
+	uint64_t		num;
+	struct ve_xtbl_adr_e *	tbl;
+};
+
+extern int ve_xtbl_org2mod(uint64_t , uint64_t *);
+extern int ve_xtbl_mod2org(uint64_t , uint64_t *);
+extern int ve3_debug_code_mod;
+#endif	/* VE3_CODE_MOD */
 
 #endif /* ve-tdep.h */

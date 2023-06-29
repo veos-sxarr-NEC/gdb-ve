@@ -36,6 +36,9 @@
 #ifdef VE_CUSTOMIZATION
 #include "gdbcmd.h"
 #include "ve-ptrace.h"
+#ifdef	VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 static int inf_ptrace_debug;
 #endif
 
@@ -653,7 +656,12 @@ inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
 	  }
       }
 #endif
+#ifdef VE_CUSTOMIZATION && VE3_CODE_MOD
+      /* info auxv command */
+      return ve_memory_xfer_auxv(ops, object, annex, readbuf, writebuf, offset, len, xfered_len);
+#else
       return TARGET_XFER_E_IO;
+#endif
 
     case TARGET_OBJECT_WCOOKIE:
       return TARGET_XFER_E_IO;

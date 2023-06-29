@@ -29,6 +29,9 @@
 #include "addrmap.h"
 #include "gdbtypes.h"
 #include "objfiles.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* This is used by struct block to store namespace-related info for
    C++ files, namely using declarations and the current namespace in
@@ -192,6 +195,17 @@ blockvector_for_pc_sect (CORE_ADDR pc, struct obj_section *section,
 {
   const struct blockvector *bl;
   struct block *b;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_pc;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+#endif
 
   if (cust == NULL)
     {

@@ -75,6 +75,20 @@
 #include "auxv.h"
 #include "elf/common.h"
 
+#ifdef	VE3_CODE_MOD
+/* for ve_memory_xfer_auxv() */
+#include "elf.h"
+static void set_code_mod(void);
+/* VE3 code modified flags
+ * 	ve3_code_mod:
+ * 		0: No
+ * 		1: Yes
+ */
+static int ve3_code_mod = 0;
+int ve3_debug_code_mod = 0;
+
+#endif
+
 static int ve_debug;
 
 char *ve_exec_file = VE_EXEC_PATH;
@@ -354,7 +368,6 @@ ve_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
     {
       CORE_ADDR post_prologue_pc
 	= skip_prologue_using_sal (gdbarch, func_addr);
-      struct compunit_symtab *cust = find_pc_compunit_symtab (func_addr);
 
       if (ve_debug)
 	fprintf_unfiltered (gdb_stdlog, "fu: %s: prologue using sal (post pc 0x%lx)\n",
@@ -1819,6 +1832,9 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   struct tdesc_arch_data *tdesc_data = NULL;
   int i;
   const struct target_desc *tdesc = info.target_desc;
+#ifdef	VE3_CODE_MOD
+  char *env_double_booking;
+#endif
 
   /* If we have an object to base this architecture on, try to determine
      its ABI.  */
@@ -1871,6 +1887,24 @@ ve_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	  break;
 	}
     }
+#ifdef	VE3_CODE_MOD
+  /*
+   * Don't check ELF flag.
+   * Because loaded dynamic link libraries may need X-table.
+   */
+  env_double_booking = getenv("VE_GDB_NO_DYNAMIC_CD");
+  if (env_double_booking != NULL && strcmp(env_double_booking,"0") == 0) {
+	  /* double booking OFF */
+	  ;
+  } else if (info.abfd != NULL) {
+    int e_flags = elf_elfheader (info.abfd)->e_flags;
+
+    /* VE1 binary and VE3 machine */
+    if (EF_VE_ARCH(e_flags) == EF_VE_ARCH_VE1 && IS_VE3()) {
+      set_code_mod();
+    }
+  }
+#endif
 
   /* Check any target description for validity.  */
   tdesc = tdesc_ve3;
@@ -2313,6 +2347,625 @@ ve_reg_consistency(void)
 
 	return 0;
 }
+
+#ifdef	VE3_CODE_MOD
+/*
+ * Code modification for VE3
+ */
+#include	<assert.h>
+
+static void
+set_code_mod(void)
+{
+  ve3_code_mod = 1;
+}
+
+static int
+get_code_mod(void)
+{
+  return ve3_code_mod;
+}
+
+/* Implement the to_xfer_partial target_ops method for
+   TARGET_OBJECT_AUXV.  It handles access to AUXV.
+*/
+static enum target_xfer_status
+ve_sp_xfer_auxv(gdb_byte *readbuf,
+		const gdb_byte *writebuf,
+		ULONGEST offset,
+		ULONGEST len,
+		ULONGEST *xfered_len)
+{
+	reg_t sp;
+	Elf64_auxv_t auxv,*auxv_p;
+	size_t count;
+	uint64_t *addr;
+	pid_t lwpid,pid;
+	struct regcache * regcache;
+	enum register_status status;
+	int argc;
+	uint64_t val;
+
+	gdb_assert (readbuf != NULL);
+
+	if (offset > 0)
+		return TARGET_XFER_EOF;
+
+	if (writebuf)
+		return TARGET_XFER_E_IO;
+
+	lwpid = ptid_get_lwp (inferior_ptid);
+	/* REVISIT: inferior_ptid.lwp is changed */
+	if (lwpid == 0) {
+		pid = ptid_get_pid (inferior_ptid);
+		inferior_ptid = ptid_build(pid, pid, 0);
+		lwpid = ptid_get_lwp (inferior_ptid);
+	}
+
+	/* top frame */
+	regcache = get_current_regcache();
+	if (regcache_raw_read_unsigned(regcache, VE_SP_REGNUM, &sp) != REG_VALID)
+		return TARGET_XFER_E_IO;
+	/* get auxv info from sp
+	--------------------------
+	argc				<- sp
+	argv[0]
+	...
+	argv[x]				(== NULL)
+	environment[0]
+	...
+	environment[y]			(== NULL)
+	auxv[0] (type)
+	auxv[0] (val)
+	...
+	auxv[z]	(type)			( == AT_NULL)
+	auxv[z]	(val)			( == 0)
+	--------------------------
+	*/
+	addr = (uint64_t *)sp;
+	argc = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)addr, 0);
+	addr++; 				/* start of argv[] */
+	val = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)addr, 0);
+	addr += argc;				/* end of argv[] */
+	val = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)addr, 0);
+	if (val != (int)NULL)			/* check end mark */
+		return TARGET_XFER_E_IO;
+
+	addr++;					/* start of environment[] */
+	/* val == NULL: end of environment[] */
+	while ((val = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)addr, 0)) != NULL)
+		addr++;
+
+	addr++;					/* start of auxv[] */
+	auxv_p = (Elf64_auxv_t *)addr;
+	for (count = 0;count < len ;auxv_p++) {
+		addr = (uint64_t *)auxv_p;
+
+	        auxv.a_type = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)addr, 0);
+	        auxv.a_un.a_val = ptrace_func (PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)(addr+1), 0);
+		memcpy(readbuf + count , &auxv, sizeof(Elf64_auxv_t));
+		count += sizeof(Elf64_auxv_t);
+		if (auxv.a_type == AT_NULL)
+			break;
+	}
+	if (auxv.a_type != AT_NULL) {
+		/* Too BIG (AUXV data < 4096) */
+		return TARGET_XFER_E_IO;
+	}
+
+	*xfered_len = count;			/* sum of xfer */
+
+	return TARGET_XFER_OK;			/* end of auxv[] */
+}
+
+/*
+ * get auxv infos
+ *
+ * Return value:
+ * 	TARGET_XFER_OK:	success
+ * 	else:		failed
+ */
+enum target_xfer_status
+ve_memory_xfer_auxv(struct target_ops *ops,
+                  enum target_object object,
+                  const char *annex,
+                  gdb_byte *readbuf,
+                  const gdb_byte *writebuf,
+                  ULONGEST offset,
+                  ULONGEST len, ULONGEST *xfered_len)
+{
+	enum target_xfer_status status;
+
+	gdb_assert (object == TARGET_OBJECT_AUXV);
+	gdb_assert (readbuf != NULL);
+	gdb_assert (writebuf == NULL);
+
+	/* static link : gdb can see "_dl_auxv" symbol.
+	 * dynamic link: gdb can Not see it now.
+	 */
+	if (current_inferior ()->attach_flag != 0) {	/* gdb attach a process */
+
+		status = ld_so_xfer_auxv (readbuf, writebuf, offset, len, xfered_len);
+	} else {	/* gdb run a process */
+		status = ve_sp_xfer_auxv(readbuf, writebuf, offset, len, xfered_len);
+	}
+
+	return status;
+}
+
+#include	"auxv.h"
+
+/*
+ * free extended X table header and X table
+ */
+static void
+ve_free_xtbl_adr_hdr(struct ve_xtbl_adr_hdr_e * hd_e)
+{
+	int i;
+
+	if (hd_e->tbl == NULL)	/* verbose */
+		return;
+
+	for(i= 0;i< hd_e->num;i++) {
+		if (hd_e->tbl[i].xtbl != NULL)
+			free(hd_e->tbl[i].xtbl);
+	}
+	free(hd_e->tbl);
+
+	hd_e->tbl = NULL;
+}
+
+static void
+cleanup_xtbl_adr_hdr(void *arg)
+{
+	struct ve_xtbl_adr_hdr_e *hd_e;
+
+	if (ve3_debug_code_mod)
+		printf_unfiltered(_("%s: called\n"),
+			__FUNCTION__);
+	hd_e = (struct ve_xtbl_adr_hdr_e *)arg;
+
+	ve_free_xtbl_adr_hdr(hd_e);
+}
+
+/*
+ * get data from core file
+ *	val: buffer to store data
+ *	addr: address to get
+ *
+ * Caution: This function is used after calling core_open().
+ */
+static int
+ve_core_read(uint64_t * val, CORE_ADDR addr)
+{
+	ULONGEST xlen;
+	extern struct target_section_table *core_data;
+	enum target_xfer_status ret;
+
+	assert(core_bfd != NULL);
+
+	ret = section_table_xfer_memory_partial((gdb_byte *)val,NULL,
+		(ULONGEST)addr, sizeof(*val), &xlen,
+		core_data->sections, core_data->sections_end, NULL);
+	if (ret != TARGET_XFER_OK)
+		return -1;
+
+	return 0;
+}
+
+/*
+ *  get X table header from a pseudo process
+ *
+ *  Return value:
+ *  	0: Success
+ *  	-1: Failed
+ */
+static int
+ve_get_xtbl(pid_t lwpid, struct ve_xtbl_adr_hdr *hd, CORE_ADDR xtbl)
+{
+	long ret;
+	uint64_t * member;
+	int idx;
+
+	/* Get X table header */
+	member = (uint64_t *)xtbl;	/* address of X table header */
+	ret = ptrace(PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)member, 0);
+	if (ret == -1)
+		return -1;
+	hd->num = ret;
+	member++;
+	for (idx = 0;idx < hd->num; idx++) {
+		ret = ptrace(PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)member, 0);
+		if (ret == -1)
+			return -1;
+		hd->tbl[idx].org = ret;
+		member++;
+		ret = ptrace(PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)member, 0);
+		if (ret == -1)
+			return -1;
+		hd->tbl[idx].xtbl = (uint64_t *)ret;
+		member++;
+		ret  = ptrace(PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)member, 0);
+		if (ret == -1)
+			return -1;
+		hd->tbl[idx].xtbl_size = ret;
+		member++;
+	}
+
+	return 0;
+}
+
+/*
+ *  get X table header from a core file
+ *
+ *  Return value:
+ *  	0: Success
+ *  	-1: Failed
+ */
+static int
+ve_get_xtbl_core(struct ve_xtbl_adr_hdr *hd, CORE_ADDR xtbl)
+{
+	long ret;
+	uint64_t * member;
+	int idx;
+
+	/* Get X table header */
+	member = (uint64_t *)xtbl;	/* address of X table header */
+	if (ve_core_read((uint64_t *)&ret,(CORE_ADDR) member) != 0)
+		return -1;
+	hd->num = ret;
+	member++;
+	for (idx = 0;idx < hd->num; idx++) {
+		if (ve_core_read((uint64_t *)&ret,(CORE_ADDR) member) != 0)
+			return -1;
+		hd->tbl[idx].org = ret;
+		member++;
+		if (ve_core_read((uint64_t *)&ret,(CORE_ADDR) member) != 0)
+			return -1;
+		hd->tbl[idx].xtbl = (uint64_t *)ret;
+		member++;
+		if (ve_core_read((uint64_t *)&ret,(CORE_ADDR) member) != 0)
+			return -1;
+		hd->tbl[idx].xtbl_size = ret;
+		member++;
+	}
+
+	return 0;
+}
+/*
+ * get original value of p_ve_xtblhdr from "AT_VE_XTBL_ADR" in AUXV infos.
+ *
+ * Return value:
+ * 	0:	success
+ * 	-1:	failed
+ *
+ */
+static int
+ve_get_xtbl_adr_hdr_org(pid_t lwpid, struct ve_xtbl_adr_hdr *hd)
+{
+	struct auxv_info *info;
+	struct target_ops *ops;
+	gdb_byte *data, *ptr;
+	CORE_ADDR type;
+	static CORE_ADDR xtbl;
+
+	/* Get address of X table header from AT_VE_XTBL_ADR in AUXV info */
+	ops = &current_target;
+	info = get_auxv_inferior_data(ops);
+	data = info->data;
+	ptr = data;
+	if (info->length <= 0)
+		return -1;
+	while (target_auxv_parse (ops, &ptr, data + info->length, &type, &xtbl) > 0) {
+		if (type == AT_VE_XTBL_ADR)
+			break;
+	}
+	if (type != AT_VE_XTBL_ADR)
+		return -1;
+
+	/* get X-table header from a core file */
+	if (core_bfd) {
+		return ve_get_xtbl_core(hd, xtbl);
+	}
+
+	/* get X-table header from a pseudo process */
+	return ve_get_xtbl(lwpid, hd, xtbl);
+}
+
+static void
+print_ve_xtbl_adr_hdr_e(struct ve_xtbl_adr_hdr_e * hd_e)
+{
+	int i;
+	struct ve_xtbl_adr_e *tbl;
+
+	printf_unfiltered(_("--- ve_xtbl_adr_hdr_e ---\n"));
+	printf_unfiltered(_("num: %ld\n"), hd_e->num);
+	for(i = 0;i < hd_e->num;i++) {
+		tbl = &hd_e->tbl[i];
+		printf_unfiltered(_("tbl[%d]: 0x%lx\n"), i, tbl);
+		printf_unfiltered(_("tbl[%d].org 0x%lx\n"), i, tbl->org);
+		printf_unfiltered(_("tbl[%d].xtbl 0x%lx\n"), i, tbl->xtbl);
+		printf_unfiltered(_("tbl[%d].xtbl_size %ld\n"), i, tbl->xtbl_size);
+		printf_unfiltered(_("tbl[%d].range_o(0x%lx 0x%lx)\n"),
+			i, tbl->range_o.start, tbl->range_o.end);
+		printf_unfiltered(_("tbl[%d].range_x(0x%lx 0x%lx)\n"),
+			i, tbl->range_x.start, tbl->range_x.end);
+	}
+
+}
+
+/*
+ * check updating X-table header
+ * Return:
+ * 	0: X-table header is NOT updated
+ * 	1: X-table header is updated and
+ * 		X-table header in extended X-table header is updated.
+ * 	-1: X-table is Not available
+ */
+int
+check_updating_hdr(pid_t lwpid, struct ve_xtbl_adr_hdr_e * hd_e)
+{
+	struct ve_xtbl_adr_hdr org;
+	struct ve_xtbl_adr_hdr * hd = &hd_e->hd;
+	int i;
+
+	/* get the latest original translated address header */
+	if (ve_get_xtbl_adr_hdr_org(lwpid, &org) != 0) {
+		if (ve3_debug_code_mod) {
+			printf_unfiltered(_("%s: AUXV is not found\n"),
+				__FUNCTION__);
+		}
+		return -1;
+	}
+
+	/* check if X table header has been updated */
+	if (ve3_debug_code_mod) {
+		printf_unfiltered(_("%s: tbl=0x%lx num=%ld : %ld\n"),
+			__FUNCTION__, hd_e->tbl, hd_e->num, org.num);
+	}
+	if (hd_e->tbl != NULL && hd->num == org.num) {
+		for(i = 0;i < hd->num;i++) {
+			if (ve3_debug_code_mod > 2) {
+				printf_unfiltered(_("%s: (org) 0x%lx 0x%lx\n"),
+					__FUNCTION__,
+					hd->tbl[i].org, org.tbl[i].org);
+				printf_unfiltered(_("%s: (xtbl_size) %ld %ld\n"),
+					__FUNCTION__,
+					hd->tbl[i].xtbl_size, org.tbl[i].xtbl_size);
+				printf_unfiltered(_("%s: (xtbl) 0x%lx 0x%lx\n"),
+					__FUNCTION__,
+					hd->tbl[i].xtbl, org.tbl[i].xtbl);
+			}
+			if (hd->tbl[i].org != org.tbl[i].org)
+				break;
+			if (hd->tbl[i].xtbl_size != org.tbl[i].xtbl_size)
+				break;
+			if (hd->tbl[i].xtbl != org.tbl[i].xtbl)
+				break;
+		}
+		/* original X table header is unchanged */
+		if (i == hd->num) {
+			if (ve3_debug_code_mod) {
+				printf_unfiltered(_("%s:X table header is unchanged\n"),
+					__FUNCTION__);
+			}
+			return 0;
+		}
+	}
+
+	/* X-table header in EX X-table header is updated */
+	*hd = org;
+
+	return 1;
+}
+
+/*
+ * get ex-translated address table header and tables
+ * 	get original table header from ve_get_xtbl_adr_hdr_org()
+ *
+ * Return value: pointer to p_ve_xtblhdr(struct ve_xtbl_adr_hdr)
+ * 	!NULL:	success
+ * 	NULL:	failed
+ */
+static struct ve_xtbl_adr_hdr_e *
+ve_get_xtbl_adr_hdr(void)
+{
+	static struct ve_xtbl_adr_hdr_e hd_e;	/* to return unchanged data */
+	pid_t lwpid,pid;
+	int i,idx,max_idx;
+	int ret;
+
+	/* Preparing for ptrace */
+	lwpid = ptid_get_lwp (inferior_ptid);
+	/* use pid as lwp when lwp is not set */
+	if (lwpid == 0) {
+		lwpid = pid;
+	}
+
+	ret = check_updating_hdr(lwpid, &hd_e);
+	if (ret == 0) {
+		return &hd_e;	/* X-table is not changed */
+	} else if (ret < 0) {
+		return NULL;	/* X-table is not available */
+	}
+
+	/* free extended X table header and X table */
+	if (hd_e.num != 0) {
+		if (ve3_debug_code_mod) {
+			printf_unfiltered(_("%s:free ex-X tables\n"),
+				__FUNCTION__);
+		}
+		ve_free_xtbl_adr_hdr(&hd_e);
+	}
+
+	/* Set extended X table headr and X table */
+	if (ve3_debug_code_mod) {
+		printf_unfiltered(_("%s:Updating X tables\n"),
+			__FUNCTION__);
+	}
+	/* hd_e.hd has already set in check_updating_hdr() */
+	hd_e.num = hd_e.hd.num;
+	/* REVISIT free memory when the traced process is changed */
+	hd_e.tbl = (struct ve_xtbl_adr_e *)malloc(sizeof(struct ve_xtbl_adr_e) * hd_e.num);
+	if (hd_e.tbl == NULL)
+		return NULL;
+
+	for(i = 0;i < hd_e.num;i++) {
+		uint64_t * xtbl;
+		long val;
+
+		hd_e.tbl[i].org = hd_e.hd.tbl[i].org;
+		hd_e.tbl[i].xtbl_size = hd_e.hd.tbl[i].xtbl_size;
+		if (hd_e.tbl[i].xtbl_size == 0) {	/* freed X-table */
+			hd_e.tbl[i].xtbl = NULL;
+			continue;
+		}
+		/* REVISIT: free memory when the traced process is changed */
+		hd_e.tbl[i].xtbl = NULL;
+		xtbl = (uint64_t *)malloc(hd_e.tbl[i].xtbl_size);
+		if (xtbl == NULL)
+			return NULL;
+
+		max_idx = hd_e.tbl[i].xtbl_size / sizeof(uint64_t);
+		if (core_bfd) {
+			for (idx = 0;idx < max_idx;idx++) {
+				if (ve_core_read((uint64_t *)&val,(CORE_ADDR)&hd_e.hd.tbl[i].xtbl[idx]) != 0) {
+					free(xtbl);
+					return NULL;
+				}
+				xtbl[idx] = val;
+			}
+		} else {
+			for (idx = 0;idx < max_idx;idx++) {
+				/* get X-table from a pseudo process */
+				val = ptrace(PT_READ_D, lwpid, (PTRACE_TYPE_ARG3)&hd_e.hd.tbl[i].xtbl[idx], 0);
+				if (val == -1) {
+					free(xtbl);
+					return NULL;
+				}
+				xtbl[idx] = val;
+			}
+		}
+		hd_e.tbl[i].xtbl = xtbl;
+
+		/* original range */
+		hd_e.tbl[i].range_o.start = hd_e.tbl[i].org;
+		hd_e.tbl[i].range_o.end = hd_e.tbl[i].org + hd_e.tbl[i].xtbl_size - sizeof(uint64_t);
+		/* modified range */
+		hd_e.tbl[i].range_x.start = hd_e.tbl[i].xtbl[0];
+		hd_e.tbl[i].range_x.end = hd_e.tbl[i].xtbl[max_idx - 1];
+	}
+
+	if (ve3_debug_code_mod) {
+		print_ve_xtbl_adr_hdr_e(&hd_e);
+	}
+#if 0
+	make_cleanup(cleanup_xtbl_adr_hdr, &hd_e);
+#endif
+
+	return &hd_e;
+}
+
+
+/* original code addres xform modified code address
+ * 	org:		address of original code
+ * 	mod:		address of modified code is set
+ * Return value:
+ * 	0:	success
+ * 	-1:	failed
+ */
+int
+ve_xtbl_org2mod(uint64_t org, uint64_t *mod)
+{
+	struct ve_xtbl_adr_hdr_e *hd;
+	struct ve_xtbl_adr_e *tbl;
+	int tbl_idx;
+	uint64_t xtbl_offset;
+	int xtbl_idx;
+
+	assert(mod != NULL);
+
+	if (get_code_mod() == 0)
+		return -1;
+
+	hd = ve_get_xtbl_adr_hdr();
+	if (hd == NULL)
+		return -1;
+
+	/* select X table */
+	*mod = NULL;
+	for(tbl_idx = 0;tbl_idx < hd->num;tbl_idx++) {
+		tbl = &(hd->tbl[tbl_idx]);
+		if (tbl->xtbl == NULL)	/* freed X-table */
+			continue;
+		if (tbl->range_o.start <= org && org <= tbl->range_o.end)
+			break;
+	}
+	if (tbl_idx == hd->num)	/* table is not found */
+		return -1;
+
+	xtbl_offset = org - tbl->range_o.start;
+	xtbl_idx = xtbl_offset / sizeof(uint64_t);
+
+	*mod = tbl->xtbl[xtbl_idx];
+
+	return 0;
+}
+
+/* modified code addres xform original code address
+ * 	mod:		address of modified code
+ * 	org:		address of original code is set
+ * Return value:
+ * 	0:	success
+ * 	-1:	failed
+ */
+int
+ve_xtbl_mod2org(uint64_t mod, uint64_t *org)
+{
+	struct ve_xtbl_adr_hdr_e *hd;
+	struct ve_xtbl_adr_e *tbl;
+	int tbl_idx;
+	uint64_t xtbl_offset;
+	int xtbl_idx, xtbl_idx_max;
+
+	assert(org != NULL);
+
+	if (get_code_mod() == 0)
+		return -1;
+
+	hd = ve_get_xtbl_adr_hdr();
+	if (hd == NULL)
+		return -1;
+
+	/* select X table */
+	*org = NULL;
+	for(tbl_idx = 0;tbl_idx < hd->num;tbl_idx++) {
+		tbl = &(hd->tbl[tbl_idx]);
+		if (tbl->xtbl == NULL)	/* freed X-table */
+			continue;
+		xtbl_idx_max = tbl->xtbl_size/sizeof(uint64_t) - 1;
+		if (tbl->range_x.start <= mod && mod <= tbl->range_x.end)
+			break;
+	}
+	if (tbl_idx == hd->num)	/* table is not found */
+		return -1;
+
+	/* search original address */
+	xtbl_offset = mod - tbl->range_x.start;
+	xtbl_idx = xtbl_offset / sizeof(uint64_t);	/* near offset */
+	if (xtbl_idx > xtbl_idx_max)
+		xtbl_idx = xtbl_idx_max;
+	for(;xtbl_idx >= 0;xtbl_idx--) {
+		if (mod >= tbl->xtbl[xtbl_idx])
+			break;
+	}
+
+	*org = hd->tbl[tbl_idx].org + xtbl_idx * sizeof(uint64_t);
+
+	return 0;
+}
+#endif	/* VE3_CODE_MOD */
+
 
 extern initialize_file_ftype _initialize_ve_tdep; /* -Wmissing-prototypes */
 

@@ -71,7 +71,7 @@
 #include "common/enum-flags.h"
 
 #ifdef VE_CUSTOMIZATION
-#include "ve-tdep.h"	/* for VE_INSN_SIZE */
+#include "ve-tdep.h"	/* for VE_INSN_SIZE and VE3_CODE_MOD */
 #endif
 
 /******************** Fast track debugging code **************************
@@ -2906,6 +2906,15 @@ resume (enum gdb_signal sig)
 	 operation, like stepping the thread out of the dynamic
 	 linker or the displaced stepping scratch pad.  We
 	 shouldn't have allowed a range step then.  */
+#ifdef VE_CUSTOMIZATION && VE3_CODE_MOD
+      {
+	if (ve3_debug_code_mod) {
+	  printf_unfiltered("%s: pc=0x%lx\n",__FUNCTION__, pc);
+	  printf_unfiltered("%s: start=0x%lx end=0x%lx\n", __FUNCTION__,
+		tp->control.step_range_start, tp->control.step_range_end);
+	}
+      }
+#endif
       gdb_assert (pc_in_thread_step_range (pc, tp));
     }
 
@@ -7302,6 +7311,31 @@ process_event_stop_test (struct execution_control_state *ecs)
 
   stop_pc_sal = find_pc_line (stop_pc, 0);
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  /*
+   * stop_pc_sal.pc and stop_pc_sal.end are modified here
+   * because they are NOT used as original address.
+   */
+  {
+    CORE_ADDR mod_pc, mod_end;
+
+    if (ve_xtbl_org2mod((uint64_t)stop_pc_sal.pc, &mod_pc) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, stop_pc_sal.pc, mod_pc);
+      }
+      stop_pc_sal.pc = mod_pc;
+    }
+    if (ve_xtbl_org2mod((uint64_t)stop_pc_sal.end, &mod_end) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, stop_pc_sal.end, mod_end);
+      }
+      stop_pc_sal.end = mod_end;
+    }
+  }
+#endif
+
   /* NOTE: tausq/2004-05-24: This if block used to be done before all
      the trampoline processing logic, however, there are some trampolines 
      that have no names, so we should do trampoline handling first.  */
@@ -7750,6 +7784,10 @@ handle_step_into_function (struct gdbarch *gdbarch,
 {
   struct compunit_symtab *cust;
   struct symtab_and_line stop_func_sal, sr_sal;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_stop_func_start, org_stop_func_end;
+  CORE_ADDR mod_pc;
+#endif
 
   fill_in_stop_func (gdbarch, ecs);
 
@@ -7758,6 +7796,24 @@ handle_step_into_function (struct gdbarch *gdbarch,
     ecs->stop_func_start = gdbarch_skip_prologue (gdbarch,
 						  ecs->stop_func_start);
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (ve_xtbl_mod2org((uint64_t)ecs->stop_func_start, &org_stop_func_start) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, ecs->stop_func_start, org_stop_func_start);
+    }
+  } else {
+    org_stop_func_start = ecs->stop_func_start;
+  }
+  if (ve_xtbl_mod2org((uint64_t)ecs->stop_func_end, &org_stop_func_end) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, ecs->stop_func_end, org_stop_func_end);
+    }
+  } else {
+    org_stop_func_end = ecs->stop_func_end;
+  }
+#endif
   stop_func_sal = find_pc_line (ecs->stop_func_start, 0);
   /* Use the step_resume_break to step until the end of the prologue,
      even if that involves jumps (as it seems to on the vax under
@@ -7765,10 +7821,24 @@ handle_step_into_function (struct gdbarch *gdbarch,
   /* If the prologue ends in the middle of a source line, continue to
      the end of that source line (if it is still within the function).
      Otherwise, just go to end of prologue.  */
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (stop_func_sal.end
+      && stop_func_sal.pc != org_stop_func_start
+      && stop_func_sal.end < org_stop_func_end)
+    ecs->stop_func_start = stop_func_sal.end;
+  if (ve_xtbl_org2mod((uint64_t)ecs->stop_func_start, &mod_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, ecs->stop_func_start, mod_pc);
+    }
+    ecs->stop_func_start = mod_pc;
+  }
+#else
   if (stop_func_sal.end
       && stop_func_sal.pc != ecs->stop_func_start
       && stop_func_sal.end < ecs->stop_func_end)
     ecs->stop_func_start = stop_func_sal.end;
+#endif
 
   /* Architectures which require breakpoint adjustment might not be able
      to place a breakpoint at the computed address.  If so, the test
@@ -7819,6 +7889,11 @@ handle_step_into_function (struct gdbarch *gdbarch,
   keep_going (ecs);
 }
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+/* No address translation handling is required,
+ * because it doesn't support reverse direction.
+ */
+#endif
 /* Inferior has stepped backward into a subroutine call with source
    code that we should not step over.  Do step to the beginning of the
    last line of code in it.  */

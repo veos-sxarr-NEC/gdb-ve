@@ -299,6 +299,7 @@ case "${targ}" in
 cat >>confdefs.h <<_ACEOF
 #define	VE_CUSTOMIZATION	1
 #define	LIBTHREAD_DB_SEARCH_PATH	"/opt/nec/ve3/share/gdb/auto-load/lib64:/opt/nec/ve/share/gdb/auto-load/lib64"
+#define	VE3_CODE_MOD		1
 _ACEOF
 	;;
 esac

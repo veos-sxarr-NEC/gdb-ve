@@ -1024,6 +1024,9 @@ set_step_frame (void)
   struct thread_info *tp = inferior_thread ();
 
   find_frame_sal (frame, &sal);
+  /* only VE3_CODE_MOD
+   * PC and END in SAL are not translated because they are NOT used
+   * in set_step_info() */
   set_step_info (frame, sal);
   pc = get_frame_pc (frame);
   tp->control.step_start_function = find_pc_function (pc);
@@ -1421,6 +1424,19 @@ jump_command (char *arg, int from_tty)
     }
 
   addr = sal.pc;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR mod_addr;
+
+    if (ve_xtbl_org2mod((uint64_t)addr, (uint64_t *)&mod_addr) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+ 		__FUNCTION__, addr, mod_addr);
+      }
+      addr = mod_addr;
+    }
+  }
+#endif
 
   if (from_tty)
     {

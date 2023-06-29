@@ -87,7 +87,14 @@ END_RELOC_NUMBERS (R_VE_max)
 #define EF_VE_FP16_BFLOAT	0x40000000
 #define EF_VE_FP16_MIXED	0xC0000000
 
+#ifdef	VE3_CODE_MOD
+#define EF_VE_DYNAMIC_CD	0x00000000
+#define EF_VE_NO_DYNAMIC_CD	0x00000100
+
+#define EF_VE_ARCH(flags) 	((flags) & EF_VE_ARCH_MASK)
 #define EF_VE_ABI_VERSION(flags) ((flags) & EF_VE_ABI_MASK)
 #define EF_VE_FP16_MODEL(flags) ((flags) & EF_VE_FP16_MASK)
+#define EF_VE_DYNAMIC_CD_FLAG(flags)	((flags) & EF_VE_NO_DYNAMIC_CD)
+#endif	/* VE3_CODE_MOD */
 
 #endif /* !__ELF_VE_H__ */

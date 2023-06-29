@@ -31,6 +31,9 @@
 #include "remote.h"
 #include "valprint.h"
 #include "regset.h"
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /*
  * DATA STRUCTURE
@@ -1193,7 +1196,6 @@ regcache_collect_regset (const struct regset *regset,
 
 
 /* Special handling for register PC.  */
-
 CORE_ADDR
 regcache_read_pc (struct regcache *regcache)
 {
@@ -1218,6 +1220,24 @@ regcache_read_pc (struct regcache *regcache)
   else
     internal_error (__FILE__, __LINE__,
 		    _("regcache_read_pc: Unable to find PC"));
+
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  /*
+   * If dlopen() is used, this function may return the original address,
+   * so change it to the translated address.
+   */
+  {
+    CORE_ADDR mod_pc;
+
+    if (ve_xtbl_org2mod((uint64_t)pc_val, &mod_pc) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc_val, mod_pc);
+      }
+      pc_val = mod_pc;
+    }
+  }
+#endif
   return pc_val;
 }
 

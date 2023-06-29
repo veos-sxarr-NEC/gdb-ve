@@ -61,6 +61,10 @@
 
 #include <fcntl.h>
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
+
 /* Prototypes for local command functions */
 
 static void complete_command (char *, int);
@@ -1191,6 +1195,19 @@ disassemble_current_function (int flags)
   frame = get_selected_frame (_("No frame selected."));
   gdbarch = get_frame_arch (frame);
   pc = get_frame_address_in_block (frame);
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR org_pc;
+
+    if (ve_xtbl_mod2org(pc, &org_pc) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s: pc=0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, org_pc);
+      }
+      pc = org_pc;
+    }
+  }
+#endif
   if (find_pc_partial_function (pc, &name, &low, &high) == 0)
     error (_("No function contains program counter for selected frame."));
 #if defined(TUI)
@@ -1202,6 +1219,26 @@ disassemble_current_function (int flags)
 #endif
   low += gdbarch_deprecated_function_start_offset (gdbarch);
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR mod_low, mod_high;
+
+    if (ve_xtbl_org2mod(low, &mod_low) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: low(0x%lx -> 0x%lx)\n"),
+		__FUNCTION__, low, mod_low);
+      }
+      low = mod_low;
+    }
+    if (ve_xtbl_org2mod(high, &mod_high) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: high(0x%lx -> 0x%lx)\n"),
+		__FUNCTION__, high, mod_high);
+      }
+      high = mod_high;
+    }
+  }
+#endif
   print_disassembly (gdbarch, name, low, high, flags);
 }
 
@@ -1283,6 +1320,20 @@ disassemble_command (char *arg, int from_tty)
     }
 
   pc = value_as_address (parse_to_comma_and_eval (&p));
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR mod;
+
+    if (ve_xtbl_mod2org(pc, &mod) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s: pc=0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, mod);
+      }
+      pc = mod;
+    }
+  }
+#endif
+
   if (p[0] == ',')
     ++p;
   if (p[0] == '\0')
@@ -1315,6 +1366,26 @@ disassemble_command (char *arg, int from_tty)
       if (incl_flag)
 	high += low;
     }
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  {
+    CORE_ADDR mod_low, mod_high;
+
+    if (ve_xtbl_org2mod(low, &mod_low) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: low(0x%lx -> 0x%lx)\n"),
+		__FUNCTION__, low, mod_low);
+      }
+      low = mod_low;
+    }
+    if (ve_xtbl_org2mod(high, &mod_high) == 0) {
+      if (ve3_debug_code_mod) {
+        printf_unfiltered(_("%s:ve_xtbl_org2mod: high(0x%lx -> 0x%lx)\n"),
+		__FUNCTION__, high, mod_high);
+      }
+      high = mod_high;
+    }
+  }
+#endif
 
   print_disassembly (gdbarch, name, low, high, flags);
 }

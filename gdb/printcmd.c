@@ -646,6 +646,10 @@ build_address_symbolic (struct gdbarch *gdbarch,
   CORE_ADDR name_location = 0;
   struct obj_section *section = NULL;
   const char *name_temp = "";
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_addr, save_addr = addr;
+  CORE_ADDR mod_name_location;
+#endif
   
   /* Let's say it is mapped (not unmapped).  */
   *unmapped = 0;
@@ -661,6 +665,15 @@ build_address_symbolic (struct gdbarch *gdbarch,
 	  addr = overlay_mapped_address (addr, section);
 	}
     }
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (ve_xtbl_mod2org((uint64_t)addr, (uint64_t *)&org_addr) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, addr, org_addr);
+    }
+    addr = org_addr;
+  }
+#endif
 
   /* First try to find the address in the symbol table, then
      in the minsyms.  Take the closest one.  */
@@ -737,7 +750,19 @@ build_address_symbolic (struct gdbarch *gdbarch,
       && name_location + max_symbolic_offset > name_location)
     return 1;
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (ve_xtbl_org2mod((uint64_t)name_location, (uint64_t *)&mod_name_location) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, name_location, mod_name_location);
+    }
+    *offset = save_addr - mod_name_location;
+  } else {
+    *offset = addr - name_location;
+  }
+#else
   *offset = addr - name_location;
+#endif
 
   *name = xstrdup (name_temp);
 

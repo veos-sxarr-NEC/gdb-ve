@@ -29,6 +29,9 @@
 #include "dis-asm.h"
 #include "source.h"
 #include "gdbcmd.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 
 /* This variable limits the number of instructions that are disassembled (-1 = no limit). */
@@ -408,11 +411,30 @@ do_mixed_source_and_assembly_deprecated
   struct cleanup *ui_out_chain;
   struct cleanup *ui_out_tuple_chain = make_cleanup (null_cleanup, 0);
   struct cleanup *ui_out_list_chain = make_cleanup (null_cleanup, 0);
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org, mod;
+#endif
 
   gdb_assert (symtab != NULL && SYMTAB_LINETABLE (symtab) != NULL);
 
   nlines = SYMTAB_LINETABLE (symtab)->nitems;
   le = SYMTAB_LINETABLE (symtab)->item;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  if (ve_xtbl_mod2org((uint64_t)low, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, low, org);
+    }
+    low = org;
+  }
+  if (ve_xtbl_mod2org((uint64_t)high, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, high, org);
+    }
+    high = org;
+  }
+#endif
 
   if (flags & DISASSEMBLY_FILENAME)
     psl_flags |= PRINT_SOURCE_LINES_FILENAME;
@@ -442,8 +464,29 @@ do_mixed_source_and_assembly_deprecated
       mle[newlines].line = le[i].line;
       if (le[i].line > le[i + 1].line)
 	out_of_order = 1;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)le[i].pc, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, le[i].pc, mod);
+        }
+        mle[newlines].start_pc = mod;
+      } else {
+        mle[newlines].start_pc = le[i].pc;
+      }
+      if (ve_xtbl_org2mod((uint64_t)le[i + 1].pc, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, le[i + 1].pc, mod);
+        }
+        mle[newlines].end_pc = mod;
+      } else {
+        mle[newlines].end_pc = le[i + 1].pc;
+      }
+#else
       mle[newlines].start_pc = le[i].pc;
       mle[newlines].end_pc = le[i + 1].pc;
+#endif
       newlines++;
     }
 
@@ -453,9 +496,33 @@ do_mixed_source_and_assembly_deprecated
   if (i == nlines - 1 && le[i].pc < high)
     {
       mle[newlines].line = le[i].line;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)le[i].pc, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, le[i].pc, mod);
+        }
+        mle[newlines].start_pc = mod;
+      } else {
+        mle[newlines].start_pc = le[i].pc;
+      }
+#else
       mle[newlines].start_pc = le[i].pc;
+#endif
       sal = find_pc_line (le[i].pc, 0);
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)sal.end, &mod) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, le[i].pc, mod);
+        }
+        mle[newlines].end_pc = mod;
+      } else {
+        mle[newlines].end_pc = sal.end;
+      }
+#else
       mle[newlines].end_pc = sal.end;
+#endif
       newlines++;
     }
 
@@ -570,6 +637,26 @@ do_mixed_source_and_assembly (struct gdbarch *gdbarch, struct ui_out *uiout,
   struct symtab *last_symtab;
   int last_line;
   htab_t dis_line_table;
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_low, org_high;
+  CORE_ADDR mod_sal_end;
+  if (ve_xtbl_mod2org((uint64_t)low, &org_low) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, low, org_low);
+    }
+  } else {
+    org_low = low;	/* verbose */
+  }
+  if (ve_xtbl_mod2org((uint64_t)high, &org_high) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, high, org_high);
+    }
+  } else {
+    org_high = high;	/* verbose */
+  }
+#endif
 
   gdb_assert (main_symtab != NULL && SYMTAB_LINETABLE (main_symtab) != NULL);
 
@@ -595,11 +682,19 @@ do_mixed_source_and_assembly (struct gdbarch *gdbarch, struct ui_out *uiout,
   first_le = NULL;
 
   /* Skip all the preceding functions.  */
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  for (i = 0; i < nlines && le[i].pc < org_low; i++)
+    continue;
+
+  if (i < nlines && le[i].pc < org_high)
+    first_le = &le[i];
+#else
   for (i = 0; i < nlines && le[i].pc < low; i++)
     continue;
 
   if (i < nlines && le[i].pc < high)
     first_le = &le[i];
+#endif
 
   /* Add lines for every pc value.  */
   while (pc < high)
@@ -777,10 +872,23 @@ do_mixed_source_and_assembly (struct gdbarch *gdbarch, struct ui_out *uiout,
 	  gdb_assert (ui_out_list_chain != NULL);
 	}
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+      if (ve_xtbl_org2mod((uint64_t)sal.end, &mod_sal_end) == 0) {
+        if (ve3_debug_code_mod) {
+          printf_unfiltered(_("%s:ve_xtbl_org2mod: 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, sal.end, mod_sal_end);
+        }
+      }
+      if (mod_sal_end != 0)
+	end_pc = min (mod_sal_end, high);
+      else
+	end_pc = pc + 1;
+#else
       if (sal.end != 0)
 	end_pc = min (sal.end, high);
       else
 	end_pc = pc + 1;
+#endif
       num_displayed += dump_insns (gdbarch, uiout, di, pc, end_pc,
 				   how_many, flags, stb, &end_pc);
       pc = end_pc;

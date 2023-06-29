@@ -55,6 +55,9 @@
 #include "cli/cli-utils.h"
 #include "symbol.h"
 #include "gdbcmd.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "ve-tdep.h"
+#endif
 
 /* Accumulate the minimal symbols for each objfile in bunches of BUNCH_SIZE.
    At the end, copy them all into one newly allocated location on an objfile's
@@ -842,6 +845,17 @@ lookup_minimal_symbol_by_pc_section_1 (CORE_ADDR pc_in,
 struct bound_minimal_symbol
 lookup_minimal_symbol_by_pc_section (CORE_ADDR pc, struct obj_section *section)
 {
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  CORE_ADDR org_pc;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+#endif
   if (section == NULL)
     {
       /* NOTE: cagney/2004-01-27: This was using find_pc_mapped_section to
@@ -864,7 +878,20 @@ lookup_minimal_symbol_by_pc_section (CORE_ADDR pc, struct obj_section *section)
 struct bound_minimal_symbol
 lookup_minimal_symbol_by_pc (CORE_ADDR pc)
 {
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  struct obj_section *section;
+  uint64_t org;
+  if (ve_xtbl_mod2org(pc, &org) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:mod2org: pc 0x%lx -> 0x%lx\n"),
+		__FUNCTION__, pc, org);
+    }
+    pc = org;
+  }
+  section = find_pc_section (pc);
+#else
   struct obj_section *section = find_pc_section (pc);
+#endif
 
   if (section == NULL)
     {
@@ -1434,8 +1461,23 @@ terminate_minimal_symbol_table (struct objfile *objfile)
 static struct minimal_symbol *
 lookup_solib_trampoline_symbol_by_pc (CORE_ADDR pc)
 {
+#ifdef  VE_CUSTOMIZATION && VE3_CODE_MOD
+  struct obj_section *section;
+  struct bound_minimal_symbol msymbol;
+  CORE_ADDR org_pc;
+
+  if (ve_xtbl_mod2org((uint64_t)pc, &org_pc) == 0) {
+    if (ve3_debug_code_mod) {
+      printf_unfiltered(_("%s:ve_xtbl_mod2org:0x%lx -> 0x%lx\n"),
+                __FUNCTION__, pc, org_pc);
+    }
+    pc = org_pc;
+  }
+  section = find_pc_section (pc);
+#else
   struct obj_section *section = find_pc_section (pc);
   struct bound_minimal_symbol msymbol;
+#endif
 
   if (section == NULL)
     return NULL;

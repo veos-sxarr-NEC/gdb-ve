@@ -51,6 +51,9 @@
 #include "filesystem.h"
 #include "gdb_bfd.h"
 #include "filestuff.h"
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+#include "auxv.h"
+#endif
 
 /* Architecture-specific operations.  */
 
@@ -1137,6 +1140,15 @@ solib_add (const char *pattern, int from_tty,
 	ops->special_symbol_handling ();
       }
   }
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+  /* "_dl_auxv" symbol required for attachment is included in glibc
+   * for dynamically linked binaries, so AUXV information is obtained
+   * after the library symbol is registered.
+   */
+  if (current_inferior ()->attach_flag != 0) {	/* gdb attach a process */
+    get_auxv_inferior_data(&current_target);
+  }
+#endif
 }
 
 /* Implement the "info sharedlibrary" command.  Walk through the

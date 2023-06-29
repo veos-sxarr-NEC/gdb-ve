@@ -65,5 +65,20 @@ extern int fprint_target_auxv (struct ui_file *file, struct target_ops *ops);
 
 extern target_xfer_partial_ftype memory_xfer_auxv;
 
+#ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
+extern enum target_xfer_status ld_so_xfer_auxv (gdb_byte *,
+		const gdb_byte *, ULONGEST , ULONGEST , ULONGEST *);
+
+extern struct auxv_info * get_auxv_inferior_data (struct target_ops *ops);
+
+/*  Auxiliary Vector information structure.  This is used by GDB
+    for caching purposes for each inferior.  This helps reduce the
+    overhead of transfering data from a remote target to the local host.  */
+struct auxv_info
+{
+  LONGEST length;
+  gdb_byte *data;
+};
+#endif
 
 #endif
