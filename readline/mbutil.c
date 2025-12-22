@@ -20,6 +20,7 @@
 */
 
 #define READLINE_LIBRARY
+#define	_XOPEN_SOURCE	500	/* X/open 5 */
 
 #if defined (HAVE_CONFIG_H)
 #  include <config.h>

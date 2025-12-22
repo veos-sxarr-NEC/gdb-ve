@@ -785,6 +785,7 @@ Return the value of the variable in this frame." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject frame_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Frame",			  /* tp_name */
@@ -824,3 +825,15 @@ PyTypeObject frame_object_type = {
   0,				  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject frame_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Frame",
+    .tp_basicsize = sizeof(frame_object),
+    .tp_str = frapy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB frame object",
+    .tp_richcompare = frapy_richcompare,
+    .tp_methods = frame_object_methods,
+};
+#endif

@@ -48,6 +48,7 @@
 #include "observer.h"
 #include "objfiles.h"
 #include "extension.h"
+#include <algorithm>
 
 extern unsigned int overload_debug;
 /* Local functions.  */
@@ -1183,7 +1184,7 @@ value_assign (struct value *toval, struct value *fromval)
 	      {
 		put_frame_register_bytes (frame, value_reg,
 					  value_offset (toval),
-					  min (value_length (toval), value_length (fromval)),
+					  std::min (value_length (toval), value_length (fromval)),
 					  value_contents (fromval));
 	      }
 	  }
@@ -1265,7 +1266,7 @@ value_assign (struct value *toval, struct value *fromval)
   val = value_copy (toval);
   set_value_lazy (val, 0);
   memcpy (value_contents_raw (val), value_contents (fromval),
-	  min (value_length (val), value_length (fromval)));
+	  std::min (value_length (val), value_length (fromval)));
 
   /* We copy over the enclosing type and pointed-to offset from FROMVAL
      in the case of pointer types.  For object types, the enclosing type

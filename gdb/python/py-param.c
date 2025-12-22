@@ -779,6 +779,7 @@ gdbpy_initialize_parameters (void)
 
 
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject parmpy_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -819,3 +820,15 @@ PyTypeObject parmpy_object_type =
   parmpy_init,			  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject parmpy_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Parameter",
+    .tp_basicsize = sizeof(parmpy_object),
+    .tp_getattro = get_attr,
+    .tp_setattro = set_attr,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB parameter object",
+    .tp_init = parmpy_init,
+};
+#endif

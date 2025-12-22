@@ -322,6 +322,16 @@ So instead we use the macro below and test it against specific values.  */
 #define GCC_FINAL
 #endif
 
+#if __cplusplus >= 201103
+#define DISABLE_COPY_AND_ASSIGN(TYPE)           \
+  TYPE (const TYPE&) = delete;                  \
+  void operator= (const TYPE &) = delete
+  #else
+#define DISABLE_COPY_AND_ASSIGN(TYPE)           \
+  TYPE (const TYPE&);                           \
+  void operator= (const TYPE &)
+#endif /* __cplusplus >= 201103 */
+
 #ifdef __cplusplus
 }
 #endif

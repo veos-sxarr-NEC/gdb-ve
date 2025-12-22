@@ -4,7 +4,24 @@
 import sys
 import os
 import getopt
-from distutils import sysconfig
+
+# distutils.sysconfig's get_python_inc(), PREFIX, and EXEC_PREFIX have been deprecated in Python 3.10.
+if sys.version_info >= (3, 10):
+    import sysconfig
+    def get_prefix():
+        return sysconfig.get_config_var("prefix")
+    def get_exec_prefix():
+        return sysconfig.get_config_var("exec_prefix")
+    def get_python_inc(plat_specific=False):
+        if plat_specific:
+            return sysconfig.get_path('platinclude')
+        else:
+            return sysconfig.get_path('include')
+else:
+    from distutils import sysconfig
+    get_prefix = lambda: sysconfig.PREFIX
+    get_exec_prefix = lambda: sysconfig.EXEC_PREFIX
+    get_python_inc = sysconfig.get_python_inc
 
 valid_opts = ['prefix', 'exec-prefix', 'includes', 'libs', 'cflags',
               'ldflags', 'help']
@@ -45,14 +62,14 @@ def to_unix_path(path):
 
 for opt in opt_flags:
     if opt == '--prefix':
-        print (to_unix_path(sysconfig.PREFIX))
+        print (to_unix_path(get_prefix()))
 
     elif opt == '--exec-prefix':
-        print (to_unix_path(sysconfig.EXEC_PREFIX))
+        print (to_unix_path(get_exec_prefix()))
 
     elif opt in ('--includes', '--cflags'):
-        flags = ['-I' + sysconfig.get_python_inc(),
-                 '-I' + sysconfig.get_python_inc(plat_specific=True)]
+        flags = ['-I' + get_python_inc(),
+                 '-I' + get_python_inc(plat_specific=True)]
         if opt == '--cflags':
             flags.extend(getvar('CFLAGS').split())
         print (to_unix_path(' '.join(flags)))

@@ -406,6 +406,7 @@ static PyGetSetDef pspace_getset[] =
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject pspace_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -447,3 +448,16 @@ PyTypeObject pspace_object_type =
   0,				  /* tp_alloc */
   pspy_new,			  /* tp_new */
 };
+#else
+PyTypeObject pspace_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Progspace",
+    .tp_basicsize = sizeof(pspace_object),
+    .tp_dealloc = pspy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB progspace object",
+    .tp_getset = pspace_getset,
+    .tp_dictoffset = offsetof(pspace_object, dict),
+    .tp_new = pspy_new,
+};
+#endif

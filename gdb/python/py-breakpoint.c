@@ -1135,6 +1135,7 @@ static PyMethodDef breakpoint_object_methods[] =
   { NULL } /* Sentinel.  */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject breakpoint_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -1175,3 +1176,16 @@ PyTypeObject breakpoint_object_type =
   bppy_init,			  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject breakpoint_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Breakpoint",
+    .tp_basicsize = sizeof(gdbpy_breakpoint_object),
+    .tp_setattro = (setattrofunc)local_setattro,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB breakpoint object",
+    .tp_methods = breakpoint_object_methods,
+    .tp_getset = breakpoint_object_getset,
+    .tp_init = bppy_init,
+};
+#endif

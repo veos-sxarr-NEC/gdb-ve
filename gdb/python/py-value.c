@@ -1853,6 +1853,7 @@ static PyMappingMethods value_object_as_mapping = {
   valpy_setitem
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject value_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Value",			  /*tp_name*/
@@ -1894,3 +1895,22 @@ PyTypeObject value_object_type = {
   0,				  /* tp_alloc */
   valpy_new			  /* tp_new */
 };
+#else
+PyTypeObject value_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Value",
+    .tp_basicsize = sizeof(value_object),
+    .tp_dealloc = valpy_dealloc,
+    .tp_as_number = &value_object_as_number,
+    .tp_as_mapping = &value_object_as_mapping,
+    .tp_hash = valpy_hash,
+    .tp_call = valpy_call,
+    .tp_str = valpy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_CHECKTYPES | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB value object",
+    .tp_richcompare = valpy_richcompare,
+    .tp_methods = value_object_methods,
+    .tp_getset = value_object_getset,
+    .tp_new = valpy_new,
+};
+#endif

@@ -117,13 +117,6 @@ typedef struct
   ULONGEST opaque;
 } gdb_upc_pts_t;
 
-#ifndef min
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#endif
-#ifndef max
-#define max(a, b) ((a) > (b) ? (a) : (b))
-#endif
-
 /* * Enable dbx commands if set.  */
 extern int dbx_commands;
 

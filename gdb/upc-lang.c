@@ -46,6 +46,7 @@
 #include "objfiles.h"
 #include "upc-thread.h"
 #include "objfiles.h"
+#include <algorithm>
 
 #define UDA_SERVICE "/tmp/uda_service"
 
@@ -412,7 +413,7 @@ upc_value_fetch_lazy (struct value *val)
 
 	  for (thread_index = 0; thread_index < thread_elems; thread_index += buf_elems)
 	    {
-	      chunk_elems = min (thread_elems - thread_index, buf_elems);
+	      chunk_elems = std::min (thread_elems - thread_index, buf_elems);
 	      direct = indefinite || elem_pts.phase + chunk_elems <= block_size;
 	      if (direct)
 		{
@@ -431,7 +432,7 @@ upc_value_fetch_lazy (struct value *val)
 		  for (buf_index = 0; buf_index < chunk_elems; )
 		    {
 		      value_index = (indefinite?1:num_threads) * (((LONGEST)elem_pts.addrfield - (LONGEST)pts.addrfield) / elem_size - elem_pts.phase + pts.phase) + block_size * (elem_pts.thread - pts.thread) + elem_pts.phase - pts.phase;
-		      elems_in_block = min (chunk_elems - buf_index, block_size - elem_pts.phase);
+		      elems_in_block = std::min (chunk_elems - buf_index, (unsigned int)(block_size - elem_pts.phase));
 		      memcpy (value_contents_all_raw (val) + value_index * elem_size, buf + buf_index * elem_size, elems_in_block * elem_size);
 		      buf_index += elems_in_block;
 		      elem_pts.addrfield += elems_in_block * elem_size;

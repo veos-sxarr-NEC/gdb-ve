@@ -709,6 +709,7 @@ static PyGetSetDef objfile_getset[] =
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject objfile_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -750,3 +751,17 @@ PyTypeObject objfile_object_type =
   0,				  /* tp_alloc */
   objfpy_new,			  /* tp_new */
 };
+#else
+PyTypeObject objfile_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Objfile",
+    .tp_basicsize = sizeof(objfile_object),
+    .tp_dealloc = objfpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB objfile object",
+    .tp_methods = objfile_object_methods,
+    .tp_getset = objfile_getset,
+    .tp_dictoffset = offsetof(objfile_object, dict),
+    .tp_new = objfpy_new,
+};
+#endif

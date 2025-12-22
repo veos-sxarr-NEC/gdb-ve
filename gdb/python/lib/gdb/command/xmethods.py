@@ -16,6 +16,7 @@
 
 import gdb
 import re
+import sys
 
 """GDB commands for working with xmethods."""
 
@@ -24,8 +25,7 @@ def validate_xm_regexp(part_name, regexp):
     try:
         return re.compile(regexp)
     except SyntaxError:
-        raise SyntaxError("Invalid %s regexp: %s", part_name, regexp)
-
+        raise SyntaxError("Invalid %s regexp: %s" % (part_name, regexp))
 
 def parse_xm_command_args(arg):
     """Parses the arguments passed to a xmethod command.

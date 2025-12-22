@@ -339,6 +339,7 @@ Return whether the thread is exited." },
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject thread_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -379,3 +380,15 @@ PyTypeObject thread_object_type =
   0,				  /* tp_init */
   0				  /* tp_alloc */
 };
+#else
+PyTypeObject thread_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.InferiorThread",
+    .tp_basicsize = sizeof(thread_object),
+    .tp_dealloc = thpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB thread object",
+    .tp_methods = thread_object_methods,
+    .tp_getset = thread_object_getset,
+};
+#endif

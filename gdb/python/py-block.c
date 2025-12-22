@@ -479,6 +479,7 @@ static PyGetSetDef block_object_getset[] = {
   { NULL }  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject block_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Block",			  /*tp_name*/
@@ -511,6 +512,19 @@ PyTypeObject block_object_type = {
   0,				  /* tp_members */
   block_object_getset		  /* tp_getset */
 };
+#else
+PyTypeObject block_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Block",
+    .tp_basicsize = sizeof(block_object),
+    .tp_dealloc = blpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB block object",
+    .tp_iter = blpy_iter,
+    .tp_methods = block_object_methods,
+    .tp_getset = block_object_getset,
+};
+#endif
 
 static PyMethodDef block_iterator_object_methods[] = {
   { "is_valid", blpy_iter_is_valid, METH_NOARGS,
@@ -519,6 +533,7 @@ Return true if this block iterator is valid, false if not." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject block_syms_iterator_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.BlockIterator",		  /*tp_name*/
@@ -549,3 +564,16 @@ PyTypeObject block_syms_iterator_object_type = {
   blpy_block_syms_iternext,	  /*tp_iternext */
   block_iterator_object_methods   /*tp_methods */
 };
+#else
+PyTypeObject block_syms_iterator_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.BlockIterator",
+    .tp_basicsize = sizeof(block_syms_iterator_object),
+    .tp_dealloc = blpy_block_syms_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB block syms iterator object",
+    .tp_iter = blpy_block_syms_iter,
+    .tp_iternext = blpy_block_syms_iternext,
+    .tp_methods = block_iterator_object_methods,
+};
+#endif

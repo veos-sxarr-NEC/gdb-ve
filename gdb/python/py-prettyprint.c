@@ -353,8 +353,8 @@ print_string_repr (PyObject *printer, const char *hint,
 
 	      make_cleanup_py_decref (string);
 #ifdef IS_PY3K
-	      output = PyBytes_AS_STRING (string);
-	      length = PyBytes_GET_SIZE (string);
+	      output = PyBytes_AsString (string);
+	      length = PyBytes_Size (string);
 #else
 	      output = PyString_AsString (string);
 	      length = PyString_Size (string);

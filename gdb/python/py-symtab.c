@@ -577,6 +577,7 @@ Return the LineTable associated with this symbol table" },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject symtab_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Symtab",			  /*tp_name*/
@@ -609,6 +610,19 @@ PyTypeObject symtab_object_type = {
   0,				  /*tp_members */
   symtab_object_getset		  /*tp_getset */
 };
+#else
+PyTypeObject symtab_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Symtab",
+    .tp_basicsize = sizeof(symtab_object),
+    .tp_dealloc = stpy_dealloc,
+    .tp_str = stpy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB symtab object",
+    .tp_methods = symtab_object_methods,
+    .tp_getset = symtab_object_getset,
+};
+#endif
 
 static PyGetSetDef sal_object_getset[] = {
   { "symtab", salpy_get_symtab, NULL, "Symtab object.", NULL },
@@ -627,6 +641,7 @@ Return true if this symbol table and line is valid, false if not." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject sal_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Symtab_and_line",	  /*tp_name*/
@@ -659,3 +674,16 @@ PyTypeObject sal_object_type = {
   0,				  /*tp_members */
   sal_object_getset		  /*tp_getset */
 };
+#else
+PyTypeObject sal_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Symtab_and_line",
+    .tp_basicsize = sizeof(sal_object),
+    .tp_dealloc = salpy_dealloc,
+    .tp_str = salpy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB symtab_and_line object",
+    .tp_methods = sal_object_methods,
+    .tp_getset = sal_object_getset,
+};
+#endif

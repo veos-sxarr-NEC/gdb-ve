@@ -602,6 +602,7 @@ Return the value of the symbol." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject symbol_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Symbol",			  /*tp_name*/
@@ -634,3 +635,16 @@ PyTypeObject symbol_object_type = {
   0,				  /*tp_members */
   symbol_object_getset		  /*tp_getset */
 };
+#else
+PyTypeObject symbol_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Symbol",
+    .tp_basicsize = sizeof(symbol_object),
+    .tp_dealloc = sympy_dealloc,
+    .tp_str = sympy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB symbol object",
+    .tp_methods = symbol_object_methods,
+    .tp_getset = symbol_object_getset,
+};
+#endif

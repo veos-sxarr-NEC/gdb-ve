@@ -212,6 +212,7 @@ gdbpy_initialize_functions (void)
 
 
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject fnpy_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -252,3 +253,13 @@ PyTypeObject fnpy_object_type =
   fnpy_init,			  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject fnpy_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Function",
+    .tp_basicsize = sizeof(PyObject),
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB function object",
+    .tp_init = fnpy_init,
+};
+#endif

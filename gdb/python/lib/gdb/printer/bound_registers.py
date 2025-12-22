@@ -25,7 +25,7 @@ class MpxBound128Printer:
     def to_string (self):
         upper = self.val["ubound"]
         lower = self.val["lbound"]
-        size  = (long) ((upper) - (lower))
+        size  = int(upper - lower)
         if size > -1:
             size = size + 1
         result = '{lbound = %s, ubound = %s} : size %s' % (lower, upper, size)

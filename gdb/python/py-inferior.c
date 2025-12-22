@@ -937,6 +937,7 @@ Return a long with the address of a match, or None." },
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject inferior_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -977,6 +978,18 @@ PyTypeObject inferior_object_type =
   0,				  /* tp_init */
   0				  /* tp_alloc */
 };
+#else
+PyTypeObject inferior_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Inferior",
+    .tp_basicsize = sizeof(inferior_object),
+    .tp_dealloc = infpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB inferior object",
+    .tp_methods = inferior_object_methods,
+    .tp_getset = inferior_object_getset,
+};
+#endif
 
 #ifdef IS_PY3K
 
@@ -1004,6 +1017,7 @@ static PyBufferProcs buffer_procs = {
 };
 #endif	/* IS_PY3K */
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject membuf_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Membuf",			  /*tp_name*/
@@ -1043,3 +1057,15 @@ PyTypeObject membuf_object_type = {
   0,				  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject membuf_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Membuf",
+    .tp_basicsize = sizeof(membuf_object),
+    .tp_dealloc = mbpy_dealloc,
+    .tp_str = mbpy_str,
+    .tp_as_buffer = &buffer_procs,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB memory buffer object",
+};
+#endif

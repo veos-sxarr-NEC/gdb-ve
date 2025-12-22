@@ -29,6 +29,7 @@
 #include "dis-asm.h"
 #include "source.h"
 #include "gdbcmd.h"
+#include <algorithm>
 #ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
 #include "ve-tdep.h"
 #endif
@@ -361,7 +362,7 @@ dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
   if(how_many<0 && disassemble_instruction_limit>0)  //how_many=-1 means no limit and we want to set a limit when disassemble_instructi
     how_many = disassemble_instruction_limit;
   else if(disassemble_instruction_limit>0)
-    how_many = min(how_many,disassemble_instruction_limit);
+    how_many = std::min(how_many,disassemble_instruction_limit);
 
   while (insn.addr < high && (how_many < 0 || num_displayed < how_many))
     {
@@ -880,12 +881,12 @@ do_mixed_source_and_assembly (struct gdbarch *gdbarch, struct ui_out *uiout,
         }
       }
       if (mod_sal_end != 0)
-	end_pc = min (mod_sal_end, high);
+	end_pc = std::min (mod_sal_end, high);
       else
 	end_pc = pc + 1;
 #else
       if (sal.end != 0)
-	end_pc = min (sal.end, high);
+	end_pc = std::min (sal.end, high);
       else
 	end_pc = pc + 1;
 #endif

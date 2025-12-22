@@ -41,6 +41,7 @@
 #include "charset.h"
 #include "typeprint.h"
 #include <ctype.h>
+#include <algorithm>
 
 /* Maximum number of wchars returned from wchar_iterate.  */
 #define MAX_WCHARS 4
@@ -2115,11 +2116,11 @@ val_print_array_elements (struct type *type,
 	  gdb_assert(eltlen > 0);
 	  typelen = high_pos - low_pos + 1;
 	  fully_loaded = val
-	    ? min (typelen, max ((value_length (val) - embedded_offset) / eltlen, 0))
+	    ? std::min (typelen, std::max ((value_length (val) - (unsigned int)embedded_offset) / eltlen, (unsigned int)0))
 	    : typelen;
 
  	  len = val
-	    ? min (typelen, max ((value_length (val) - embedded_offset + eltlen - 1) / eltlen, 0))
+	    ? std::min (typelen, std::max ((value_length (val) - (unsigned int)embedded_offset + eltlen - 1) / eltlen, (unsigned int)0))
 	    : typelen;
 	}
     }
@@ -2289,7 +2290,7 @@ read_string (CORE_ADDR addr, int len, int width, unsigned int fetchlimit,
     {
       /* We want fetchlimit chars, so we might as well read them all in
 	 one operation.  */
-      unsigned int fetchlen = min (len, fetchlimit);
+      unsigned int fetchlen = std::min ((unsigned int)len, fetchlimit);
 
       *buffer = (gdb_byte *) xmalloc (fetchlen * width);
       bufptr = *buffer;
@@ -2313,12 +2314,12 @@ read_string (CORE_ADDR addr, int len, int width, unsigned int fetchlimit,
 	 So we choose the minimum of 8 and fetchlimit.  We used to use 200
 	 instead of 8 but 200 is way too big for remote debugging over a
 	  serial line.  */
-      chunksize = min (8, fetchlimit);
+      chunksize = std::min ((unsigned int)8, fetchlimit);
 
       do
 	{
 	  QUIT;
-	  nfetch = min (chunksize, fetchlimit - bufsize);
+	  nfetch = std::min (chunksize, fetchlimit - (unsigned int)bufsize);
 
 	  if (*buffer == NULL)
 	    *buffer = (gdb_byte *) xmalloc (nfetch * width);
@@ -2972,8 +2973,8 @@ val_print_string (struct type *elttype, const char *encoding,
      because finding the null byte (or available memory) is what actually
      limits the fetch.  */
 
-  fetchlimit = (len == -1 ? options->print_smax : min (len,
-						      options->print_smax));
+  fetchlimit = (len == -1 ? options->print_smax : std::min (len,
+						      (int)options->print_smax));
 
   err = read_string (addr, len, width, fetchlimit, byte_order,
 		     &buffer, &bytes_read);

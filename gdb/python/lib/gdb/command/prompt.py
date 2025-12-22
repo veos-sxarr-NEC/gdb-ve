@@ -18,6 +18,7 @@
 
 import gdb
 import gdb.prompt
+import sys
 
 class _ExtendedPrompt(gdb.Parameter):
 
@@ -45,10 +46,10 @@ The currently defined substitutions are:
         self.hook_set = False
 
     def get_show_string (self, pvalue):
-        if self.value is not '':
-           return "The extended prompt is: " + self.value
+        if self.value != '':
+            return "The extended prompt is: " + self.value
         else:
-           return "The extended prompt is not set."
+            return "The extended prompt is not set."
 
     def get_set_string (self):
         if self.hook_set == False:
@@ -57,7 +58,7 @@ The currently defined substitutions are:
         return ""
 
     def before_prompt_hook(self, current):
-        if self.value is not '':
+        if self.value != '':
             return gdb.prompt.substitute_prompt(self.value)
         else:
             return None

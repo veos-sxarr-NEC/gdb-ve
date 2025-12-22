@@ -40,6 +40,11 @@
 #include "location.h"
 #include "ser-event.h"
 
+#if PY_VERSION_HEX >= 0x030C0000
+#include <Python.h>
+#include <import.h>	/* for _PyImport_FixupBuiltin() */
+#endif
+
 /* Declared constants and enum for python stack printing.  */
 static const char python_excp_none[] = "none";
 static const char python_excp_full[] = "full";
@@ -272,6 +277,32 @@ ensure_python_env (struct gdbarch *gdbarch,
   return make_cleanup (restore_python_env, env);
 }
 
+#if PY_VERSION_HEX >= 0x03070000
+/* A helper class to save and restore the GIL, but without touching
+   the other globals that are handled by gdbpy_enter.  */
+
+class gdbpy_gil
+{
+public:
+
+  gdbpy_gil ()
+    : m_state (PyGILState_Ensure ())
+  {
+  }
+
+  ~gdbpy_gil ()
+  {
+    PyGILState_Release (m_state);
+  }
+
+  DISABLE_COPY_AND_ASSIGN (gdbpy_gil);
+
+private:
+
+  PyGILState_STATE m_state;
+};
+#endif
+
 /* Set the quit flag.  */
 
 static void
@@ -285,6 +316,14 @@ gdbpy_set_quit_flag (const struct extension_language_defn *extlang)
 static int
 gdbpy_check_quit_flag (const struct extension_language_defn *extlang)
 {
+#if PY_VERSION_HEX > 0x03080000
+  if (!gdb_python_initialized)
+    return 0;
+#endif
+
+#if PY_VERSION_HEX >= 0x03070000
+  gdbpy_gil gil;
+#endif
   return PyOS_InterruptOccurred ();
 }
 
@@ -1618,11 +1657,15 @@ finalize_python (void *ignore)
      SIGINT handler is gdb's.  We still need to tell it to notify Python.  */
   previous_active = set_active_ext_lang (&extension_language_python);
 
+#if PY_VERSION_HEX < 0x03090000
   (void) PyGILState_Ensure ();
   python_gdbarch = target_gdbarch ();
   python_language = current_language;
+#endif
 
+#if PY_VERSION_HEX < 0x030C0000
   Py_Finalize ();
+#endif
 
   restore_active_ext_lang (previous_active);
 }
@@ -1725,7 +1768,7 @@ message == an error message without a stack will be printed."),
   oldloc = xstrdup (setlocale (LC_ALL, NULL));
   setlocale (LC_ALL, "");
   progsize = strlen (progname);
-  progname_copy = (wchar_t *) PyMem_Malloc ((progsize + 1) * sizeof (wchar_t));
+  progname_copy = (wchar_t *) xmalloc ((progsize + 1) * sizeof (wchar_t));
   if (!progname_copy)
     {
       xfree (oldloc);
@@ -1755,12 +1798,18 @@ message == an error message without a stack will be printed."),
   Py_DontWriteBytecodeFlag = 1;
 
   Py_Initialize ();
+#if PY_VERSION_HEX < 0x03090000
   PyEval_InitThreads ();
+#endif
 
 #ifdef IS_PY3K
   gdb_module = PyModule_Create (&python_GdbModuleDef);
   /* Add _gdb module to the list of known built-in modules.  */
+#if PY_VERSION_HEX >= 0x030C0000  // Python 3.12 and later
+  _PyImport_FixupBuiltin (gdb_module, "_gdb", PyImport_GetModuleDict());
+#else
   _PyImport_FixupBuiltin (gdb_module, "_gdb");
+#endif
 #else
   gdb_module = Py_InitModule ("_gdb", python_GdbMethods);
 #endif
@@ -1862,9 +1911,11 @@ message == an error message without a stack will be printed."),
   if (gdbpy_child_cst == NULL)
     goto fail;
 
+#if PY_VERSION_HEX < 0x03090000
   /* Release the GIL while gdb runs.  */
   PyThreadState_Swap (NULL);
   PyEval_ReleaseLock ();
+#endif
 
   make_final_cleanup (finalize_python, NULL);
 

@@ -21,11 +21,14 @@
 /* Changes by NEC Corporation for the VE port, 2017-2019 */
 
 #include "common-defs.h"
+/* To check the definition of TRAP_HWBKPT in nat/linux-ptrace.h, 
+ * gdb_wait.h, which includes bits/siginfo-consts.h, must be included first.
+ */
+#include "gdb_wait.h"
 #include "linux-ptrace.h"
 #include "linux-procfs.h"
 #include "linux-waitpid.h"
 #include "buffer.h"
-#include "gdb_wait.h"
 #include "gdb_ptrace.h"
 #include <sys/procfs.h>
 

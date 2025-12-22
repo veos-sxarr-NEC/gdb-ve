@@ -281,6 +281,7 @@ END_PC." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject arch_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Architecture",                 /* tp_name */
@@ -320,3 +321,13 @@ PyTypeObject arch_object_type = {
   0,                                  /* tp_init */
   0,                                  /* tp_alloc */
 };
+#else
+PyTypeObject arch_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Architecture",
+    .tp_basicsize = sizeof(arch_object),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB architecture object",
+    .tp_methods = arch_object_methods,
+};
+#endif

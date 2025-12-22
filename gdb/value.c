@@ -47,6 +47,7 @@
 #include "f-lang.h"
 #include "valprint.h"
 #include "upc-lang.h"
+#include <algorithm>
 
 /* Prototypes for exported functions.  */
 
@@ -91,8 +92,8 @@ ranges_overlap (LONGEST offset1, LONGEST len1,
 {
   ULONGEST h, l;
 
-  l = max (offset1, offset2);
-  h = min (offset1 + len1, offset2 + len2);
+  l = std::max (offset1, offset2);
+  h = std::min (offset1 + len1, offset2 + len2);
   return (l < h);
 }
 
@@ -552,8 +553,8 @@ insert_into_bit_range_vector (VEC(range_s) **vectorp,
       if (ranges_overlap (bef->offset, bef->length, offset, length))
 	{
 	  /* #1 */
-	  ULONGEST l = min (bef->offset, offset);
-	  ULONGEST h = max (bef->offset + bef->length, offset + length);
+	  ULONGEST l = std::min (bef->offset, offset);
+	  ULONGEST h = std::max (bef->offset + bef->length, offset + length);
 
 	  bef->offset = l;
 	  bef->length = h - l;
@@ -596,8 +597,8 @@ insert_into_bit_range_vector (VEC(range_s) **vectorp,
 	  {
 	    ULONGEST l, h;
 
-	    l = min (t->offset, r->offset);
-	    h = max (t->offset + t->length, r->offset + r->length);
+	    l = std::min (t->offset, r->offset);
+	    h = std::max (t->offset + t->length, r->offset + r->length);
 
 	    t->offset = l;
 	    t->length = h - l;
@@ -804,11 +805,11 @@ find_first_range_overlap_and_match (struct ranges_and_idx *rp1,
       /* Get the unavailable windows intersected by the incoming
 	 ranges.  The first and last ranges that overlap the argument
 	 range may be wider than said incoming arguments ranges.  */
-      l1 = max (offset1, r1->offset);
-      h1 = min (offset1 + length, r1->offset + r1->length);
+      l1 = std::max (offset1, r1->offset);
+      h1 = std::min (offset1 + length, r1->offset + r1->length);
 
-      l2 = max (offset2, r2->offset);
-      h2 = min (offset2 + length, offset2 + r2->length);
+      l2 = std::max (offset2, r2->offset);
+      h2 = std::min (offset2 + length, offset2 + r2->length);
 
       /* Make them relative to the respective start offsets, so we can
 	 compare them for equality.  */
@@ -1012,7 +1013,7 @@ get_limited_length_1 (int nss, int ndimensions,
   if (subarray_elts == 0)
     whole_subarrays = 0;
   else
-    whole_subarrays = min (print_max / subarray_elts, elts);
+    whole_subarrays = std::min (print_max / subarray_elts, elts);
   length = whole_subarrays * dim_size;
   if (length < TYPE_LENGTH (type) && nss != ndimensions)
     {
@@ -1051,7 +1052,7 @@ get_limited_length (struct type *type)
   if (TYPE_CODE (type) == TYPE_CODE_STRING
       || (TYPE_LENGTH (base) == 1
           && TYPE_CODE (base) == TYPE_CODE_INT))
-  print_max = max (print_max, opts.print_smax);
+  print_max = std::max (print_max, opts.print_smax);
 
   if (current_language->la_language == language_fortran)
     {
@@ -1505,8 +1506,8 @@ ranges_copy_adjusted (VEC (range_s) **dst_range, int dst_bit_offset,
     {
       ULONGEST h, l;
 
-      l = max (r->offset, src_bit_offset);
-      h = min (r->offset + r->length, src_bit_offset + bit_length);
+      l = std::max ((ULONGEST)r->offset, (ULONGEST)src_bit_offset);
+      h = std::min ((ULONGEST)(r->offset + r->length), (ULONGEST)(src_bit_offset + bit_length));
 
       if (l < h)
 	insert_into_bit_range_vector (dst_range,
@@ -3140,7 +3141,7 @@ value_as_address (struct value *val)
 				       value_contents (val));
 
   old_print_max = user_print_options.print_max;
-  user_print_options.print_max = min (old_print_max, 16);
+  user_print_options.print_max = std::min (old_print_max, 16);
   r = unpack_long (value_type (val), value_contents (val));
   user_print_options.print_max = old_print_max;
   return r;
@@ -3937,7 +3938,7 @@ value_from_contents_and_address_unresolved (struct type *type,
   else
     {
       v = allocate_value_lazy (type);
-      v->length = min (TYPE_LENGTH (type), length);
+      v->length = std::min (TYPE_LENGTH (type), length);
       v->contents = (gdb_byte *) xzalloc (v->length);
       set_value_lazy (v, 0);
       memcpy (value_contents_raw (v), valaddr, value_length (v));
@@ -4013,7 +4014,7 @@ value_from_contents_and_address (struct type *type,
   else
     {
       v = allocate_value_lazy (resolved_type);
-      v->length = min (TYPE_LENGTH (resolved_type), length);
+      v->length = std::min (TYPE_LENGTH (resolved_type), length);
       v->contents = (gdb_byte *) xzalloc (v->length);
       set_value_lazy (v, 0);
       memcpy (value_contents_raw (v), valaddr, value_length (v));
@@ -4545,14 +4546,14 @@ void
 value_copy_contents (struct value *to, struct value *from)
 {
   memcpy (value_contents_raw (to), value_contents (from),
-	  min (value_length (from), value_length (to)));
+	  std::min (value_length (from), value_length (to)));
 }
 
 void
 value_copy_contents_all_raw (struct value *to, struct value *from)
 {
   memcpy (value_contents_all_raw (to), value_contents_all_raw (from),
-	  min (value_length (from), value_length (to)));
+	  std::min (value_length (from), value_length (to)));
 }
 
 void

@@ -37,6 +37,7 @@
 #include "block.h"
 #include "dictionary.h"
 #include "typeprint.h"
+#include <algorithm>
 
 static int structure_depth = 0; /* Don't unroll structs too deep -
                                    pointers to structs with pointers
@@ -169,8 +170,8 @@ f77_print_array_1 (int nss, int ndimensions, struct type *type,
 	  gdb_assert ((offs < value_length(val)) || (offs == 0 && value_length(val) == 0));
 	  subarray = value_from_contents_and_address
             (TYPE_TARGET_TYPE (type), value_contents_for_printing_const (val)
-	     + offs, min (TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
-			  value_length (val) - offs),
+	     + offs, std::min (TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
+			  (unsigned int)(value_length (val) - offs)),
 	     addr + offs);
 
 	  fprintf_filtered (stream, "( ");

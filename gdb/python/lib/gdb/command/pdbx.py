@@ -490,7 +490,10 @@ class PdbxRaceReport(object):
 
             # Sorting the accesses makes it easier for testing.
             #
-            self.accesses.sort(lambda l,r: cmp(l.location, r.location))
+            if sys.version_info[0] < 3:
+                self.accesses.sort(lambda l, r: cmp(l.location, r.location))
+            else:
+                self.accesses.sort(key=lambda l: l.location)
 
     def filter(self, fset):
         """Remove accesses that are filtered out by the given filter set."""

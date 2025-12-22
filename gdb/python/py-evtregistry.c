@@ -132,6 +132,7 @@ static PyMethodDef eventregistry_object_methods[] =
   { NULL } /* Sentinel.  */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject eventregistry_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -172,3 +173,14 @@ PyTypeObject eventregistry_object_type =
   0,                                          /* tp_init */
   0                                           /* tp_alloc */
 };
+#else
+PyTypeObject eventregistry_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.EventRegistry",
+    .tp_basicsize = sizeof(eventregistry_object),
+    .tp_dealloc = evregpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB event registry object",
+    .tp_methods = eventregistry_object_methods,
+};
+#endif

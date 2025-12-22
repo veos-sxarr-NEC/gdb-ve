@@ -174,7 +174,10 @@ def _complete_frame_filter_list(text, word, all_flag):
         return filter_locations
 
     # Otherwise filter on what we know.
-    flist = filter(lambda x,y=text:x.startswith(y), filter_locations)
+    if sys.version_info[0] < 3:
+        flist = filter(lambda x, y=text:x.startswith(y), filter_locations)
+    else:
+        flist = list(filter(lambda x: x.startswith(text), filter_locations))
 
     # If we only have one completion, complete it and return it.
     if len(flist) == 1:
@@ -203,7 +206,10 @@ def _complete_frame_filter_name(word, printer_dict):
     if (word == ""):
         return printer_keys
 
-    flist = filter(lambda x,y=word:x.startswith(y), printer_keys)
+    if sys.version_info[0] < 3:
+        flist = filter(lambda x, y=word:x.startswith(y), printer_keys)
+    else:
+        flist = list(filter(lambda x: x.startswith(word), printer_keys))
     return flist
 
 class EnableFrameFilter(gdb.Command):

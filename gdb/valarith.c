@@ -32,6 +32,7 @@
 #include "dfp.h"
 #include <math.h>
 #include "infcall.h"
+#include <algorithm>
 
 /* Define whether or not the C operator '/' truncates towards zero for
    differently signed operands (truncation direction is undefined in C).  */
@@ -291,7 +292,7 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
 		 || (elt_offs == 0 && value_length (array) == 0));
       value_contents_copy (v, value_embedded_offset (v),
 			   array, value_embedded_offset (array) + elt_offs,
-			   min (elt_size, value_length (array) - elt_offs));
+			   std::min ((LONGEST)elt_size, (LONGEST)(value_length (array) - elt_offs)));
     }
 
 

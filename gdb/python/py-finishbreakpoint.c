@@ -440,6 +440,7 @@ None otherwise.", NULL },
     { NULL }  /* Sentinel.  */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject finish_breakpoint_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -481,3 +482,16 @@ PyTypeObject finish_breakpoint_object_type =
   0,                              /* tp_alloc */
   0                               /* tp_new */
 };
+#else
+PyTypeObject finish_breakpoint_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.FinishBreakpoint",
+    .tp_basicsize = sizeof(struct finish_breakpoint_object),
+    .tp_dealloc = bpfinishpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB finish breakpoint object",
+    .tp_getset = finish_breakpoint_object_getset,
+    .tp_base = &breakpoint_object_type,
+    .tp_init = bpfinishpy_init,
+};
+#endif

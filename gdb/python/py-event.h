@@ -43,6 +43,7 @@
   BASE the base event for this event usually just event_object_type.
 */
 
+#if PY_VERSION_HEX < 0x03080000
 #define GDBPY_NEW_EVENT_TYPE(name, py_path, py_name, doc, base) \
 \
   PyTypeObject name##_event_object_type		    \
@@ -93,6 +94,23 @@ gdbpy_initialize_##name##_event (void) \
   return gdbpy_initialize_event_generic (&name##_event_object_type, \
 					 py_name);		    \
 }
+#else
+#define GDBPY_NEW_EVENT_TYPE(name, py_path, py_name, doc, base) \
+  PyTypeObject name##_event_object_type = { \
+    PyVarObject_HEAD_INIT(NULL, 0) \
+    .tp_name = py_path, \
+    .tp_basicsize = sizeof(event_object), \
+    .tp_flags = Py_TPFLAGS_DEFAULT, \
+    .tp_doc = doc, \
+    .tp_base = &base, \
+  }; \
+int \
+gdbpy_initialize_##name##_event (void) \
+{ \
+  return gdbpy_initialize_event_generic(&name##_event_object_type, \
+					py_name);		   \
+}
+#endif
 
 typedef struct
 {

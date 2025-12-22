@@ -140,6 +140,7 @@ static PyGetSetDef event_object_getset[] =
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject event_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -180,3 +181,15 @@ PyTypeObject event_object_type =
   0,                                          /* tp_init */
   0                                           /* tp_alloc */
 };
+#else
+PyTypeObject event_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Event",
+    .tp_basicsize = sizeof(event_object),
+    .tp_dealloc = evpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB event object",
+    .tp_getset = event_object_getset,
+    .tp_dictoffset = offsetof(event_object, dict),
+};
+#endif

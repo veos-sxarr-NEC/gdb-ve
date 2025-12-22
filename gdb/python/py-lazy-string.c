@@ -218,6 +218,7 @@ static PyGetSetDef lazy_string_object_getset[] = {
   { NULL }  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject lazy_string_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.LazyString",	          /*tp_name*/
@@ -250,3 +251,15 @@ PyTypeObject lazy_string_object_type = {
   0,				  /* tp_members */
   lazy_string_object_getset	  /* tp_getset */
 };
+#else
+PyTypeObject lazy_string_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.LazyString",
+    .tp_basicsize = sizeof(lazy_string_object),
+    .tp_dealloc = stpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB lazy string object",
+    .tp_methods = lazy_string_object_methods,
+    .tp_getset = lazy_string_object_getset,
+};
+#endif

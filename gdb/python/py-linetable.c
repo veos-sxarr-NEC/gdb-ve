@@ -492,6 +492,7 @@ Return True if this LineTable is valid, False if not." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject linetable_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.LineTable",	          /*tp_name*/
@@ -531,6 +532,18 @@ PyTypeObject linetable_object_type = {
   0,    			  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject linetable_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.LineTable",
+    .tp_basicsize = sizeof(linetable_object),
+    .tp_dealloc = ltpy_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB line table object",
+    .tp_iter = ltpy_iter,
+    .tp_methods = linetable_object_methods,
+};
+#endif
 
 static PyMethodDef ltpy_iterator_methods[] = {
   { "is_valid", ltpy_iter_is_valid, METH_NOARGS,
@@ -539,6 +552,7 @@ Return True if this LineTable iterator is valid, False if not." },
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject ltpy_iterator_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.LineTableIterator",		  /*tp_name*/
@@ -569,6 +583,19 @@ PyTypeObject ltpy_iterator_object_type = {
   ltpy_iternext,	          /*tp_iternext */
   ltpy_iterator_methods           /*tp_methods */
 };
+#else
+PyTypeObject ltpy_iterator_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.LineTableIterator",
+    .tp_basicsize = sizeof(ltpy_iterator_object),
+    .tp_dealloc = ltpy_iterator_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB line table iterator object",
+    .tp_iter = ltpy_iterator,
+    .tp_iternext = ltpy_iternext,
+    .tp_methods = ltpy_iterator_methods,
+};
+#endif
 
 
 static PyGetSetDef linetable_entry_object_getset[] = {
@@ -579,6 +606,7 @@ static PyGetSetDef linetable_entry_object_getset[] = {
   { NULL }  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject linetable_entry_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.LineTableEntry",	          /*tp_name*/
@@ -618,3 +646,13 @@ PyTypeObject linetable_entry_object_type = {
   0,	                          /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject linetable_entry_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.LineTableEntry",
+    .tp_basicsize = sizeof(linetable_entry_object),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB line table entry object",
+    .tp_getset = linetable_entry_object_getset,
+};
+#endif

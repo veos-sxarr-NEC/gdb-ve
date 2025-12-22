@@ -732,6 +732,7 @@ static PyMethodDef cmdpy_object_methods[] =
   { 0 }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject cmdpy_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -772,6 +773,17 @@ PyTypeObject cmdpy_object_type =
   cmdpy_init,			  /* tp_init */
   0,				  /* tp_alloc */
 };
+#else
+PyTypeObject cmdpy_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Command",
+    .tp_basicsize = sizeof(cmdpy_object),
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB command object",
+    .tp_methods = cmdpy_object_methods,
+    .tp_init = cmdpy_init,
+};
+#endif
 
 
 

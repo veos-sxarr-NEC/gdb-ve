@@ -1619,6 +1619,7 @@ static PyMappingMethods typy_mapping = {
   NULL				  /* no "set" method */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject type_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -1660,6 +1661,23 @@ PyTypeObject type_object_type =
   0,				  /* tp_alloc */
   0,				  /* tp_new */
 };
+#else
+PyTypeObject type_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Type",
+    .tp_basicsize = sizeof(type_object),
+    .tp_dealloc = typy_dealloc,
+    .tp_as_number = &type_object_as_number,
+    .tp_as_mapping = &typy_mapping,
+    .tp_str = typy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB type object",
+    .tp_richcompare = typy_richcompare,
+    .tp_iter = typy_iter,
+    .tp_methods = type_object_methods,
+    .tp_getset = type_object_getset,
+};
+#endif
 
 static PyGetSetDef field_object_getset[] =
 {
@@ -1668,6 +1686,7 @@ static PyGetSetDef field_object_getset[] =
   { NULL }
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject field_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -1709,7 +1728,20 @@ PyTypeObject field_object_type =
   0,				  /* tp_alloc */
   0,				  /* tp_new */
 };
+#else
+PyTypeObject field_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.Field",
+    .tp_basicsize = sizeof(field_object),
+    .tp_dealloc = field_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB field object",
+    .tp_getset = field_object_getset,
+    .tp_dictoffset = offsetof(field_object, dict),
+};
+#endif
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject type_iterator_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.TypeIterator",		  /*tp_name*/
@@ -1740,3 +1772,15 @@ PyTypeObject type_iterator_object_type = {
   typy_iterator_iternext,	  /*tp_iternext */
   0				  /*tp_methods */
 };
+#else
+PyTypeObject type_iterator_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.TypeIterator",
+    .tp_basicsize = sizeof(typy_iterator_object),
+    .tp_dealloc = typy_iterator_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+    .tp_doc = "GDB type iterator object",
+    .tp_iter = typy_iterator_iter,
+    .tp_iternext = typy_iterator_iternext,
+};
+#endif

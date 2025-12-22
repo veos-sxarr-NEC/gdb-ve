@@ -698,6 +698,7 @@ static PyMethodDef pending_frame_object_methods[] =
   {NULL}  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject pending_frame_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -738,6 +739,17 @@ PyTypeObject pending_frame_object_type =
   0,                              /* tp_init */
   0,                              /* tp_alloc */
 };
+#else
+PyTypeObject pending_frame_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.PendingFrame",
+    .tp_basicsize = sizeof(pending_frame_object),
+    .tp_str = pending_framepy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "GDB PendingFrame object",
+    .tp_methods = pending_frame_object_methods,
+};
+#endif
 
 static PyMethodDef unwind_info_object_methods[] =
 {
@@ -748,6 +760,7 @@ static PyMethodDef unwind_info_object_methods[] =
   { NULL }  /* Sentinel */
 };
 
+#if PY_VERSION_HEX < 0x03080000
 PyTypeObject unwind_info_object_type =
 {
   PyVarObject_HEAD_INIT (NULL, 0)
@@ -788,3 +801,15 @@ PyTypeObject unwind_info_object_type =
   0,                              /* tp_init */
   0,                              /* tp_alloc */
 };
+#else
+PyTypeObject unwind_info_object_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "gdb.UnwindInfo",
+    .tp_basicsize = sizeof(unwind_info_object),
+    .tp_dealloc = unwind_infopy_dealloc,
+    .tp_str = unwind_infopy_str,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "GDB UnwindInfo object",
+    .tp_methods = unwind_info_object_methods,
+};
+#endif

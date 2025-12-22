@@ -60,6 +60,7 @@
 #endif
 
 #include <fcntl.h>
+#include <algorithm>
 
 #ifdef	VE_CUSTOMIZATION && VE3_CODE_MOD
 #include "ve-tdep.h"
@@ -950,7 +951,7 @@ list_command (char *arg, int from_tty)
 	{
 	  int first;
 
-	  first = max (cursal.line - get_lines_to_list () / 2, 1);
+	  first = std::max (cursal.line - get_lines_to_list () / 2, 1);
 
 	  /* A small special case --- if listing backwards, and we
 	     should list only one line, list the preceding line,
@@ -977,7 +978,7 @@ list_command (char *arg, int from_tty)
 	    error (_("Already at the start of %s."),
 		   symtab_to_filename_for_display (cursal.symtab));
 	  print_source_lines (cursal.symtab,
-			      max (get_first_line_listed ()
+			      std::max (get_first_line_listed ()
 				   - get_lines_to_list (), 1),
 			      get_first_line_listed (), 0);
 	}
@@ -1122,7 +1123,7 @@ list_command (char *arg, int from_tty)
     error (_("No default source file yet.  Do \"help list\"."));
   if (dummy_beg)
     print_source_lines (sal_end.symtab,
-			max (sal_end.line - (get_lines_to_list () - 1), 1),
+			std::max (sal_end.line - (get_lines_to_list () - 1), 1),
 			sal_end.line + 1, 0);
   else if (sal.symtab == 0)
     error (_("No default source file yet.  Do \"help list\"."));

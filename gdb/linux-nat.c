@@ -1186,6 +1186,10 @@ attach_proc_task_lwp_callback (ptid_t ptid)
 		       linux_ptrace_attach_fail_reason_string (ptid,
 							       err));
 	    }
+#ifdef	VE_CUSTOMIZATION
+	    /* Return 0 to avoid an infinite loop if attaching to a VE process fails */
+	    return 0;
+#endif
 	}
       else
 	{

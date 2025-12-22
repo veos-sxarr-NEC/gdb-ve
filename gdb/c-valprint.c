@@ -32,6 +32,7 @@
 #include "cp-abi.h"
 #include "target.h"
 #include "objfiles.h"
+#include <algorithm>
 
 
 /* A helper for c_textual_element_type.  This checks the name of the
@@ -258,7 +259,7 @@ c_val_print_array (struct type *type, const gdb_byte *valaddr,
 
       eltlen = TYPE_LENGTH (elttype);
       len = original_value
-	? min (high_bound - low_bound + 1, value_length (original_value) / eltlen)
+	? std::min ((unsigned int)(high_bound - low_bound + 1), value_length (original_value) / eltlen)
 	: (high_bound - low_bound + 1);
       if (options->prettyformat_arrays)
 	{

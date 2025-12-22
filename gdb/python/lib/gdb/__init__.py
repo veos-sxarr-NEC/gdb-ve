@@ -20,7 +20,10 @@ import _gdb
 
 if sys.version_info[0] > 2:
     # Python 3 moved "reload"
-    from imp import reload
+    try:
+        from importlib import reload
+    except ImportError:
+        from imp import reload
 
 from _gdb import *
 
